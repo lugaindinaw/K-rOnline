@@ -19,6 +19,7 @@ type SwedenPanelProps = {
   truncated: boolean;
   loadingRoads: boolean;
   roadError: string | null;
+  extendNote: string | null;
   vehicle: VehicleStatus;
   onChooseBranch: (index: number) => void;
   onPedal: (pedal: "accelerate" | "brake", pressed: boolean) => void;
@@ -42,6 +43,7 @@ export function SwedenPanel({
   truncated,
   loadingRoads,
   roadError,
+  extendNote,
   vehicle = IDLE_VEHICLE,
   onChooseBranch,
   onPedal,
@@ -175,6 +177,7 @@ export function SwedenPanel({
             {vehicle.roadName ? ` · ${vehicle.roadName}` : ""}
           </p>
         ) : null}
+        {extendNote ? <p role="status">{extendNote}</p> : null}
         {vehicle.message ? <p role="status">{vehicle.message}</p> : null}
         {vehicle.choices.length > 0 ? (
           <div className="drive-choices">
@@ -194,10 +197,9 @@ export function SwedenPanel({
       <details>
         <summary>Vad som saknas för körträning</summary>
         <p>
-          Bilen följer mittlinjen i det hämtade området. Modellen är förstorad så att den syns.
-          Det finns ingen trafik,
-          inga körfält, ingen NVDB och ingen realistisk bilfysik. En väg utanför
-          området går inte att följa. Om listan beskärs kan en korsning saknas.
+          Bilen följer mittlinjen. Nästa vägavsnitt hämtas automatiskt nära kanten av området.
+          Modellen är förstorad så att den syns. Det finns ingen trafik,
+          inga körfält, ingen NVDB och ingen realistisk bilfysik. Om listan beskärs kan en korsning saknas.
           Kameran följer bilen först efter första gaspådraget.
         </p>
       </details>
