@@ -1,6 +1,6 @@
 # KörOnline
 
-Webbprototyp för en svensk körvy. Den här versionen visar bara en 3D-karta över centrala Stockholm. Ingen gata är låst, och det finns ingen bil, inget vägnät och inget konto.
+Webbprototyp för en svensk körvy. Google Maps 3D är kartan. Stockholm är bara startposition. Vägar för det valda området hämtas från OpenStreetMap när de behövs, inte som ett färdigt utdrag av hela Sverige.
 
 ## Starta
 
@@ -12,7 +12,9 @@ npm run dev
 
 Öppna `http://localhost:5173`. Sätt `VITE_GOOGLE_MAPS_API_KEY` i `.env.local` eller i processens miljö och starta om dev-servern. Nyckeln hör hemma i webbläsaren, så begränsa den i Google Cloud till Maps JavaScript API och till `http://localhost:5173/*`.
 
-Utan nyckel visar sidan konfigurationsläget. Med nyckel laddas Maps JavaScript API, biblioteket `maps3d`, och en `Map3DElement` i läget `HYBRID`.
+Utan nyckel kan platser och väglistor fortfarande sökas. Själva 3D-kartan kräver nyckeln. Med nyckel laddas Maps JavaScript API, biblioteket `maps3d`, och en `Map3DElement` i läget `HYBRID`.
+
+Sök en ort i Sverige, eller hämta vägar där kameran står. Platssökningen går till Nominatim. Kameran höjs till marknivån för platsen. Vägfrågan går via utvecklingsservern till Overpass, med en radie på 600 meter. Fler än 120 vägsträckor beskärs så att högre vägklasser behålls.
 
 ## Kontroller
 
@@ -24,6 +26,6 @@ npm run build
 
 ## Avgränsning
 
-Kameran över centrala Stockholm ritade fotorealistisk 3D-yta 2026-10-25. Ingen gata är vald. Sverige är markerad för Maps JavaScript 3D i [Googles landtabell](https://developers.google.com/maps/coverage). En enskild körgata måste fortfarande kontrolleras på [täckningskartan](https://developers.google.com/maps/documentation/javascript/3d/coverage) innan den låses.
+Det här är inte körträning. Det finns ingen bil, ingen rutt, inga körfält och inga trafikregler. Vägarna är mittlinjer från OpenStreetMap, inte NVDB. Fotorealistisk 3D varierar över landet och är inte ett krav för att vägdata ska visas. Startvyn över centrala Stockholm ritade fotorealistisk 3D-yta 2026-10-25.
 
-NVDB och OSM är inte inlästa. De ska hållas åtskilda när vägnätet läggs till senare, i egna moduler bredvid `src/geo` och `src/map`. Bil, körfysik och kameror för första- och tredjeperson ska också bli egna moduler. De finns inte i den här versionen.
+En offentlig Overpass-server kan vara upptagen. Prototypen provar då en andra server. Sverige avgränsas med en förenklad kustlinje och en buffert på 8 km, så enstaka gränsorter kan hamna fel.

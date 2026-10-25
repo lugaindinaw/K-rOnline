@@ -1,11 +1,10 @@
 import type { GeographicPosition } from "./coordinates";
 
 /**
- * Stockholm is the candidate city. Country-level availability of Maps
- * JavaScript 3D for Sweden was listed on Google's coverage table on
- * 2026-10-23. The candidate camera rendered a photorealistic surface on
- * 2026-10-25. Street-level coverage was not read from the interactive
- * coverage map, so no street is selected.
+ * Stockholm is only the start camera and the example area. Country-level
+ * availability of Maps JavaScript 3D for Sweden was listed on Google's
+ * coverage table on 2026-10-23. This camera rendered a photorealistic
+ * surface on 2026-10-25. Other places in Sweden are chosen at runtime.
  */
 export const STOCKHOLM_CANDIDATE = {
   city: "Stockholm",
