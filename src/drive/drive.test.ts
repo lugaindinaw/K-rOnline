@@ -3,6 +3,8 @@ import {
   ACCEL_MPS2,
   BRAKE_MPS2,
   COAST_MPS2,
+  MAX_SPEED_MPS,
+  YAW_DEGREES_PER_SECOND,
   choiceIndexFromKey,
   driveInputFromKeys,
   isTextEntry,
@@ -11,7 +13,7 @@ import {
   stepVehicle,
   vehicleFromPlacement,
 } from "./drive";
-import { buildRoadNetwork } from "../roads/roadNetwork";
+import { buildRoadNetwork, nearestPlacement } from "../roads/roadNetwork";
 import type { OneWay, RoadPoint, RoadSegment } from "../roads/drivingRoads";
 
 const start: RoadPoint = { lat: 59.33, lng: 18.07 };
@@ -202,6 +204,135 @@ describe("rejoinVehicle", () => {
     expect(rejoined.roadName).toBe("Två");
     expect(rejoined.edgeId).toContain("två");
     expect((extended.outgoing.get("2") ?? []).some((item) => item.osmWayId === "nära")).toBe(false);
+  });
+});
+
+const places = [
+  { name: "Stockholm", lat: 59.3293, lng: 18.0686 },
+  { name: "Kiruna", lat: 67.8558, lng: 20.2253 },
+  { name: "Glommersträsk", lat: 65.258, lng: 19.654 },
+];
+
+function northOf(point: RoadPoint, meters: number): RoadPoint {
+  return { lat: point.lat + meters / 111320, lng: point.lng };
+}
+
+function eastOf(point: RoadPoint, meters: number): RoadPoint {
+  const cosine = Math.cos((point.lat * Math.PI) / 180);
+  return { lat: point.lat, lng: point.lng + meters / (111320 * Math.max(0.2, cosine)) };
+}
+
+describe("steering and stops", () => {
+  it("changes speed smoothly, and braking wins when both pedals are held", () => {
+    const network = buildRoadNetwork([
+      segment("norr", ["1", "2"], [start, northOf(start, 400)], { name: "Norrvägen", oneway: "forward" }),
+    ]);
+    const edge = network.edges.find((item) => item.id.endsWith(":forward"));
+    let state = vehicleFromPlacement({ edge: edge!, distanceMeters: 0, gapMeters: 0 });
+    const dt = 0.05;
+    let previous = state.speedMps;
+    for (let index = 0; index < 80; index += 1) {
+      state = stepVehicle(network, state, { accelerate: true, brake: false }, dt);
+      expect(state.speedMps).toBeGreaterThanOrEqual(previous - 1e-6);
+      expect(state.speedMps - previous).toBeLessThanOrEqual(ACCEL_MPS2 * dt + 1e-6);
+      expect(state.speedMps).toBeLessThanOrEqual(MAX_SPEED_MPS);
+      previous = state.speedMps;
+    }
+    expect(state.speedMps).toBeCloseTo(MAX_SPEED_MPS, 5);
+    previous = state.speedMps;
+    for (let index = 0; index < 40; index += 1) {
+      state = stepVehicle(network, state, { accelerate: true, brake: true }, dt);
+      expect(state.speedMps).toBeLessThanOrEqual(previous + 1e-6);
+      expect(previous - state.speedMps).toBeLessThanOrEqual(BRAKE_MPS2 * dt + 1e-6);
+      expect(state.speedMps).toBeGreaterThanOrEqual(0);
+      previous = state.speedMps;
+    }
+    expect(state.speedMps).toBe(0);
+    expect(state.mode).toBe("driving");
+  });
+
+  it("follows a bend without leaving the road or spinning in one frame", () => {
+    for (const place of places) {
+      const corner = northOf(place, 80);
+      const end = eastOf(corner, 80);
+      const network = buildRoadNetwork([
+        segment(place.name, ["1", "2", "3"], [place, corner, end], { name: place.name, oneway: "forward" }),
+      ]);
+      const edge = network.edges.find((item) => item.id.endsWith(":forward"));
+      const cornerDistance = edge!.cumulativeMeters[1] ?? 0;
+      let state = vehicleFromPlacement({
+        edge: edge!,
+        distanceMeters: cornerDistance - 0.2,
+        gapMeters: 0,
+      });
+      state = { ...state, speedMps: 12, headingDegrees: 0 };
+      const before = state.headingDegrees;
+      state = stepVehicle(network, state, { accelerate: false, brake: false }, 0.05);
+      expect(state.mode).toBe("driving");
+      expect(headingDelta(state.headingDegrees, before)).toBeLessThanOrEqual(YAW_DEGREES_PER_SECOND * 0.05 + 0.001);
+      expect(nearestPlacement(network, state.position, 5)?.gapMeters ?? 99).toBeLessThan(0.5);
+      for (let index = 0; index < 20; index += 1) {
+        state = stepVehicle(network, state, { accelerate: false, brake: false }, 0.05);
+        expect(nearestPlacement(network, state.position, 5)?.gapMeters ?? 99).toBeLessThan(0.5);
+      }
+      expect(headingDelta(state.headingDegrees, 90)).toBeLessThan(8);
+      expect(state.position.lng).toBeGreaterThan(corner.lng);
+      expect(Math.abs(state.position.lat - corner.lat)).toBeLessThan(0.0002);
+    }
+  });
+
+  it("turns onto the only connecting road without jumping to a nearby segment", () => {
+    const corner = northOf(start, 50);
+    const end = eastOf(corner, 40);
+    const beside = { lat: corner.lat + 0.00004, lng: corner.lng + 0.00004 };
+    const network = buildRoadNetwork([
+      segment("ett", ["1", "2"], [start, corner], { name: "Ett", oneway: "forward" }),
+      segment("två", ["2", "3"], [corner, end], { name: "Två", oneway: "forward" }),
+      segment("nära", ["9", "8"], [beside, eastOf(beside, 30)], { name: "Bredvid" }),
+    ]);
+    const edge = network.edgesById.get("ett:0-1:forward");
+    let state = vehicleFromPlacement({ edge: edge!, distanceMeters: edge!.lengthMeters - 0.3, gapMeters: 0 });
+    state = { ...state, speedMps: 8, headingDegrees: 0 };
+    state = stepVehicle(network, state, { accelerate: false, brake: false }, 0.05);
+    expect(state.edgeId).toContain("två");
+    expect(state.mode).toBe("driving");
+    expect(headingDelta(state.headingDegrees, 0)).toBeLessThanOrEqual(YAW_DEGREES_PER_SECOND * 0.05 + 0.001);
+    expect(nearestPlacement(network, state.position, 20)?.edge.osmWayId).not.toBe("nära");
+    const gap = nearestPlacement(network, state.position, 20)?.gapMeters ?? 99;
+    expect(gap).toBeLessThan(0.5);
+  });
+
+  it("brakes to a controlled stop when the road ends or the edge disappears", () => {
+    const end = northOf(start, 200);
+    const network = buildRoadNetwork([
+      segment("slut", ["1", "2"], [start, end], { name: "Slutgatan", oneway: "forward" }),
+    ]);
+    const edge = network.edges.find((item) => item.id.endsWith(":forward"));
+    let state = vehicleFromPlacement({ edge: edge!, distanceMeters: edge!.lengthMeters - 40, gapMeters: 0 });
+    state = { ...state, speedMps: 12, message: null };
+    let speedBeforeStop = state.speedMps;
+    for (let index = 0; index < 400 && state.mode === "driving"; index += 1) {
+      speedBeforeStop = state.speedMps;
+      state = stepVehicle(network, state, { accelerate: false, brake: false }, 0.05);
+      expect(state.speedMps).toBeGreaterThanOrEqual(0);
+      expect(Math.abs(state.position.lng - start.lng)).toBeLessThan(0.0001);
+    }
+    expect(speedBeforeStop).toBeLessThan(6);
+    expect(state.mode).toBe("ended");
+    expect(state.speedMps).toBe(0);
+    expect(state.position).toEqual(end);
+    expect(state.message).toContain("tar slut");
+
+    const missing = stepVehicle(
+      network,
+      { ...state, mode: "driving", edgeId: "borta", speedMps: 6, message: null },
+      { accelerate: true, brake: false },
+      0.05,
+    );
+    expect(missing.mode).toBe("ended");
+    expect(missing.speedMps).toBe(0);
+    expect(missing.position).toEqual(state.position);
+    expect(missing.message).toContain("finns inte");
   });
 });
 

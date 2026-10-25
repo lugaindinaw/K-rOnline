@@ -309,17 +309,43 @@ export function pointAlong(edge: RoadEdge, distanceMetersAlong: number): RoadPoi
   };
 }
 
+function headingOfSegment(edge: RoadEdge, index: number): number | null {
+  const start = edge.points[index - 1];
+  const end = edge.points[index];
+  if (!start || !end || distanceMeters(start, end) < 0.05) {
+    return null;
+  }
+  return (bearingDegrees(start, end) + 360) % 360;
+}
+
+function segmentHeading(edge: RoadEdge, distance: number): number {
+  const last = edge.points.length - 1;
+  let index = 1;
+  while (index < last && (edge.cumulativeMeters[index] ?? 0) <= distance) {
+    index += 1;
+  }
+  for (let cursor = index; cursor <= last; cursor += 1) {
+    const heading = headingOfSegment(edge, cursor);
+    if (heading !== null) {
+      return heading;
+    }
+  }
+  for (let cursor = index - 1; cursor >= 1; cursor -= 1) {
+    const heading = headingOfSegment(edge, cursor);
+    if (heading !== null) {
+      return heading;
+    }
+  }
+  return 0;
+}
+
 export function sampleEdge(
   edge: RoadEdge,
   distanceMetersAlong: number,
-  lookAheadMeters = 4,
 ): { position: RoadPoint; headingDegrees: number } {
   const distance = Math.min(edge.lengthMeters, Math.max(0, distanceMetersAlong));
-  const position = pointAlong(edge, distance);
-  const ahead = pointAlong(edge, Math.min(edge.lengthMeters, distance + lookAheadMeters));
-  if (distanceMeters(position, ahead) >= 0.05) {
-    return { position, headingDegrees: (bearingDegrees(position, ahead) + 360) % 360 };
-  }
-  const behind = pointAlong(edge, Math.max(0, distance - lookAheadMeters));
-  return { position, headingDegrees: (bearingDegrees(behind, position) + 360) % 360 };
+  return {
+    position: pointAlong(edge, distance),
+    headingDegrees: segmentHeading(edge, distance),
+  };
 }

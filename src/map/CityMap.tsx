@@ -9,6 +9,7 @@ import {
   vehicleFromPlacement,
   vehicleStatus,
   IDLE_VEHICLE,
+  MAX_FRAME_SECONDS,
   type VehicleState,
   type VehicleStatus,
 } from "../drive/drive";
@@ -36,6 +37,7 @@ import {
 import { loadMaps3dLibrary } from "./loadMaps3d";
 import { publicMapError, resolveMapScreen, type MapPhase } from "./mapScreen";
 import type { Map3DViewElement, Maps3dLibrary } from "./maps3dTypes";
+import { followCameraFromView, followCameraStep, type FollowCamera } from "./followCamera";
 import { createRoadOverlays, type RoadLine } from "./roadOverlays";
 import { mountRoadVehicle, type RoadVehicle } from "./roadVehicle";
 
@@ -110,6 +112,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
   const keysRef = useRef(new Set<string>());
   const pedalsRef = useRef({ accelerate: false, brake: false });
   const followRef = useRef(false);
+  const followCameraRef = useRef<FollowCamera | null>(null);
   const lookAltitudeRef = useRef(25);
   const cameraJobRef = useRef(0);
   const signatureRef = useRef("");
@@ -214,7 +217,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
   useEffect(() => {
     const keys = keysRef.current;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (isTextEntry(event.target)) {
+      if (isTextEntry(event.target) || isTextEntry(document.activeElement)) {
         return;
       }
       const code =
@@ -430,6 +433,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
         vehicleViewRef.current = null;
         vehicleRef.current = null;
         followRef.current = false;
+        followCameraRef.current = null;
         networkRef.current = null;
         publishRef.current(null, null);
       }
@@ -454,6 +458,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     }
 
     followRef.current = false;
+    followCameraRef.current = null;
     const placement = explained.placement ? placementWithRunway(explained.placement) : null;
     if (!placement) {
       vehicleViewRef.current?.remove();
@@ -524,14 +529,18 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
         const map = mapRef.current;
         if (followRef.current && map) {
           const current = vehicleRef.current ?? next;
-          map.center = {
+          const car = {
             lat: current.position.lat,
             lng: current.position.lng,
-            altitude: lookAltitudeRef.current,
+            headingDegrees: current.headingDegrees,
           };
-          map.range = 85;
-          map.tilt = 64;
-          map.heading = current.headingDegrees;
+          const previous = followCameraRef.current ?? followCameraFromView(map, car);
+          const camera = followCameraStep(previous, car, Math.min(Math.max(dt, 0), MAX_FRAME_SECONDS));
+          followCameraRef.current = camera;
+          map.center = { lat: camera.lat, lng: camera.lng, altitude: lookAltitudeRef.current };
+          map.range = camera.rangeMeters;
+          map.tilt = camera.tiltDegrees;
+          map.heading = camera.headingDegrees;
         }
       }
       frame = requestAnimationFrame(tick);
