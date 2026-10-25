@@ -3,14 +3,21 @@ import type { GeographicPosition } from "./coordinates";
 /**
  * Stockholm is the candidate city. Country-level availability of Maps
  * JavaScript 3D for Sweden was listed on Google's coverage table on
- * 2026-10-23. Street-level photorealistic surface coverage could not be
- * read from the interactive coverage map, so no street is selected.
+ * 2026-10-23. The candidate camera rendered a photorealistic surface on
+ * 2026-10-25. Street-level coverage was not read from the interactive
+ * coverage map, so no street is selected.
  */
 export const STOCKHOLM_CANDIDATE = {
   city: "Stockholm",
   countryCode: "SE",
   streetName: null,
-  surfaceCoverage: "unverified",
+  surfaceCoverage: "observed-at-camera",
+  viewObservation: {
+    checkedOn: "2026-10-25",
+    photorealistic: true,
+    summary:
+      "Kameran över centrala Stockholm ritade fotorealistisk 3D-yta. Ingen gata är vald.",
+  },
   countryProductListing: {
     mapsJavaScript3d: "available",
     mapTiles3d: "available",

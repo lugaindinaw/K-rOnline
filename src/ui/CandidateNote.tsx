@@ -8,8 +8,8 @@ export function CandidateNote() {
       <p className="eyebrow">Prototyp, fas 1</p>
       <h1 id="candidate-title">Stockholm, kandidatvy</h1>
       <p>
-        Kameran siktar mot centrala Stockholm. Ingen gata är vald. Fotorealistisk
-        yt-täckning för en enskild gata är inte bekräftad.
+        Kameran siktar mot centrala Stockholm. Ingen gata är vald. Vyn ritade
+        fotorealistisk 3D-yta, kontrollerad {STOCKHOLM_CANDIDATE.viewObservation.checkedOn}.
       </p>
       <dl>
         <div>
@@ -21,7 +21,9 @@ export function CandidateNote() {
         </div>
         <div>
           <dt>Gata</dt>
-          <dd>Inte låst. Täckningskartan är interaktiv och kunde inte läsas här.</dd>
+          <dd>
+            Inte låst. Kameravyn är fotorealistisk, men ingen enskild körgata är vald.
+          </dd>
         </div>
         <div>
           <dt>Den här versionen</dt>

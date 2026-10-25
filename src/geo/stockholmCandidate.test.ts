@@ -5,7 +5,8 @@ describe("STOCKHOLM_CANDIDATE", () => {
   it("keeps Stockholm as a candidate without locking a street", () => {
     expect(STOCKHOLM_CANDIDATE.city).toBe("Stockholm");
     expect(STOCKHOLM_CANDIDATE.streetName).toBeNull();
-    expect(STOCKHOLM_CANDIDATE.surfaceCoverage).toBe("unverified");
+    expect(STOCKHOLM_CANDIDATE.surfaceCoverage).toBe("observed-at-camera");
+    expect(STOCKHOLM_CANDIDATE.viewObservation.photorealistic).toBe(true);
   });
 
   it("points the camera at central Stockholm in hybrid mode", () => {
