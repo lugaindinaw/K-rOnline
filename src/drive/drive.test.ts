@@ -6,6 +6,7 @@ import {
   choiceIndexFromKey,
   driveInputFromKeys,
   isTextEntry,
+  rejoinVehicle,
   selectBranch,
   stepVehicle,
   vehicleFromPlacement,
@@ -145,6 +146,62 @@ describe("stepVehicle", () => {
     const back = selectBranch(both, turning, 1);
     expect(back.edgeId.endsWith(":backward")).toBe(true);
     expect(back.position).toEqual(junction);
+  });
+});
+
+describe("rejoinVehicle", () => {
+  it("keeps speed on the same road after the fetched area grows", () => {
+    const short = buildRoadNetwork([segment("gata", ["1", "2"], [start, junction], { name: "Gatan" })]);
+    const edge = short.edges.find((item) => item.id.endsWith(":forward"));
+    let state = vehicleFromPlacement({ edge: edge!, distanceMeters: edge!.lengthMeters - 1, gapMeters: 0 });
+    state = { ...state, speedMps: 8, mode: "ended", message: "Vägen tar slut i det hämtade området." };
+    const extended = buildRoadNetwork([
+      segment("gata", ["1", "2", "3"], [start, junction, east], { name: "Gatan" }),
+    ]);
+    const rejoined = rejoinVehicle(state, extended);
+    expect(rejoined.mode).toBe("driving");
+    expect(rejoined.speedMps).toBe(8);
+    expect(rejoined.edgeId).toContain("gata");
+    expect(rejoined.message).toBeNull();
+    expect(rejoined.position.lat).toBeGreaterThan(junction.lat - 0.00001);
+  });
+
+  it("clears the dead-end message when the same road now continues", () => {
+    const short = buildRoadNetwork([segment("gata", ["1", "2"], [start, junction], { name: "Gatan" })]);
+    const edge = short.edges.find((item) => item.id.endsWith(":forward"));
+    const stopped = {
+      ...vehicleFromPlacement({ edge: edge!, distanceMeters: edge!.lengthMeters / 2, gapMeters: 0 }),
+      speedMps: 0,
+      mode: "ended" as const,
+      message: "Vägen tar slut i det hämtade området.",
+    };
+    const extended = buildRoadNetwork([
+      segment("gata", ["1", "2", "3"], [start, junction, east], { name: "Gatan" }),
+    ]);
+    const rejoined = rejoinVehicle(stopped, extended);
+    expect(rejoined.mode).toBe("driving");
+    expect(rejoined.speedMps).toBe(0);
+    expect(rejoined.message).toBe("Bilen står på Gatan.");
+  });
+
+  it("offers a real connecting road after the next area arrives and ignores a nearby node", () => {
+    const first = buildRoadNetwork([
+      segment("ett", ["1", "2"], [start, junction], { name: "Ett", oneway: "forward" }),
+    ]);
+    const edge = first.edgesById.get("ett:0-1:forward");
+    let stopped = vehicleFromPlacement({ edge: edge!, distanceMeters: edge!.lengthMeters, gapMeters: 0 });
+    stopped = { ...stopped, mode: "ended", speedMps: 6, message: "Vägen tar slut i det hämtade området." };
+    const beside = { lat: junction.lat + 0.00003, lng: junction.lng + 0.00003 };
+    const extended = buildRoadNetwork([
+      segment("ett", ["1", "2"], [start, junction], { name: "Ett", oneway: "forward" }),
+      segment("två", ["2", "3"], [junction, east], { name: "Två", oneway: "forward" }),
+      segment("nära", ["9", "8"], [beside, { lat: beside.lat, lng: beside.lng + 0.001 }], { name: "Bredvid" }),
+    ]);
+    const rejoined = rejoinVehicle(stopped, extended);
+    expect(rejoined.mode).toBe("driving");
+    expect(rejoined.roadName).toBe("Två");
+    expect(rejoined.edgeId).toContain("två");
+    expect((extended.outgoing.get("2") ?? []).some((item) => item.osmWayId === "nära")).toBe(false);
   });
 });
 

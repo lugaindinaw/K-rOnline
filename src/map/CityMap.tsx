@@ -3,6 +3,7 @@ import {
   choiceIndexFromKey,
   driveInputFromKeys,
   isTextEntry,
+  rejoinVehicle,
   selectBranch,
   stepVehicle,
   vehicleFromPlacement,
@@ -15,6 +16,12 @@ import { formatGeographicPosition, readGeographicPosition, type GeographicPositi
 import { readGroundElevation } from "../geo/groundElevation";
 import { STOCKHOLM_CANDIDATE } from "../geo/stockholmCandidate";
 import type { RoadPoint, RoadSegment } from "../roads/drivingRoads";
+import {
+  EXTEND_LOADING_MESSAGE,
+  prefetchCenter,
+  shouldPrefetch,
+  type CoverageCircle,
+} from "../roads/roadCoverage";
 import {
   explainRoads,
   nearestPlacement,
@@ -48,10 +55,13 @@ type CityMapProps = {
   apiKey: string;
   onRetry: () => void;
   roads: RoadSegment[];
+  areas: CoverageCircle[];
   anchor: RoadPoint | null;
   focus: MapFocus | null;
+  extendHint: string | null;
   onReadyChange: (ready: boolean) => void;
   onVehicleChange: (status: VehicleStatus) => void;
+  onExtendRoads: (center: RoadPoint) => void;
 };
 
 function moveCamera(map: Map3DViewElement, lat: number, lng: number, altitude: number): void {
@@ -81,7 +91,7 @@ function poseOf(state: VehicleState) {
 }
 
 export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMap(
-  { apiKey, onRetry, roads, anchor, focus, onReadyChange, onVehicleChange },
+  { apiKey, onRetry, roads, areas, anchor, focus, extendHint, onReadyChange, onVehicleChange, onExtendRoads },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -90,6 +100,10 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
   const linesRef = useRef<RoadLine[]>([]);
   const onReadyChangeRef = useRef(onReadyChange);
   const onVehicleChangeRef = useRef(onVehicleChange);
+  const onExtendRef = useRef(onExtendRoads);
+  const areasRef = useRef(areas);
+  const extendHintRef = useRef(extendHint);
+  const carryRef = useRef<VehicleState | null>(null);
   const vehicleRef = useRef<VehicleState | null>(null);
   const networkRef = useRef<RoadNetwork | null>(null);
   const vehicleViewRef = useRef<RoadVehicle | null>(null);
@@ -111,6 +125,9 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
 
   onReadyChangeRef.current = onReadyChange;
   onVehicleChangeRef.current = onVehicleChange;
+  onExtendRef.current = onExtendRoads;
+  areasRef.current = areas;
+  extendHintRef.current = extendHint;
 
   const publishRef = useRef<(state: VehicleState | null, message?: string | null) => void>(() => undefined);
   publishRef.current = (state, message) => {
@@ -402,28 +419,48 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
   }, [roads, phase, mapVersion]);
 
   useEffect(() => {
-    vehicleViewRef.current?.remove();
-    vehicleViewRef.current = null;
-    vehicleRef.current = null;
-    followRef.current = false;
-
+    const carried = carryRef.current;
+    carryRef.current = null;
     const map = mapRef.current;
     const library = libraryRef.current;
     if (!map || !library || phase !== "ready" || roads.length === 0) {
-      networkRef.current = null;
-      publishRef.current(null, null);
+      if (roads.length === 0) {
+        carryRef.current = null;
+        vehicleViewRef.current?.remove();
+        vehicleViewRef.current = null;
+        vehicleRef.current = null;
+        followRef.current = false;
+        networkRef.current = null;
+        publishRef.current(null, null);
+      }
       return;
     }
 
     const explained = explainRoads(roads, anchor);
     networkRef.current = explained.network;
+    if (carried) {
+      const rejoined = rejoinVehicle(carried, explained.network);
+      vehicleRef.current = rejoined;
+      const view = vehicleViewRef.current ?? mountRoadVehicle(map, library);
+      vehicleViewRef.current = view;
+      view?.update(poseOf(rejoined));
+      publishRef.current(rejoined);
+      return () => {
+        carryRef.current = vehicleRef.current;
+        vehicleViewRef.current?.remove();
+        vehicleViewRef.current = null;
+        vehicleRef.current = null;
+      };
+    }
+
+    followRef.current = false;
     const placement = explained.placement ? placementWithRunway(explained.placement) : null;
     if (!placement) {
+      vehicleViewRef.current?.remove();
+      vehicleViewRef.current = null;
+      vehicleRef.current = null;
       publishRef.current(null, explained.message);
-      return () => {
-        vehicleRef.current = null;
-        followRef.current = false;
-      };
+      return;
     }
 
     const placed = vehicleFromPlacement(placement);
@@ -443,10 +480,10 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     flyToCarRef.current(placed.position.lat, placed.position.lng, placed.headingDegrees);
 
     return () => {
+      carryRef.current = vehicleRef.current;
       vehicleViewRef.current?.remove();
       vehicleViewRef.current = null;
       vehicleRef.current = null;
-      followRef.current = false;
     };
   }, [roads, anchor, phase, mapVersion]);
 
@@ -468,7 +505,17 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
         if (input.accelerate) {
           followRef.current = true;
         }
-        const next = stepVehicle(network, vehicle, input, dt);
+        let next = stepVehicle(network, vehicle, input, dt);
+        if (next.mode === "ended" && shouldPrefetch(next.position, areasRef.current)) {
+          const hint = extendHintRef.current;
+          const message = hint && hint.length > 0 ? hint : EXTEND_LOADING_MESSAGE;
+          if (next.message !== message) {
+            next = { ...next, message };
+          }
+        }
+        if (shouldPrefetch(next.position, areasRef.current)) {
+          onExtendRef.current(prefetchCenter(next.position, next.headingDegrees));
+        }
         if (next !== vehicle) {
           vehicleRef.current = next;
           vehicleViewRef.current?.update(poseOf(next));

@@ -1,4 +1,5 @@
 import {
+  nearestPlacement,
   sampleEdge,
   type RoadEdge,
   type RoadNetwork,
@@ -169,6 +170,43 @@ function arrive(network: RoadNetwork, edge: RoadEdge, leftoverMeters: number, sp
     );
   }
   return located(current, current.lengthMeters, 0, "ended", "Vägen tar slut i det hämtade området.", []);
+}
+
+export const REJOIN_METERS = 25;
+
+export function continuePastEnd(network: RoadNetwork, edge: RoadEdge, speedMps: number): VehicleState {
+  return arrive(network, edge, 0, speedMps);
+}
+
+export function rejoinVehicle(previous: VehicleState, network: RoadNetwork): VehicleState {
+  const placement = nearestPlacement(network, previous.position, REJOIN_METERS);
+  if (!placement) {
+    return {
+      ...previous,
+      speedMps: 0,
+      mode: "ended",
+      choices: [],
+      message: "Bilen hittar inte vägen i det uppdaterade området.",
+    };
+  }
+  const remaining = placement.edge.lengthMeters - placement.distanceMeters;
+  if (remaining <= 8) {
+    return continuePastEnd(network, placement.edge, previous.speedMps);
+  }
+  const sample = sampleEdge(placement.edge, placement.distanceMeters);
+  const road = placement.edge.name ?? "en väg utan namn";
+  return {
+    ...previous,
+    edgeId: placement.edge.id,
+    distanceMeters: placement.distanceMeters,
+    position: sample.position,
+    headingDegrees: sample.headingDegrees,
+    roadName: placement.edge.name,
+    mode: "driving",
+    choices: [],
+    speedMps: previous.speedMps,
+    message: previous.speedMps > 0 ? null : `Bilen står på ${road}.`,
+  };
 }
 
 export function stepVehicle(

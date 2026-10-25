@@ -3,12 +3,27 @@ import { STOCKHOLM_CANDIDATE } from "../geo/stockholmCandidate";
 import { CityMap, type MapFocus, type SwedenMapHandle } from "../map/CityMap";
 import { searchSwedishPlaces, type SwedishPlace } from "../places/swedishPlaces";
 import { IDLE_VEHICLE, type VehicleStatus } from "../drive/drive";
-import { fetchDrivingRoads } from "../roads/fetchDrivingRoads";
+import { fetchDrivingRoads, roadRequestKey } from "../roads/fetchDrivingRoads";
 import type { RoadPoint, RoadSegment } from "../roads/drivingRoads";
+import {
+  EXTEND_EMPTY_MESSAGE,
+  EXTEND_LOADING_MESSAGE,
+  extendFailureMessage,
+  mergeRoadSegments,
+  pruneCoverage,
+  type CoverageCircle,
+} from "../roads/roadCoverage";
 import { ConfigScreen } from "../ui/ConfigScreen";
 import { SwedenPanel } from "../ui/SwedenPanel";
 
 const startCenter = STOCKHOLM_CANDIDATE.camera.center;
+
+type StoredArea = CoverageCircle & {
+  key: string;
+  roads: RoadSegment[];
+  truncated: boolean;
+  matched: number;
+};
 
 export function SwedenSession({ apiKey }: { apiKey: string | null }) {
   const mapRef = useRef<SwedenMapHandle>(null);
@@ -18,6 +33,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
   const [placeMessage, setPlaceMessage] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
   const [roads, setRoads] = useState<RoadSegment[]>([]);
+  const [areas, setAreas] = useState<CoverageCircle[]>([]);
   const [anchor, setAnchor] = useState<RoadPoint | null>(startCenter);
   const [vehicle, setVehicle] = useState<VehicleStatus>(IDLE_VEHICLE);
   const [matched, setMatched] = useState(0);
@@ -25,20 +41,50 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
   const [radiusMeters, setRadiusMeters] = useState<number | null>(null);
   const [areaLabel, setAreaLabel] = useState("Stockholm, startposition");
   const [roadError, setRoadError] = useState<string | null>(null);
+  const [extendNote, setExtendNote] = useState<string | null>(null);
   const [loadingRoads, setLoadingRoads] = useState(true);
+  const coverageRef = useRef<StoredArea[]>([]);
+  const loadedKeys = useRef(new Set<string>());
+  const failureKeys = useRef(new Set<string>());
+  const pendingKeys = useRef(new Set<string>());
   const [focus, setFocus] = useState<MapFocus | null>(null);
   const [mapReady, setMapReady] = useState(false);
+
+  function applyCoverage(stored: StoredArea[], focus: RoadPoint) {
+    const kept = pruneCoverage(stored, focus);
+    const keepKeys = new Set(kept.map((area) => area.key));
+    for (const key of loadedKeys.current) {
+      if (!keepKeys.has(key) && !failureKeys.current.has(key)) {
+        loadedKeys.current.delete(key);
+      }
+    }
+    for (const area of kept) {
+      loadedKeys.current.add(area.key);
+    }
+    coverageRef.current = kept;
+    setAreas(kept.map((area) => ({ center: area.center, radiusMeters: area.radiusMeters })));
+    setRoads(mergeRoadSegments(kept.flatMap((area) => area.roads)));
+    setTruncated(kept.some((area) => area.truncated));
+    setMatched(kept.reduce((sum, area) => sum + area.matched, 0));
+    setRadiusMeters(kept[0]?.radiusMeters ?? null);
+  }
 
   async function loadRoads(center: { lat: number; lng: number }, label: string) {
     const requestId = requestRef.current + 1;
     requestRef.current = requestId;
     setLoadingRoads(true);
     setRoadError(null);
+    setExtendNote(null);
     setAreaLabel(label);
     setRoads([]);
+    setAreas([]);
     setAnchor(center);
     setMatched(0);
     setTruncated(false);
+    coverageRef.current = [];
+    loadedKeys.current = new Set();
+    failureKeys.current = new Set();
+    pendingKeys.current = new Set();
     const result = await fetchDrivingRoads({ lat: center.lat, lng: center.lng });
     if (requestId !== requestRef.current) {
       return;
@@ -46,6 +92,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
     setLoadingRoads(false);
     if (!result.ok) {
       setRoads([]);
+      setAreas([]);
       setAnchor(null);
       setMatched(0);
       setTruncated(false);
@@ -53,10 +100,61 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
       setRoadError(result.message);
       return;
     }
-    setRoads(result.area.roads);
-    setMatched(result.area.matched);
-    setTruncated(result.area.truncated);
-    setRadiusMeters(result.area.radiusMeters);
+    const key = roadRequestKey(result.area.center, result.area.radiusMeters);
+    applyCoverage(
+      [
+        {
+          key,
+          center: result.area.center,
+          radiusMeters: result.area.radiusMeters,
+          roads: result.area.roads,
+          truncated: result.area.truncated,
+          matched: result.area.matched,
+        },
+      ],
+      center,
+    );
+  }
+
+  async function extendRoads(center: RoadPoint) {
+    const requestId = requestRef.current;
+    const key = roadRequestKey(center);
+    if (loadedKeys.current.has(key) || pendingKeys.current.has(key) || failureKeys.current.has(key)) {
+      return;
+    }
+    pendingKeys.current.add(key);
+    setExtendNote(EXTEND_LOADING_MESSAGE);
+    const result = await fetchDrivingRoads(center);
+    pendingKeys.current.delete(key);
+    if (requestId !== requestRef.current) {
+      return;
+    }
+    if (!result.ok) {
+      failureKeys.current.add(key);
+      setExtendNote(extendFailureMessage(result.message));
+      return;
+    }
+    if (result.area.roads.length === 0) {
+      failureKeys.current.add(key);
+      setExtendNote(EXTEND_EMPTY_MESSAGE);
+      return;
+    }
+    const areaKey = roadRequestKey(result.area.center, result.area.radiusMeters);
+    applyCoverage(
+      [
+        ...coverageRef.current.filter((area) => area.key !== areaKey),
+        {
+          key: areaKey,
+          center: result.area.center,
+          radiusMeters: result.area.radiusMeters,
+          roads: result.area.roads,
+          truncated: result.area.truncated,
+          matched: result.area.matched,
+        },
+      ],
+      center,
+    );
+    setExtendNote(null);
   }
 
   function selectPlace(place: SwedishPlace) {
@@ -110,6 +208,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
         truncated={truncated}
         loadingRoads={loadingRoads}
         roadError={roadError}
+        extendNote={extendNote}
         vehicle={vehicle}
         onChooseBranch={(index) => {
           mapRef.current?.chooseBranch(index);
@@ -132,10 +231,15 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
           ref={mapRef}
           apiKey={apiKey}
           roads={roads}
+          areas={areas}
           anchor={anchor}
           focus={focus}
+          extendHint={extendNote}
           onReadyChange={setMapReady}
           onVehicleChange={setVehicle}
+          onExtendRoads={(center) => {
+            void extendRoads(center);
+          }}
           onRetry={() => {
             window.location.reload();
           }}
