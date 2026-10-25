@@ -1,6 +1,4 @@
-import { CityMap } from "../map/CityMap";
-import { CandidateNote } from "../ui/CandidateNote";
-import { ConfigScreen } from "../ui/ConfigScreen";
+import { SwedenSession } from "./SwedenSession";
 
 type AppProps = {
   apiKey: string | null;
@@ -9,17 +7,7 @@ type AppProps = {
 export function App({ apiKey }: AppProps) {
   return (
     <main className="app">
-      <CandidateNote />
-      {apiKey ? (
-        <CityMap
-          apiKey={apiKey}
-          onRetry={() => {
-            window.location.reload();
-          }}
-        />
-      ) : (
-        <ConfigScreen />
-      )}
+      <SwedenSession apiKey={apiKey} />
     </main>
   );
 }

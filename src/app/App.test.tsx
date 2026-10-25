@@ -7,7 +7,9 @@ describe("App", () => {
     const html = renderToStaticMarkup(<App apiKey={null} />);
     expect(html).toContain("Google-nyckel saknas");
     expect(html).toContain("VITE_GOOGLE_MAPS_API_KEY");
-    expect(html).toContain("Ingen gata är vald");
+    expect(html).toContain("Hela Sverige");
+    expect(html).toContain("Stockholm är startposition");
+    expect(html).toContain("OpenStreetMap");
     expect(html).not.toContain("gmp-map-3d");
     expect(html).not.toContain("AIza");
   });

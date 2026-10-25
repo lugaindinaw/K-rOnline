@@ -146,6 +146,112 @@ button {
   cursor: pointer;
 }
 
+button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+h2 {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+}
+
+label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.78rem;
+  font-weight: 650;
+  color: #6d6458;
+}
+
+input {
+  width: 100%;
+  border: 1px solid #ddd6c8;
+  background: #fffdf8;
+  color: inherit;
+  padding: 10px 12px;
+}
+
+.place-search {
+  margin-top: 16px;
+}
+
+.place-search-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.chip,
+.place-choice {
+  background: #fffdf8;
+  color: #1f4d3a;
+  border: 1px solid #1f4d3a;
+}
+
+.place-results,
+.road-names {
+  margin: 8px 0 12px;
+  padding-left: 18px;
+}
+
+.place-results {
+  list-style: none;
+  padding-left: 0;
+}
+
+.place-choice {
+  width: 100%;
+  margin-bottom: 6px;
+  text-align: left;
+}
+
+.road-block {
+  margin-top: 8px;
+}
+
+.road-error {
+  color: #6e2c26;
+}
+
+.drive-block {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #ddd6c8;
+}
+
+.drive-speed {
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.drive-choices,
+.drive-pedals {
+  display: grid;
+  gap: 8px;
+}
+
+.drive-pedals {
+  grid-template-columns: 1fr 1fr;
+  margin-bottom: 8px;
+}
+
+details {
+  margin-top: 16px;
+}
+
+summary {
+  cursor: pointer;
+  color: #1f4d3a;
+}
+
 .map-pending,
 .click-readout {
   margin: 0;

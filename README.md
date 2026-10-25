@@ -1,6 +1,6 @@
 # KörOnline
 
-Webbprototyp för en svensk körvy. Den här versionen visar bara en 3D-karta över centrala Stockholm. Ingen gata är låst, och det finns ingen bil, inget vägnät och inget konto.
+Webbprototyp för en svensk körvy. Google Maps 3D är kartan. Stockholm är bara startposition. Vägar för det valda området hämtas från OpenStreetMap när de behövs, inte som ett färdigt utdrag av hela Sverige.
 
 ## Starta
 
@@ -10,9 +10,13 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Öppna `http://localhost:5173`. Sätt `VITE_GOOGLE_MAPS_API_KEY` i `.env.local` och starta om dev-servern. Nyckeln hör hemma i webbläsaren, så begränsa den i Google Cloud till Maps JavaScript API och till `http://localhost:5173/*`.
+Öppna `http://localhost:5173`. Sätt `VITE_GOOGLE_MAPS_API_KEY` i `.env.local` eller i processens miljö och starta om dev-servern. Nyckeln hör hemma i webbläsaren, så begränsa den i Google Cloud till Maps JavaScript API och till `http://localhost:5173/*`.
 
-Utan nyckel visar sidan konfigurationsläget. Med nyckel laddas Maps JavaScript API, biblioteket `maps3d`, och en `Map3DElement` i läget `HYBRID`.
+Utan nyckel kan platser och väglistor fortfarande sökas. Själva 3D-kartan kräver nyckeln. Med nyckel laddas Maps JavaScript API, biblioteket `maps3d`, och en `Map3DElement` i läget `HYBRID`.
+
+Sök en ort i Sverige, eller hämta vägar där kameran står. Platssökningen går till Nominatim. Kameran höjs till marknivån för platsen. Vägfrågan går via utvecklingsservern till Overpass, med en radie på 600 meter. Fler än 500 vägsträckor beskärs så att högre vägklasser behålls.
+
+När vägarna har noder från OpenStreetMap placeras en enkel bil på närmaste mittlinje, högst 100 meter från den valda punkten. Håll W eller pil upp för att gasa, och S eller pil ned för att bromsa. Knapparna Gas och Broms ligger kvar tills du byter. Bilen följer vägens geometri. Vid en korsning där flera vägar delar en nod stannar den, och du väljer fortsatt väg med 1–9 eller knapparna i panelen. Klicka nära en väglinje för att flytta bilen. Kameran följer bilen efter första gaspådraget.
 
 ## Kontroller
 
@@ -24,6 +28,6 @@ npm run build
 
 ## Avgränsning
 
-Fotorealistisk yt-täckning för en enskild stockholmsgata är inte verifierad. Sverige är markerad för Maps JavaScript 3D i [Googles landtabell](https://developers.google.com/maps/coverage). Gatans yta måste kontrolleras på [täckningskartan](https://developers.google.com/maps/documentation/javascript/3d/coverage) och i den här vyn när en nyckel finns.
+Det här är inte körträning. Bilen har enkel gas och broms längs mittlinjen, inte trafikregler, körfält eller realistisk fysik. Vägarna är mittlinjer från OpenStreetMap, inte NVDB. Bara vägar som delar en OSM-nod kopplas ihop, och bara inom det hämtade området. Fotorealistisk 3D varierar över landet och är inte ett krav för att vägdata ska visas. Startvyn över centrala Stockholm ritade fotorealistisk 3D-yta 2026-10-25.
 
-NVDB och OSM är inte inlästa. De ska hållas åtskilda när vägnätet läggs till senare, i egna moduler bredvid `src/geo` och `src/map`. Bil, körfysik och kameror för första- och tredjeperson ska också bli egna moduler. De finns inte i den här versionen.
+En offentlig Overpass-server kan vara upptagen. Prototypen provar då en andra server. Sverige avgränsas med en förenklad kustlinje och en buffert på 8 km, så enstaka gränsorter kan hamna fel.
