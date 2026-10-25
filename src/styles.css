@@ -221,6 +221,28 @@ input {
   color: #6e2c26;
 }
 
+.drive-block {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #ddd6c8;
+}
+
+.drive-speed {
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.drive-choices,
+.drive-pedals {
+  display: grid;
+  gap: 8px;
+}
+
+.drive-pedals {
+  grid-template-columns: 1fr 1fr;
+  margin-bottom: 8px;
+}
+
 details {
   margin-top: 16px;
 }

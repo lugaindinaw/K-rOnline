@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { STOCKHOLM_CANDIDATE } from "../geo/stockholmCandidate";
 import { CityMap, type MapFocus, type SwedenMapHandle } from "../map/CityMap";
 import { searchSwedishPlaces, type SwedishPlace } from "../places/swedishPlaces";
+import { IDLE_VEHICLE, type VehicleStatus } from "../drive/drive";
 import { fetchDrivingRoads } from "../roads/fetchDrivingRoads";
-import type { RoadSegment } from "../roads/drivingRoads";
+import type { RoadPoint, RoadSegment } from "../roads/drivingRoads";
 import { ConfigScreen } from "../ui/ConfigScreen";
 import { SwedenPanel } from "../ui/SwedenPanel";
 
@@ -17,6 +18,8 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
   const [placeMessage, setPlaceMessage] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
   const [roads, setRoads] = useState<RoadSegment[]>([]);
+  const [anchor, setAnchor] = useState<RoadPoint | null>(startCenter);
+  const [vehicle, setVehicle] = useState<VehicleStatus>(IDLE_VEHICLE);
   const [matched, setMatched] = useState(0);
   const [truncated, setTruncated] = useState(false);
   const [radiusMeters, setRadiusMeters] = useState<number | null>(null);
@@ -33,6 +36,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
     setRoadError(null);
     setAreaLabel(label);
     setRoads([]);
+    setAnchor(center);
     setMatched(0);
     setTruncated(false);
     const result = await fetchDrivingRoads({ lat: center.lat, lng: center.lng });
@@ -42,6 +46,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
     setLoadingRoads(false);
     if (!result.ok) {
       setRoads([]);
+      setAnchor(null);
       setMatched(0);
       setTruncated(false);
       setRadiusMeters(null);
@@ -105,6 +110,13 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
         truncated={truncated}
         loadingRoads={loadingRoads}
         roadError={roadError}
+        vehicle={vehicle}
+        onChooseBranch={(index) => {
+          mapRef.current?.chooseBranch(index);
+        }}
+        onPedal={(pedal, pressed) => {
+          mapRef.current?.setPedal(pedal, pressed);
+        }}
         cameraAvailable={Boolean(apiKey) && mapReady}
         onLoadAtCamera={() => {
           const center = mapRef.current?.readCenter() ?? null;
@@ -120,8 +132,10 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
           ref={mapRef}
           apiKey={apiKey}
           roads={roads}
+          anchor={anchor}
           focus={focus}
           onReadyChange={setMapReady}
+          onVehicleChange={setVehicle}
           onRetry={() => {
             window.location.reload();
           }}

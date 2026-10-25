@@ -16,8 +16,11 @@ describe("createRoadOverlays", () => {
     const lines = createRoadOverlays(parent, Polyline, [
       {
         id: "1",
+        osmWayId: "1",
         name: "Storgatan",
         highway: "primary",
+        oneway: "both",
+        nodeIds: ["1", "2"],
         coordinates: [
           { lat: 65.25, lng: 19.65 },
           { lat: 65.26, lng: 19.66 },

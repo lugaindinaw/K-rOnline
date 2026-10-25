@@ -1,7 +1,7 @@
 export const ROAD_AREA_RADIUS_METERS = 600;
 export const MIN_ROAD_RADIUS_METERS = 200;
 export const MAX_ROAD_RADIUS_METERS = 1500;
-export const MAX_ROADS_PER_AREA = 120;
+export const MAX_ROADS_PER_AREA = 500;
 
 const DRIVING_HIGHWAYS = [
   "motorway",
@@ -48,11 +48,16 @@ export type RoadPoint = {
   lng: number;
 };
 
+export type OneWay = "forward" | "backward" | "both";
+
 export type RoadSegment = {
   id: string;
+  osmWayId: string;
   name: string | null;
   highway: string;
+  oneway: OneWay;
   coordinates: RoadPoint[];
+  nodeIds: string[] | null;
 };
 
 export type RoadArea = {
@@ -81,7 +86,62 @@ export function buildDrivingRoadQuery(
   const radius = clampRoadRadius(radiusMeters);
   const lat = center.lat.toFixed(6);
   const lng = center.lng.toFixed(6);
-  return `[out:json][timeout:20];way["highway"~"^(${HIGHWAY_PATTERN})$"](around:${radius},${lat},${lng});out tags geom;`;
+  return `[out:json][timeout:20];way["highway"~"^(${HIGHWAY_PATTERN})$"](around:${radius},${lat},${lng});out geom;`;
+}
+
+function readOneWay(value: unknown): OneWay {
+  if (value === "yes" || value === "1" || value === "true" || value === true) {
+    return "forward";
+  }
+  if (value === "-1" || value === "reverse") {
+    return "backward";
+  }
+  return "both";
+}
+
+function readWayGeometry(
+  geometry: unknown,
+  nodes: unknown,
+): { coordinates: RoadPoint[]; nodeIds: string[] | null } | null {
+  if (!Array.isArray(geometry)) {
+    return null;
+  }
+  const nodeList = Array.isArray(nodes) && nodes.length === geometry.length ? nodes : null;
+  const coordinates: RoadPoint[] = [];
+  const nodeIds: string[] = [];
+  let linked = nodeList !== null;
+  for (let index = 0; index < geometry.length; index += 1) {
+    const point = geometry[index];
+    if (typeof point !== "object" || point === null) {
+      linked = false;
+      continue;
+    }
+    const lat = (point as { lat?: unknown }).lat;
+    const lon = (point as { lon?: unknown }).lon;
+    if (typeof lat !== "number" || typeof lon !== "number" || !Number.isFinite(lat) || !Number.isFinite(lon)) {
+      linked = false;
+      continue;
+    }
+    coordinates.push({ lat, lng: lon });
+    if (!nodeList) {
+      continue;
+    }
+    const node = nodeList[index];
+    if (typeof node === "number" && Number.isFinite(node)) {
+      nodeIds.push(String(node));
+    } else if (typeof node === "string" && node.trim()) {
+      nodeIds.push(node);
+    } else {
+      linked = false;
+    }
+  }
+  if (coordinates.length < 2) {
+    return null;
+  }
+  return {
+    coordinates,
+    nodeIds: linked && nodeIds.length === coordinates.length ? nodeIds : null,
+  };
 }
 
 export function distanceMeters(from: RoadPoint, to: RoadPoint): number {
@@ -127,6 +187,7 @@ export function parseOverpassRoads(payload: unknown): RoadSegment[] {
       id?: unknown;
       tags?: unknown;
       geometry?: unknown;
+      nodes?: unknown;
     };
     if (record.type !== "way" || (typeof record.id !== "number" && typeof record.id !== "string")) {
       continue;
@@ -139,33 +200,20 @@ export function parseOverpassRoads(payload: unknown): RoadSegment[] {
     if (typeof highway !== "string" || !DRIVING_HIGHWAYS.includes(highway as (typeof DRIVING_HIGHWAYS)[number])) {
       continue;
     }
-    if (!Array.isArray(record.geometry)) {
-      continue;
-    }
-    const coordinates: RoadPoint[] = [];
-    for (const point of record.geometry) {
-      if (typeof point !== "object" || point === null) {
-        continue;
-      }
-      const lat = (point as { lat?: unknown }).lat;
-      const lon = (point as { lon?: unknown }).lon;
-      if (typeof lat !== "number" || typeof lon !== "number") {
-        continue;
-      }
-      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-        continue;
-      }
-      coordinates.push({ lat, lng: lon });
-    }
-    if (coordinates.length < 2) {
+    const geometry = readWayGeometry(record.geometry, record.nodes);
+    if (!geometry) {
       continue;
     }
     const name = (tags as { name?: unknown }).name;
+    const wayId = String(record.id);
     roads.push({
-      id: String(record.id),
+      id: wayId,
+      osmWayId: wayId,
       name: typeof name === "string" && name.trim() ? name.trim() : null,
       highway,
-      coordinates,
+      oneway: readOneWay((tags as { oneway?: unknown }).oneway),
+      coordinates: geometry.coordinates,
+      nodeIds: geometry.nodeIds,
     });
   }
   return roads;
@@ -179,26 +227,34 @@ export function sliceRoadsNear(
   const radius = clampRoadRadius(radiusMeters);
   const sliced: RoadSegment[] = [];
   for (const road of roads) {
+    const linked = road.nodeIds !== null && road.nodeIds.length === road.coordinates.length;
     let current: RoadPoint[] = [];
+    let currentNodes: string[] = [];
     let part = 0;
     const flush = () => {
       if (current.length >= 2) {
         sliced.push({
           ...road,
           id: part === 0 ? road.id : `${road.id}:${part}`,
+          osmWayId: road.osmWayId,
           coordinates: current,
+          nodeIds: linked ? currentNodes : null,
         });
         part += 1;
       }
       current = [];
+      currentNodes = [];
     };
-    for (const point of road.coordinates) {
+    road.coordinates.forEach((point, index) => {
       if (distanceMeters(center, point) <= radius) {
         current.push(point);
+        if (linked && road.nodeIds) {
+          currentNodes.push(road.nodeIds[index] ?? "");
+        }
       } else {
         flush();
       }
-    }
+    });
     flush();
   }
   return sliced;

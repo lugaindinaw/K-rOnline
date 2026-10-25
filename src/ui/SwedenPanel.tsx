@@ -1,3 +1,4 @@
+import { IDLE_VEHICLE, type VehicleStatus } from "../drive/drive";
 import { STOCKHOLM_CANDIDATE } from "../geo/stockholmCandidate";
 import { PLACE_EXAMPLES, type SwedishPlace } from "../places/swedishPlaces";
 import { highwayLabel, roadSummary, type RoadSegment } from "../roads/drivingRoads";
@@ -18,6 +19,9 @@ type SwedenPanelProps = {
   truncated: boolean;
   loadingRoads: boolean;
   roadError: string | null;
+  vehicle: VehicleStatus;
+  onChooseBranch: (index: number) => void;
+  onPedal: (pedal: "accelerate" | "brake", pressed: boolean) => void;
   onLoadAtCamera: () => void;
   cameraAvailable: boolean;
 };
@@ -38,6 +42,9 @@ export function SwedenPanel({
   truncated,
   loadingRoads,
   roadError,
+  vehicle = IDLE_VEHICLE,
+  onChooseBranch,
+  onPedal,
   onLoadAtCamera,
   cameraAvailable,
 }: SwedenPanelProps) {
@@ -51,7 +58,8 @@ export function SwedenPanel({
       <h1 id="sweden-title">Hela Sverige</h1>
       <p>
         Stockholm är startposition och exempelområde. Sök en stad, en mindre ort
-        eller flytta kameran. Vägar hämtas bara för området runt den valda punkten.
+        eller flytta kameran. Vägar från OpenStreetMap hämtas bara för området
+        runt den valda punkten.
       </p>
       <form
         className="place-search"
@@ -135,6 +143,49 @@ export function SwedenPanel({
           Hämta vägar vid kameran
         </button>
       </div>
+      <div className="drive-block">
+        <h2>Köra</h2>
+        <p>
+          Håll W eller pil upp för att gasa, och S eller pil ned för att bromsa. Knapparna Gas och
+          Broms ligger kvar tills du byter. Vid en korsning väljer du väg med 1–9.
+        </p>
+        <div className="drive-pedals">
+          <button
+            type="button"
+            onClick={() => {
+              onPedal("brake", false);
+              onPedal("accelerate", true);
+            }}
+          >
+            Gas
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onPedal("accelerate", false);
+              onPedal("brake", true);
+            }}
+          >
+            Broms
+          </button>
+        </div>
+        {vehicle.placed ? (
+          <p className="drive-speed" role="status">
+            {vehicle.speedKmh} km/h
+            {vehicle.roadName ? ` · ${vehicle.roadName}` : ""}
+          </p>
+        ) : null}
+        {vehicle.message ? <p role="status">{vehicle.message}</p> : null}
+        {vehicle.choices.length > 0 ? (
+          <div className="drive-choices">
+            {vehicle.choices.map((choice) => (
+              <button key={choice.edgeId} type="button" onClick={() => onChooseBranch(choice.index)}>
+                {choice.index}. {choice.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
       <p>
         Startvyn över Stockholm visade fotorealistisk 3D{" "}
         {STOCKHOLM_CANDIDATE.viewObservation.checkedOn}. Täckningen varierar i landet.
@@ -143,9 +194,11 @@ export function SwedenPanel({
       <details>
         <summary>Vad som saknas för körträning</summary>
         <p>
-          Ingen bil, ingen rutt och ingen koppling mellan vägarna. Linjerna är
-          mittlinjer från OpenStreetMap, inte NVDB, körfält eller trafikregler.
-          Bara ett område i taget hämtas. En offentlig vägtjänst kan vara långsam.
+          Bilen följer mittlinjen i det hämtade området. Modellen är förstorad så att den syns.
+          Det finns ingen trafik,
+          inga körfält, ingen NVDB och ingen realistisk bilfysik. En väg utanför
+          området går inte att följa. Om listan beskärs kan en korsning saknas.
+          Kameran följer bilen först efter första gaspådraget.
         </p>
       </details>
     </section>
