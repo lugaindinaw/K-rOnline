@@ -200,7 +200,7 @@ export function SwedenPanel({
           Bilen följer mittlinjen. Nästa vägavsnitt hämtas automatiskt nära kanten av området.
           Modellen är förstorad så att den syns. Det finns ingen trafik,
           inga körfält, ingen NVDB och ingen realistisk bilfysik. Om listan beskärs kan en korsning saknas.
-          Kameran följer bilen först efter första gaspådraget.
+          Kameran följer bakom bilen efter första gaspådraget och tittar framåt längs vägen.
         </p>
       </details>
     </section>

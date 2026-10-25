@@ -12,7 +12,10 @@ export const ACCEL_MPS2 = 4.5;
 export const BRAKE_MPS2 = 8;
 export const COAST_MPS2 = 0.6;
 export const MAX_STEP_SECONDS = 0.05;
+export const MAX_FRAME_SECONDS = 0.25;
+export const YAW_DEGREES_PER_SECOND = 180;
 const MAX_TRANSFERS = 32;
+const STOP_SNAP_METERS = 2;
 
 export type DriveInput = {
   accelerate: boolean;
@@ -63,6 +66,47 @@ function clampStep(dtSeconds: number): number {
     return 0;
   }
   return Math.min(MAX_STEP_SECONDS, dtSeconds);
+}
+
+function clampFrame(dtSeconds: number): number {
+  if (!Number.isFinite(dtSeconds) || dtSeconds <= 0) {
+    return 0;
+  }
+  return Math.min(MAX_FRAME_SECONDS, dtSeconds);
+}
+
+export function stoppingDistanceMeters(speedMps: number): number {
+  const speed = Math.max(0, speedMps);
+  return (speed * speed) / (2 * BRAKE_MPS2);
+}
+
+export function turnToward(
+  currentDegrees: number,
+  targetDegrees: number,
+  dtSeconds: number,
+  maxDegreesPerSecond = YAW_DEGREES_PER_SECOND,
+): number {
+  if (!Number.isFinite(dtSeconds) || dtSeconds <= 0) {
+    return ((currentDegrees % 360) + 360) % 360;
+  }
+  const from = ((currentDegrees % 360) + 360) % 360;
+  const to = ((targetDegrees % 360) + 360) % 360;
+  let delta = to - from;
+  if (delta > 180) {
+    delta -= 360;
+  }
+  if (delta < -180) {
+    delta += 360;
+  }
+  const maxStep = Math.max(0, maxDegreesPerSecond) * dtSeconds;
+  const step = Math.max(-maxStep, Math.min(maxStep, delta));
+  return (from + step + 360) % 360;
+}
+
+function mustStopAtEnd(network: RoadNetwork, edge: RoadEdge): boolean {
+  const listed = listChoices(network, edge);
+  const forward = listed.choices.filter((choice) => !choice.reverse);
+  return !(forward.length === 1 && listed.hidden === 0);
 }
 
 function isReverse(current: RoadEdge, candidate: RoadEdge): boolean {
@@ -209,7 +253,7 @@ export function rejoinVehicle(previous: VehicleState, network: RoadNetwork): Veh
   };
 }
 
-export function stepVehicle(
+function stepVehicleOnce(
   network: RoadNetwork,
   state: VehicleState,
   input: DriveInput,
@@ -229,20 +273,56 @@ export function stepVehicle(
     };
   }
   const dt = clampStep(dtSeconds);
+  if (dt === 0) {
+    return state;
+  }
+  const remaining = edge.lengthMeters - state.distanceMeters;
+  const stopping = mustStopAtEnd(network, edge) && remaining <= stoppingDistanceMeters(state.speedMps);
+  const brake = input.brake || stopping;
+  const accelerate = input.accelerate && !brake;
   let speed = state.speedMps;
-  if (input.brake) {
+  if (brake) {
     speed = Math.max(0, speed - BRAKE_MPS2 * dt);
-  } else if (input.accelerate) {
+  } else if (accelerate) {
     speed = Math.min(MAX_SPEED_MPS, speed + ACCEL_MPS2 * dt);
   } else {
     speed = Math.max(0, speed - COAST_MPS2 * dt);
   }
-  const distance = state.distanceMeters + speed * dt;
-  if (distance > edge.lengthMeters) {
-    return arrive(network, edge, distance - edge.lengthMeters, speed);
+  if (stopping && speed <= 0 && remaining <= STOP_SNAP_METERS) {
+    return arrive(network, edge, 0, 0);
   }
-  const next = located(edge, distance, speed, "driving", null, []);
-  return speed > 0 ? next : { ...next, message: state.message };
+  const distance = state.distanceMeters + speed * dt;
+  const moved =
+    distance > edge.lengthMeters
+      ? arrive(network, edge, distance - edge.lengthMeters, speed)
+      : located(edge, distance, speed, "driving", null, []);
+  if (moved.mode !== "driving") {
+    return moved;
+  }
+  const steered = {
+    ...moved,
+    headingDegrees: turnToward(state.headingDegrees, moved.headingDegrees, dt),
+  };
+  return steered.speedMps > 0 ? steered : { ...steered, message: state.message };
+}
+
+export function stepVehicle(
+  network: RoadNetwork,
+  state: VehicleState,
+  input: DriveInput,
+  dtSeconds: number,
+): VehicleState {
+  let left = clampFrame(dtSeconds);
+  if (left === 0 || state.mode !== "driving") {
+    return state;
+  }
+  let current = state;
+  while (left > 1e-6 && current.mode === "driving") {
+    const slice = Math.min(MAX_STEP_SECONDS, left);
+    current = stepVehicleOnce(network, current, input, slice);
+    left -= slice;
+  }
+  return current;
 }
 
 export function selectBranch(network: RoadNetwork, state: VehicleState, index: number): VehicleState {
