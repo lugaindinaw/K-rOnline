@@ -676,6 +676,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
           position: current.position,
           mode: current.mode,
           traffic: trafficRef.current.map((car) => ({ position: car.position })),
+          network,
         });
       }
       frame = requestAnimationFrame(tick);

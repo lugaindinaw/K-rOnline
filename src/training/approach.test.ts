@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { stepVehicle, vehicleFromPlacement } from "../drive/drive";
+import { mergeRoadSegments } from "../roads/roadCoverage";
 import { buildRoadNetwork } from "../roads/roadNetwork";
 import type { OneWay, RoadPoint, RoadSegment } from "../roads/drivingRoads";
 import {
@@ -96,11 +97,13 @@ describe("approach exercise", () => {
     expect(again.continuedWhileNear).toBe(false);
     expect(again.completed).toBe(false);
     expect(again.sawNearbyCar).toBe(false);
+    expect(again.previousRemainingMeters).toBeNull();
   });
 
   it("records a lower speed and a stop before the junction", () => {
     const start = findApproachStart(crossing())!;
     let attempt = beginAttempt();
+    attempt = observeApproach(attempt, start, sample(start, start.lengthMeters - 36, 8));
     attempt = observeApproach(attempt, start, sample(start, start.lengthMeters - 30, 8));
     attempt = observeApproach(attempt, start, sample(start, start.lengthMeters - 18, 2));
     attempt = observeApproach(attempt, start, sample(start, start.lengthMeters - 12, 0));
@@ -205,7 +208,8 @@ describe("approach exercise", () => {
   it("summarises a finished attempt with facts and marked advice", () => {
     const start = findApproachStart(crossing())!;
     let attempt = beginAttempt();
-    attempt = observeApproach(attempt, start, sample(start, start.lengthMeters - 32, 8));
+    attempt = observeApproach(attempt, start, sample(start, start.lengthMeters - 36, 8));
+    attempt = observeApproach(attempt, start, sample(start, start.lengthMeters - 30, 8));
     attempt = observeApproach(attempt, start, sample(start, start.lengthMeters - 22, 8));
     attempt = observeApproach(attempt, start, sample(start, start.lengthMeters, 0, "choose"));
     const feedback = approachFeedback(attempt);
@@ -275,6 +279,124 @@ describe("approach exercise", () => {
       expect(text).not.toMatch(/väjningsplikt|stopplikt/);
       expect(text).not.toMatch(/Godkänd|Underkänd/);
     }
+  });
+
+  it("keeps the same junction when the next road area changes the edge id", () => {
+    const origin = { lat: 59.3293, lng: 18.0686 };
+    const mid = northOf(origin, 80);
+    const node = northOf(origin, 160);
+    const base = [
+      segment("gata", ["a", "b", "n"], [origin, mid, node]),
+      segment("ut-n", ["n", "c"], [node, northOf(node, 40)]),
+      segment("ut-o", ["n", "d"], [node, eastOf(node, 40)]),
+    ];
+    const start = findApproachStart(buildRoadNetwork(base));
+    expect(start?.toNode).toBe("n");
+    const extended = buildRoadNetwork(
+      mergeRoadSegments([...base, segment("sido", ["b", "s"], [mid, eastOf(mid, 40)])]),
+    );
+    const approach = extended.edges.find((edge) => edge.toNode === "n" && edge.fromNode === "b");
+    expect(approach).toBeTruthy();
+    expect(approach!.id).not.toBe(start!.edgeId);
+    let attempt = beginAttempt();
+    attempt = observeApproach(attempt, start!, {
+      ...sample(start!, approach!.lengthMeters - 46, 8),
+      edgeId: approach!.id,
+      network: extended,
+    });
+    expect(attempt.speedAt40Kmh).toBeNull();
+    expect(attempt.previousRemainingMeters).toBeCloseTo(46, 0);
+    attempt = observeApproach(attempt, start!, {
+      ...sample(start!, approach!.lengthMeters - 39, 10),
+      edgeId: approach!.id,
+      network: extended,
+    });
+    expect(start!.toNode).toBe("n");
+    expect(attempt.speedAt40Kmh).toBe(36);
+    expect(attempt.speedAt30Kmh).toBeNull();
+    expect(attempt.speedAt20Kmh).toBeNull();
+    const again = observeApproach(attempt, start!, {
+      ...sample(start!, approach!.lengthMeters - 37, 6),
+      edgeId: approach!.id,
+      network: extended,
+    });
+    expect(again.speedAt40Kmh).toBe(36);
+    const arrived = observeApproach(again, start!, {
+      ...sample(start!, approach!.lengthMeters, 0, "choose"),
+      edgeId: approach!.id,
+      network: extended,
+    });
+    expect(arrived.completed).toBe(true);
+    expect(arrived.simulatedStop).toBe(true);
+    expect(arrived.stoppedBefore).toBe(false);
+    expect(arrived.speedAt40Kmh).toBe(36);
+    const upstreamOrigin = northOf(origin, 0);
+    const close = northOf(upstreamOrigin, 130);
+    const farNode = northOf(upstreamOrigin, 160);
+    const splitRoads = [
+      segment("gata", ["a", "b", "n"], [upstreamOrigin, close, farNode]),
+      segment("sido", ["b", "s"], [close, eastOf(close, 40)]),
+      segment("ut-n", ["n", "c"], [farNode, northOf(farNode, 40)]),
+      segment("ut-o", ["n", "d"], [farNode, eastOf(farNode, 40)]),
+    ];
+    const target = findApproachStart(buildRoadNetwork(splitRoads.slice(0, 1).concat(splitRoads.slice(2))))!;
+    const split = buildRoadNetwork(mergeRoadSegments(splitRoads));
+    const beforeJunction = split.edges.find((edge) => edge.toNode === "b" && edge.fromNode === "a");
+    expect(beforeJunction).toBeTruthy();
+    expect(beforeJunction!.toNode).not.toBe(target.toNode);
+    let across = beginAttempt();
+    across = observeApproach(across, target, {
+      ...sample(target, beforeJunction!.lengthMeters - 16, 8),
+      edgeId: beforeJunction!.id,
+      network: split,
+    });
+    across = observeApproach(across, target, {
+      ...sample(target, beforeJunction!.lengthMeters - 8, 10),
+      edgeId: beforeJunction!.id,
+      network: split,
+    });
+    expect(target.toNode).toBe("n");
+    expect(across.speedAt40Kmh).toBe(36);
+    expect(across.speedAt30Kmh).toBeNull();
+  });
+
+  it("does not invent a speed when the car skips a mark or the junction disappears", () => {
+    const start = findApproachStart(crossing())!;
+    let attempt = beginAttempt();
+    attempt = observeApproach(attempt, start, sample(start, start.lengthMeters - 55, 8));
+    attempt = observeApproach(attempt, start, sample(start, start.lengthMeters - 15, 8));
+    expect(attempt.speedAt40Kmh).toBeNull();
+    expect(attempt.speedAt30Kmh).toBeNull();
+    expect(attempt.speedAt20Kmh).toBeNull();
+    const parked = observeApproach(
+      beginAttempt(),
+      start,
+      sample(start, start.lengthMeters - 36, 8),
+    );
+    const stoppedAtMark = observeApproach(parked, start, sample(start, start.lengthMeters - 30, 0));
+    expect(stoppedAtMark.speedAt30Kmh).toBeNull();
+    const missing = approachFeedback(finishAttempt(stoppedAtMark));
+    expect(missing.events).toContain("Hastigheten omkring 30 meter före korsningen är okänd.");
+    expect(missing.events.join(" ")).not.toContain("var 0 km/h ungefär 30 meter");
+    const measuredZero = approachFeedback({
+      ...finishAttempt(beginAttempt()),
+      speedAt30Kmh: 0,
+    });
+    expect(measuredZero.events).toContain("Hastigheten var 0 km/h ungefär 30 meter före korsningen.");
+    expect(measuredZero.events).not.toContain("Hastigheten omkring 30 meter före korsningen är okänd.");
+    const gone = buildRoadNetwork([
+      segment("annan", ["x", "y"], [
+        { lat: 65.2, lng: 19.6 },
+        northOf({ lat: 65.2, lng: 19.6 }, 100),
+      ]),
+    ]);
+    const lost = observeApproach(beginAttempt(), start, {
+      ...sample(start, start.lengthMeters - 30, 8),
+      network: gone,
+    });
+    expect(lost.speedAt30Kmh).toBeNull();
+    expect(lost.previousRemainingMeters).toBeNull();
+    expect(lost.completed).toBe(false);
   });
 
   it("still accelerates and brakes on an ordinary road", () => {
