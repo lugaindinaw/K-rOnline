@@ -31,6 +31,7 @@ import {
   START_SNAP_METERS,
   type RoadNetwork,
 } from "../roads/roadNetwork";
+import { refreshTraffic, stepTraffic, type TrafficCar } from "../traffic/traffic";
 import {
   installGoogleMapFailureHook,
   subscribeGoogleMapFailure,
@@ -40,7 +41,7 @@ import { publicMapError, resolveMapScreen, type MapPhase } from "./mapScreen";
 import type { Map3DViewElement, Maps3dLibrary } from "./maps3dTypes";
 import { claimCameraJob, followCameraFromView, followCameraStep, type FollowCamera } from "./followCamera";
 import { createRoadOverlays, type RoadLine } from "./roadOverlays";
-import { mountRoadVehicle, type RoadVehicle } from "./roadVehicle";
+import { mountRoadVehicle, mountTrafficVehicle, type RoadVehicle } from "./roadVehicle";
 
 export type MapFocus = {
   token: number;
@@ -110,6 +111,8 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
   const vehicleRef = useRef<VehicleState | null>(null);
   const networkRef = useRef<RoadNetwork | null>(null);
   const vehicleViewRef = useRef<RoadVehicle | null>(null);
+  const trafficRef = useRef<TrafficCar[]>([]);
+  const trafficViewsRef = useRef<Map<string, RoadVehicle>>(new Map());
   const keysRef = useRef(new Set<string>());
   const pedalsRef = useRef({ accelerate: false, brake: false });
   const followRef = useRef(false);
@@ -133,6 +136,58 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
   onExtendRef.current = onExtendRoads;
   areasRef.current = areas;
   extendHintRef.current = extendHint;
+
+  const clearTraffic = () => {
+    for (const view of trafficViewsRef.current.values()) {
+      view.remove();
+    }
+    trafficViewsRef.current.clear();
+    trafficRef.current = [];
+  };
+
+  const syncTrafficViews = () => {
+    const map = mapRef.current;
+    const library = libraryRef.current;
+    const views = trafficViewsRef.current;
+    const ids = new Set(trafficRef.current.map((car) => car.id));
+    for (const [id, view] of views) {
+      if (!ids.has(id)) {
+        view.remove();
+        views.delete(id);
+      }
+    }
+    if (!map || !library) {
+      return;
+    }
+    for (const car of trafficRef.current) {
+      let view = views.get(car.id);
+      if (!view) {
+        const mounted = mountTrafficVehicle(map, library);
+        if (!mounted) {
+          continue;
+        }
+        view = mounted;
+        views.set(car.id, view);
+      }
+      view.update({
+        lat: car.position.lat,
+        lng: car.position.lng,
+        headingDegrees: car.headingDegrees,
+      });
+    }
+  };
+
+  const bindTraffic = (player: { lat: number; lng: number } | null) => {
+    const network = networkRef.current;
+    if (!network || network.edges.length === 0) {
+      clearTraffic();
+      return;
+    }
+    trafficRef.current = refreshTraffic(trafficRef.current, network, player);
+    syncTrafficViews();
+  };
+  const bindTrafficRef = useRef(bindTraffic);
+  bindTrafficRef.current = bindTraffic;
 
   const publishRef = useRef<(state: VehicleState | null, message?: string | null) => void>(() => undefined);
   publishRef.current = (state, message) => {
@@ -340,8 +395,14 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       followRef.current = false;
       const placed = vehicleFromPlacement(placement);
       vehicleRef.current = placed;
+      const map = mapRef.current;
+      const library = libraryRef.current;
+      if (!vehicleViewRef.current && map && library) {
+        vehicleViewRef.current = mountRoadVehicle(map, library);
+      }
       vehicleViewRef.current?.update(poseOf(placed));
       publishRef.current(placed);
+      bindTrafficRef.current(placed.position);
       flyToCarRef.current(placed.position.lat, placed.position.lng, placed.headingDegrees);
     };
 
@@ -393,6 +454,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       vehicleViewRef.current?.remove();
       vehicleViewRef.current = null;
       vehicleRef.current = null;
+      clearTraffic();
       mapElement?.remove();
       mapRef.current = null;
       libraryRef.current = null;
@@ -441,6 +503,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
         followCameraRef.current = null;
         networkRef.current = null;
         publishRef.current(null, null);
+        clearTraffic();
       }
       return;
     }
@@ -454,6 +517,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       vehicleViewRef.current = view;
       view?.update(poseOf(rejoined));
       publishRef.current(rejoined);
+      bindTraffic(rejoined.position);
       return () => {
         carryRef.current = vehicleRef.current;
         vehicleViewRef.current?.remove();
@@ -470,6 +534,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       vehicleViewRef.current = null;
       vehicleRef.current = null;
       publishRef.current(null, explained.message);
+      bindTraffic(anchor);
       return;
     }
 
@@ -486,6 +551,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       view.update(poseOf(placed));
     }
     publishRef.current(placed);
+    bindTraffic(placed.position);
     lookAltitudeRef.current = typeof map.center?.altitude === "number" ? map.center.altitude : 25;
     flyToCarRef.current(placed.position.lat, placed.position.lng, placed.headingDegrees);
 
@@ -565,6 +631,18 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
           map.tilt = endCamera.tilt;
           map.heading = endCamera.heading;
         }
+        const current = vehicleRef.current ?? next;
+        trafficRef.current = stepTraffic(
+          network,
+          trafficRef.current,
+          {
+            edgeId: current.edgeId,
+            distanceMeters: current.distanceMeters,
+            position: current.position,
+          },
+          dt,
+        );
+        syncTrafficViews();
       }
       frame = requestAnimationFrame(tick);
     };

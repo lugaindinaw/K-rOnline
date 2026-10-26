@@ -16,7 +16,7 @@ Utan nyckel kan platser och väglistor fortfarande sökas. Själva 3D-kartan kr�
 
 Sök en ort i Sverige, eller hämta vägar där kameran står. Platssökningen går till Nominatim. Kameran höjs till marknivån för platsen. Vägfrågan går via utvecklingsservern till Overpass, med en radie på 600 meter. Fler än 500 vägsträckor beskärs så att högre vägklasser behålls.
 
-När vägarna har noder från OpenStreetMap placeras en enkel bil på närmaste mittlinje, högst 100 meter från den valda punkten. Håll W eller pil upp för att gasa, och S eller pil ned för att bromsa. Knapparna Gas och Broms ligger kvar tills du byter. Bilen följer vägens mittlinje och vrider sig gradvis när vägen svänger. Gas och broms ändrar farten mjukt. Vid en korsning där flera vägar delar en nod bromsar den in och stannar, och du väljer fortsatt väg med 1–9 eller knapparna i panelen. Klicka nära en väglinje för att flytta bilen. Kameran följer bakom bilen efter första gaspådraget och tittar framåt längs vägen.
+När vägarna har noder från OpenStreetMap placeras en enkel bil på närmaste mittlinje, högst 100 meter från den valda punkten. Håll W eller pil upp för att gasa, och S eller pil ned för att bromsa. Knapparna Gas och Broms ligger kvar tills du byter. Bilen följer vägens mittlinje och vrider sig gradvis när vägen svänger. Gas och broms ändrar farten mjukt. Några mindre trafikbilar följer samma mittlinjer och saktar in för att hålla avstånd. Vid en korsning där flera vägar delar en nod bromsar den in och stannar, och du väljer fortsatt väg med 1–9 eller knapparna i panelen. Klicka nära en väglinje för att flytta bilen. Kameran följer bakom bilen efter första gaspådraget och tittar framåt längs vägen.
 
 När bilen är mindre än 200 meter från kanten hämtas nästa cirkel, med centrum 400 meter längre fram. Samma avrundade område hämtas inte igen. Högst åtta områden behålls. En misslyckad hämtning visas i panelen i stället för att bilen stannar utan förklaring.
 
@@ -30,6 +30,6 @@ npm run build
 
 ## Avgränsning
 
-Det här är inte körträning. Bilen har enkel gas och broms längs mittlinjen, inte trafikregler, körfält eller realistisk fysik. Vägarna är mittlinjer från OpenStreetMap, inte NVDB. Bara vägar som delar en OSM-nod kopplas ihop. Fotorealistisk 3D varierar över landet och är inte ett krav för att vägdata ska visas. Startvyn över centrala Stockholm ritade fotorealistisk 3D-yta 2026-10-25.
+Det här är inte körträning. Bilen har enkel gas och broms längs mittlinjen. Trafikbilarna följer mittlinjen och håller avstånd, utan trafikljus, körfält eller väjningsregler. Vägarna är mittlinjer från OpenStreetMap, inte NVDB. Bara vägar som delar en OSM-nod kopplas ihop. Fotorealistisk 3D varierar över landet och är inte ett krav för att vägdata ska visas. Startvyn över centrala Stockholm ritade fotorealistisk 3D-yta 2026-10-25.
 
 En offentlig Overpass-server kan vara upptagen. Prototypen provar då en andra server. Sverige avgränsas med en förenklad kustlinje och en buffert på 8 km, så enstaka gränsorter kan hamna fel.
