@@ -26,6 +26,7 @@ function markup(overrides: Partial<Parameters<typeof SwedenPanel>[0]> = {}): str
       vehicle={IDLE_VEHICLE}
       onChooseBranch={() => undefined}
       onPedal={() => undefined}
+      onSteer={() => undefined}
       onLoadAtCamera={() => undefined}
       cameraAvailable={false}
       trainingOpen={false}
@@ -50,6 +51,10 @@ describe("SwedenPanel", () => {
     expect(html).toContain("Gasa med W, pil upp eller Gas");
     expect(html).toContain("Bromsa med S, pil ned eller Broms");
     expect(html).toContain("1–9");
+    expect(html).toContain("Vänster");
+    expect(html).toContain("Höger");
+    expect(html).toContain("i sidled längs vägen");
+    expect(html).not.toContain("fri styrning");
     expect(html).toContain("Förarvy");
     expect(html).toContain("förarens ögonhöjd");
     expect(html).toContain("Stockholm är startposition");

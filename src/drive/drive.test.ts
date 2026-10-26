@@ -3,6 +3,7 @@ import {
   ACCEL_MPS2,
   BRAKE_MPS2,
   COAST_MPS2,
+  MAX_LATERAL_METERS,
   MAX_SPEED_MPS,
   YAW_DEGREES_PER_SECOND,
   choiceIndexFromKey,
@@ -434,10 +435,150 @@ describe("steering and stops", () => {
   });
 });
 
+describe("steering", () => {
+  function straightNetwork() {
+    const end = northOf(start, 500);
+    const network = buildRoadNetwork([
+      segment("rak", ["1", "2"], [start, end], { name: "Rak", oneway: "forward" }),
+    ]);
+    const edge = network.edgesById.get("rak:0-1:forward");
+    if (!edge) {
+      throw new Error("saknar rak väg");
+    }
+    return { network, edge };
+  }
+
+  function travel(speedMps: number, steer: number, meters: number) {
+    const { network, edge } = straightNetwork();
+    let state = {
+      ...vehicleFromPlacement({ edge, distanceMeters: 30, gapMeters: 0 }),
+      speedMps,
+      headingDegrees: 0,
+    };
+    const origin = state.distanceMeters;
+    for (let index = 0; index < 120 && state.distanceMeters - origin < meters && state.mode === "driving"; index += 1) {
+      state = stepVehicle(network, state, { accelerate: false, brake: false, steer }, 0.05);
+    }
+    return { state, traveled: state.distanceMeters - origin, edge };
+  }
+
+  it("shifts farther per meter at low speed than at the speed cap", () => {
+    const slow = travel(4, -1, 8);
+    const fast = travel(12, -1, 8);
+    expect(slow.traveled).toBeGreaterThan(7);
+    expect(fast.traveled).toBeGreaterThan(7);
+    expect(slow.state.offsetMeters).toBeGreaterThan(0);
+    expect(fast.state.offsetMeters).toBeGreaterThan(0);
+    expect(slow.state.offsetMeters / slow.traveled).toBeGreaterThan(fast.state.offsetMeters / fast.traveled);
+    expect(slow.state.edgeId).toBe(slow.edge.id);
+    expect(fast.state.edgeId).toBe(fast.edge.id);
+  });
+
+  it("keeps the offset inside a few meters and limits one frame of yaw", () => {
+    const { network, edge } = straightNetwork();
+    let state = {
+      ...vehicleFromPlacement({ edge, distanceMeters: 40, gapMeters: 0 }),
+      speedMps: 12,
+      headingDegrees: 0,
+    };
+    const first = stepVehicle(network, state, { accelerate: true, brake: false, steer: 1 }, 0.05);
+    expect(headingDelta(first.headingDegrees, 0)).toBeLessThanOrEqual(YAW_DEGREES_PER_SECOND * 0.05 + 0.001);
+    state = first;
+    for (let index = 0; index < 240 && state.mode === "driving"; index += 1) {
+      state = stepVehicle(network, state, { accelerate: true, brake: false, steer: 1 }, 0.05);
+      expect(Math.abs(state.offsetMeters)).toBeLessThanOrEqual(MAX_LATERAL_METERS + 1e-6);
+    }
+    expect(state.offsetMeters).toBeCloseTo(-MAX_LATERAL_METERS, 1);
+    expect(state.edgeId).toBe(edge.id);
+    expect(state.speedMps).toBeLessThanOrEqual(MAX_SPEED_MPS);
+  });
+
+  it("holds the offset when the wheel is released and does not slide while stopped", () => {
+    const { network, edge } = straightNetwork();
+    let state = {
+      ...vehicleFromPlacement({ edge, distanceMeters: 40, gapMeters: 0 }),
+      speedMps: 8,
+      headingDegrees: 0,
+      offsetMeters: 1.4,
+    };
+    const held = stepVehicle(network, state, { accelerate: false, brake: false, steer: 0 }, 0.2);
+    expect(held.offsetMeters).toBeCloseTo(1.4, 5);
+    expect(headingDelta(held.headingDegrees, 0)).toBeLessThan(headingDelta(state.headingDegrees, 0) + 0.001);
+
+    const stopped = {
+      ...state,
+      speedMps: 0,
+      headingDegrees: 0,
+      offsetMeters: 1.4,
+    };
+    const still = stepVehicle(network, stopped, { accelerate: false, brake: false, steer: -1 }, 0.05);
+    expect(still.offsetMeters).toBeCloseTo(1.4, 5);
+    expect(still.speedMps).toBe(0);
+    expect(headingDelta(still.headingDegrees, 0)).toBeGreaterThan(0);
+    expect(headingDelta(still.headingDegrees, 0)).toBeLessThanOrEqual(YAW_DEGREES_PER_SECOND * 0.05 + 0.001);
+  });
+
+  it("carries the offset onto the only continuation without hopping to a nearby road", () => {
+    const corner = northOf(start, 50);
+    const end = eastOf(corner, 40);
+    const beside = { lat: corner.lat + 0.00004, lng: corner.lng + 0.00004 };
+    const network = buildRoadNetwork([
+      segment("ett", ["1", "2"], [start, corner], { name: "Ett", oneway: "forward" }),
+      segment("två", ["2", "3"], [corner, end], { name: "Två", oneway: "forward" }),
+      segment("nära", ["9", "8"], [beside, eastOf(beside, 30)], { name: "Bredvid" }),
+    ]);
+    const edge = network.edgesById.get("ett:0-1:forward");
+    let state = vehicleFromPlacement({ edge: edge!, distanceMeters: edge!.lengthMeters - 0.2, gapMeters: 0 });
+    state = { ...state, speedMps: 8, headingDegrees: 0, offsetMeters: 2.5 };
+    state = stepVehicle(network, state, { accelerate: false, brake: false, steer: 0 }, 0.05);
+    expect(state.edgeId).toContain("två");
+    expect(state.mode).toBe("driving");
+    expect(state.offsetMeters).toBeCloseTo(2.5, 2);
+    expect(headingDelta(state.headingDegrees, 0)).toBeLessThanOrEqual(YAW_DEGREES_PER_SECOND * 0.05 + 0.001);
+    expect(nearestPlacement(network, state.position, 20)?.edge.osmWayId).not.toBe("nära");
+
+    const stopped = {
+      ...vehicleFromPlacement({ edge: edge!, distanceMeters: edge!.lengthMeters - 1, gapMeters: 0 }),
+      speedMps: 6,
+      headingDegrees: 12,
+      offsetMeters: 2.5,
+      mode: "ended" as const,
+    };
+    const rejoined = rejoinVehicle(stopped, network);
+    expect(rejoined.edgeId).toContain("två");
+    expect(rejoined.offsetMeters).toBeCloseTo(2.5, 5);
+    expect(rejoined.headingDegrees).toBe(12);
+    expect(nearestPlacement(network, rejoined.position, 20)?.edge.osmWayId).not.toBe("nära");
+  });
+
+  it("keeps a side offset when the road ends", () => {
+    const end = northOf(start, 80);
+    const network = buildRoadNetwork([
+      segment("slut", ["1", "2"], [start, end], { name: "Slutgatan", oneway: "forward" }),
+    ]);
+    const edge = network.edges.find((item) => item.id.endsWith(":forward"));
+    let state = vehicleFromPlacement({ edge: edge!, distanceMeters: edge!.lengthMeters - 40, gapMeters: 0 });
+    state = { ...state, speedMps: 12, offsetMeters: 2, headingDegrees: 0 };
+    for (let index = 0; index < 200 && state.mode === "driving"; index += 1) {
+      state = stepVehicle(network, state, { accelerate: false, brake: false, steer: 0 }, 0.05);
+    }
+    expect(state.mode).toBe("ended");
+    expect(state.speedMps).toBe(0);
+    expect(state.offsetMeters).toBeCloseTo(2, 2);
+    expect(state.position).not.toEqual(end);
+  });
+});
+
 describe("keyboard mapping", () => {
-  it("reads gas, brake and branch keys without treating text entry as driving", () => {
-    expect(driveInputFromKeys(new Set(["KeyW"]))).toEqual({ accelerate: true, brake: false });
-    expect(driveInputFromKeys(new Set(["ArrowDown"]))).toEqual({ accelerate: false, brake: true });
+  it("reads gas, brake, steering and branch keys without treating text entry as driving", () => {
+    expect(driveInputFromKeys(new Set(["KeyW"]))).toEqual({ accelerate: true, brake: false, steer: 0 });
+    expect(driveInputFromKeys(new Set(["ArrowDown"]))).toEqual({ accelerate: false, brake: true, steer: 0 });
+    expect(driveInputFromKeys(new Set(["KeyA"])).steer).toBe(-1);
+    expect(driveInputFromKeys(new Set(["ArrowLeft"])).steer).toBe(-1);
+    expect(driveInputFromKeys(new Set(["KeyD"])).steer).toBe(1);
+    expect(driveInputFromKeys(new Set(["ArrowRight"])).steer).toBe(1);
+    expect(driveInputFromKeys(new Set(["KeyA", "KeyD"])).steer).toBe(0);
+    expect(driveInputFromKeys(new Set(["ArrowLeft", "ArrowRight"])).steer).toBe(0);
     expect(choiceIndexFromKey("Digit3")).toBe(3);
     expect(choiceIndexFromKey("KeyW")).toBeNull();
     expect(isTextEntry(null)).toBe(false);
