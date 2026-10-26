@@ -350,7 +350,7 @@ export function sampleEdge(
   };
 }
 
-export const HEADING_SPAN_METERS = 5;
+export const HEADING_SPAN_METERS = 8;
 
 function pointOnChain(
   previous: RoadEdge | null,

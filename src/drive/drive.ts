@@ -15,12 +15,18 @@ export const COAST_MPS2 = 0.6;
 export const MAX_STEP_SECONDS = 0.05;
 export const MAX_FRAME_SECONDS = 0.25;
 export const YAW_DEGREES_PER_SECOND = 120;
+/** How far the car may sit to either side of the centerline it is already following. */
+export const MAX_LATERAL_METERS = 3.2;
+const STEER_DEGREES_SLOW = 26;
+const STEER_DEGREES_FAST = 11;
 const MAX_TRANSFERS = 32;
 const STOP_SNAP_METERS = 2;
 
 export type DriveInput = {
   accelerate: boolean;
   brake: boolean;
+  /** -1 is left, +1 is right. Omitted means straight. */
+  steer?: number;
 };
 
 export type DriveChoice = {
@@ -38,6 +44,8 @@ export type VehicleState = {
   speedMps: number;
   position: RoadPoint;
   headingDegrees: number;
+  /** Meters left of the centerline. Right is negative. */
+  offsetMeters: number;
   mode: VehicleMode;
   message: string | null;
   choices: DriveChoice[];
@@ -104,6 +112,42 @@ export function turnToward(
   return (from + step + 360) % 360;
 }
 
+export function steerAngleDegrees(speedMps: number, steer: number): number {
+  if (!Number.isFinite(steer) || steer === 0) {
+    return 0;
+  }
+  const command = Math.max(-1, Math.min(1, steer));
+  const speed = Math.max(0, Math.min(MAX_SPEED_MPS, speedMps));
+  const span = speed / MAX_SPEED_MPS;
+  const magnitude = STEER_DEGREES_SLOW + (STEER_DEGREES_FAST - STEER_DEGREES_SLOW) * span;
+  return command * magnitude;
+}
+
+function steerCommand(input: DriveInput): number {
+  const steer = input.steer ?? 0;
+  if (!Number.isFinite(steer)) {
+    return 0;
+  }
+  return Math.max(-1, Math.min(1, steer));
+}
+
+function offsetPoint(position: RoadPoint, headingDegrees: number, leftMeters: number): RoadPoint {
+  if (leftMeters === 0) {
+    return position;
+  }
+  const heading = ((headingDegrees - 90) * Math.PI) / 180;
+  const cosine = Math.cos((position.lat * Math.PI) / 180);
+  return {
+    lat: position.lat + (leftMeters * Math.cos(heading)) / 111320,
+    lng: position.lng + (leftMeters * Math.sin(heading)) / (111320 * Math.max(0.2, cosine)),
+  };
+}
+
+function placeOffset(position: RoadPoint, roadHeading: number, offsetMeters: number): { position: RoadPoint; offsetMeters: number } {
+  const offset = Math.max(-MAX_LATERAL_METERS, Math.min(MAX_LATERAL_METERS, offsetMeters));
+  return { offsetMeters: offset, position: offsetPoint(position, roadHeading, offset) };
+}
+
 function automaticContinuation(network: RoadNetwork, edge: RoadEdge): RoadEdge | null {
   const listed = listChoices(network, edge);
   const forward = listed.choices.filter((choice) => !choice.reverse);
@@ -163,6 +207,7 @@ function located(edge: RoadEdge, distanceMeters: number, speedMps: number, mode:
     speedMps,
     position: sample.position,
     headingDegrees: sample.headingDegrees,
+    offsetMeters: 0,
     mode,
     message,
     choices,
@@ -244,15 +289,34 @@ export function rejoinVehicle(previous: VehicleState, network: RoadNetwork): Veh
   }
   const remaining = placement.edge.lengthMeters - placement.distanceMeters;
   if (remaining <= 8) {
-    return continuePastEnd(network, placement.edge, previous.speedMps);
+    const continued = continuePastEnd(network, placement.edge, previous.speedMps);
+    const continuedEdge = network.edgesById.get(continued.edgeId) ?? placement.edge;
+    const roadHeading = pathHeading(
+      continued.edgeId === placement.edge.id ? null : placement.edge,
+      continuedEdge,
+      continued.distanceMeters,
+      continued.mode === "driving" ? automaticContinuation(network, continuedEdge) : null,
+    );
+    const placed = placeOffset(continued.position, roadHeading, previous.offsetMeters ?? 0);
+    return {
+      ...continued,
+      ...placed,
+      headingDegrees: previous.headingDegrees,
+    };
   }
   const sample = sampleEdge(placement.edge, placement.distanceMeters);
   const road = placement.edge.name ?? "en väg utan namn";
+  const placed = placeOffset(
+    sample.position,
+    pathHeading(null, placement.edge, placement.distanceMeters),
+    previous.offsetMeters ?? 0,
+  );
   return {
     ...previous,
     edgeId: placement.edge.id,
     distanceMeters: placement.distanceMeters,
-    position: sample.position,
+    position: placed.position,
+    offsetMeters: placed.offsetMeters,
     roadName: placement.edge.name,
     mode: "driving",
     choices: [],
@@ -297,31 +361,41 @@ function stepVehicleOnce(
     speed = Math.max(0, speed - COAST_MPS2 * dt);
   }
   if (stopping && speed <= 0 && remaining <= STOP_SNAP_METERS) {
-    return arrive(network, edge, 0, 0);
+    const arrived = arrive(network, edge, 0, 0);
+    const arrivedEdge = network.edgesById.get(arrived.edgeId) ?? edge;
+    const roadHeading = pathHeading(null, arrivedEdge, arrived.distanceMeters);
+    const placed = placeOffset(arrived.position, roadHeading, state.offsetMeters ?? 0);
+    return {
+      ...arrived,
+      ...placed,
+      headingDegrees: turnToward(state.headingDegrees, roadHeading, dt),
+    };
   }
   const distance = state.distanceMeters + speed * dt;
   const moved =
     distance > edge.lengthMeters
       ? arrive(network, edge, distance - edge.lengthMeters, speed)
       : located(edge, distance, speed, "driving", null, []);
-  if (moved.mode !== "driving") {
-    return moved;
-  }
   const currentEdge = network.edgesById.get(moved.edgeId) ?? edge;
   const previousEdge = currentEdge.id === edge.id ? null : edge;
+  const roadHeading = pathHeading(
+    previousEdge,
+    currentEdge,
+    moved.distanceMeters,
+    moved.mode === "driving" ? automaticContinuation(network, currentEdge) : null,
+  );
+  const angle = steerAngleDegrees(speed, steerCommand(input));
+  const headingDegrees = turnToward(state.headingDegrees, roadHeading + angle, dt);
+  const lateral = -speed * Math.tan((angle * Math.PI) / 180) * dt;
+  const placed = placeOffset(moved.position, roadHeading, (state.offsetMeters ?? 0) + lateral);
   const steered = {
     ...moved,
-    headingDegrees: turnToward(
-      state.headingDegrees,
-      pathHeading(
-        previousEdge,
-        currentEdge,
-        moved.distanceMeters,
-        automaticContinuation(network, currentEdge),
-      ),
-      dt,
-    ),
+    ...placed,
+    headingDegrees,
   };
+  if (steered.mode !== "driving") {
+    return steered;
+  }
   return steered.speedMps > 0 ? steered : { ...steered, message: state.message };
 }
 
@@ -353,13 +427,22 @@ export function selectBranch(network: RoadNetwork, state: VehicleState, index: n
   if (!edge) {
     return state;
   }
-  return located(edge, 0, 0, "driving", `Bilen står på ${edge.name ?? "en väg utan namn"}.`, []);
+  const placed = located(edge, 0, 0, "driving", `Bilen står på ${edge.name ?? "en väg utan namn"}.`, []);
+  const carried = placeOffset(placed.position, placed.headingDegrees, state.offsetMeters ?? 0);
+  return {
+    ...placed,
+    ...carried,
+    headingDegrees: state.headingDegrees,
+  };
 }
 
 export function driveInputFromKeys(keys: ReadonlySet<string>): DriveInput {
+  const left = keys.has("KeyA") || keys.has("ArrowLeft");
+  const right = keys.has("KeyD") || keys.has("ArrowRight");
   return {
     accelerate: keys.has("KeyW") || keys.has("ArrowUp"),
     brake: keys.has("KeyS") || keys.has("ArrowDown"),
+    steer: left === right ? 0 : left ? -1 : 1,
   };
 }
 

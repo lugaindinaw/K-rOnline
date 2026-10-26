@@ -289,6 +289,9 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
         onPedal={(pedal, pressed) => {
           mapRef.current?.setPedal(pedal, pressed);
         }}
+        onSteer={(side, pressed) => {
+          mapRef.current?.setSteer(side, pressed);
+        }}
         cameraAvailable={Boolean(apiKey) && mapReady}
         trainingOpen={trainingOpen}
         onToggleTraining={() => setTrainingOpen((open) => !open)}

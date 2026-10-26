@@ -61,6 +61,7 @@ export type SwedenMapHandle = {
   readCenter: () => { lat: number; lng: number } | null;
   chooseBranch: (index: number) => void;
   setPedal: (pedal: "accelerate" | "brake", pressed: boolean) => void;
+  setSteer: (side: "left" | "right", pressed: boolean) => void;
   placeAlong: (edgeId: string, distanceMeters: number) => boolean;
   setCameraView: (view: CameraView) => void;
 };
@@ -145,6 +146,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
   const trafficViewsRef = useRef<Map<string, RoadVehicle>>(new Map());
   const keysRef = useRef(new Set<string>());
   const pedalsRef = useRef({ accelerate: false, brake: false });
+  const steerHoldRef = useRef({ left: false, right: false });
   const followRef = useRef(false);
   const followCameraRef = useRef<FollowCamera | null>(null);
   const cameraViewRef = useRef<CameraView>(cameraView);
@@ -307,6 +309,9 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     setPedal(pedal, pressed) {
       pedalsRef.current[pedal] = pressed;
     },
+    setSteer(side, pressed) {
+      steerHoldRef.current[side] = pressed;
+    },
     setCameraView(view) {
       cameraViewRef.current = view;
       onCameraViewChangeRef.current?.(view);
@@ -349,16 +354,30 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
           ? "KeyW"
           : event.key === "s" || event.key === "S"
             ? "KeyS"
-            : event.key === "ArrowUp"
-              ? "ArrowUp"
-              : event.key === "ArrowDown"
-                ? "ArrowDown"
-                : event.key === "c" || event.key === "C"
-                  ? "KeyC"
-                  : event.key >= "1" && event.key <= "9"
-                    ? `Digit${event.key}`
-                    : "");
-      if (code === "ArrowUp" || code === "ArrowDown" || code === "KeyC") {
+            : event.key === "a" || event.key === "A"
+              ? "KeyA"
+              : event.key === "d" || event.key === "D"
+                ? "KeyD"
+                : event.key === "ArrowUp"
+                  ? "ArrowUp"
+                  : event.key === "ArrowDown"
+                    ? "ArrowDown"
+                    : event.key === "ArrowLeft"
+                      ? "ArrowLeft"
+                      : event.key === "ArrowRight"
+                        ? "ArrowRight"
+                        : event.key === "c" || event.key === "C"
+                          ? "KeyC"
+                          : event.key >= "1" && event.key <= "9"
+                            ? `Digit${event.key}`
+                            : "");
+      if (
+        code === "ArrowUp" ||
+        code === "ArrowDown" ||
+        code === "ArrowLeft" ||
+        code === "ArrowRight" ||
+        code === "KeyC"
+      ) {
         event.preventDefault();
       }
       if (code === "KeyC") {
@@ -389,15 +408,29 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       if (event.key === "s" || event.key === "S") {
         keys.delete("KeyS");
       }
+      if (event.key === "a" || event.key === "A") {
+        keys.delete("KeyA");
+      }
+      if (event.key === "d" || event.key === "D") {
+        keys.delete("KeyD");
+      }
       if (event.key === "ArrowUp") {
         keys.delete("ArrowUp");
       }
       if (event.key === "ArrowDown") {
         keys.delete("ArrowDown");
       }
+      if (event.key === "ArrowLeft") {
+        keys.delete("ArrowLeft");
+      }
+      if (event.key === "ArrowRight") {
+        keys.delete("ArrowRight");
+      }
     };
     const clearKeys = () => {
       keys.clear();
+      steerHoldRef.current.left = false;
+      steerHoldRef.current.right = false;
     };
     window.addEventListener("keydown", onKeyDown, true);
     window.addEventListener("keyup", onKeyUp, true);
@@ -652,9 +685,12 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       const vehicle = vehicleRef.current;
       if (network && vehicle) {
         const input = driveInputFromKeys(keysRef.current);
+        const held = steerHoldRef.current;
+        const buttonSteer = held.left === held.right ? 0 : held.left ? -1 : 1;
         input.accelerate = input.accelerate || pedalsRef.current.accelerate;
         input.brake = input.brake || pedalsRef.current.brake;
-        if (input.accelerate) {
+        input.steer = Math.max(-1, Math.min(1, (input.steer ?? 0) + buttonSteer));
+        if (input.accelerate || input.steer) {
           followRef.current = true;
         }
         let next = stepVehicle(network, vehicle, input, dt);
