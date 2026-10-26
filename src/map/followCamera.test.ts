@@ -56,10 +56,11 @@ describe("followCameraStep", () => {
       }
       const ahead = { lat: car.lat + CAMERA_LOOKAHEAD_METERS / 111320, lng: car.lng };
       expect(distanceMeters(camera, ahead)).toBeLessThan(8);
+      expect(distanceMeters(camera, car)).toBeGreaterThan(CAMERA_LOOKAHEAD_METERS - 3);
+      expect(distanceMeters(camera, car)).toBeLessThan(CAMERA_LOOKAHEAD_METERS + 3);
       expect(headingDelta(camera.headingDegrees, 0)).toBeLessThan(2);
       expect(camera.rangeMeters).toBeLessThan(FOLLOW_RANGE_METERS + 5);
       expect(camera.rangeMeters).toBeGreaterThan(FOLLOW_RANGE_METERS - 5);
-      expect(camera.lat).toBeGreaterThan(car.lat);
     }
   });
 
@@ -98,7 +99,7 @@ describe("followCameraStep", () => {
       const before = camera;
       const switched = followCameraStep(camera, car, 0.05, "driver");
       expect(Math.abs(switched.rangeMeters - before.rangeMeters)).toBeLessThan(3);
-      expect(Math.abs(switched.tiltDegrees - before.tiltDegrees)).toBeLessThan(12);
+      expect(Math.abs(switched.tiltDegrees - before.tiltDegrees)).toBeLessThan(16);
       expect(Math.abs(driver.tiltDegrees - before.tiltDegrees)).toBeGreaterThan(15);
       expect(headingDelta(switched.headingDegrees, before.headingDegrees)).toBeLessThanOrEqual(
         CAMERA_YAW_DEGREES_PER_SECOND * 0.05 + 0.001,

@@ -3,10 +3,13 @@ import { distanceMeters, type RoadPoint } from "../roads/drivingRoads";
 
 export type CameraView = "chase" | "driver";
 
-/** Chase camera sits behind the car so the whole body stays in frame. */
-export const CHASE_RANGE_METERS = 22;
-export const CHASE_TILT_DEGREES = 64;
-export const CHASE_LOOKAHEAD_METERS = 2.5;
+/**
+ * Look a short distance ahead and stay far enough back that the whole car
+ * sits in the lower part of the frame instead of under the camera.
+ */
+export const CHASE_RANGE_METERS = 26;
+export const CHASE_TILT_DEGREES = 58;
+export const CHASE_LOOKAHEAD_METERS = 8;
 export const FOLLOW_RANGE_METERS = CHASE_RANGE_METERS;
 export const FOLLOW_TILT_DEGREES = CHASE_TILT_DEGREES;
 export const CAMERA_LOOKAHEAD_METERS = CHASE_LOOKAHEAD_METERS;
