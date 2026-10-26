@@ -2,6 +2,7 @@ import type { Maps3dLibrary, Marker3DView, Model3DView } from "./maps3dTypes";
 
 export const CAR_MODEL_URL = "/car.glb";
 export const CAR_SCALE = 4;
+export const TRAFFIC_SCALE = 2;
 export const CAR_TILT_DEGREES = 270;
 export const CAR_HEADING_OFFSET = 180;
 
@@ -20,10 +21,11 @@ export type RoadVehicle = {
 function mountModel(
   parent: { append: (child: HTMLElement) => void },
   Model: new (options?: { src?: string; scale?: number; altitudeMode?: "CLAMP_TO_GROUND" }) => Model3DView,
+  scale = CAR_SCALE,
 ): RoadVehicle {
   const model = new Model({
     src: CAR_MODEL_URL,
-    scale: CAR_SCALE,
+    scale,
     altitudeMode: "CLAMP_TO_GROUND",
   });
   parent.append(model);
@@ -51,9 +53,10 @@ function mountMarker(
     extruded?: boolean;
     sizePreserved?: boolean;
   }) => Marker3DView,
+  label = "Bil",
 ): RoadVehicle {
   const marker = new Marker({
-    label: "Bil",
+    label,
     altitudeMode: "CLAMP_TO_GROUND",
     extruded: true,
     sizePreserved: true,
@@ -70,21 +73,23 @@ function mountMarker(
   };
 }
 
-export function mountRoadVehicle(
+function mountVehicle(
   parent: { append: (child: HTMLElement) => void },
   library: Maps3dLibrary,
+  scale: number,
+  label: string,
 ): RoadVehicle | null {
   const parts: RoadVehicle[] = [];
   if (typeof library.Model3DElement === "function") {
     try {
-      parts.push(mountModel(parent, library.Model3DElement));
+      parts.push(mountModel(parent, library.Model3DElement, scale));
     } catch {
       // A pin still shows the same road position when the model cannot be constructed.
     }
   }
   if (typeof library.Marker3DElement === "function") {
     try {
-      parts.push(mountMarker(parent, library.Marker3DElement));
+      parts.push(mountMarker(parent, library.Marker3DElement, label));
     } catch {
       // The model remains if the pin cannot be constructed.
     }
@@ -106,4 +111,18 @@ export function mountRoadVehicle(
       }
     },
   };
+}
+
+export function mountRoadVehicle(
+  parent: { append: (child: HTMLElement) => void },
+  library: Maps3dLibrary,
+): RoadVehicle | null {
+  return mountVehicle(parent, library, CAR_SCALE, "Bil");
+}
+
+export function mountTrafficVehicle(
+  parent: { append: (child: HTMLElement) => void },
+  library: Maps3dLibrary,
+): RoadVehicle | null {
+  return mountVehicle(parent, library, TRAFFIC_SCALE, "Trafik");
 }
