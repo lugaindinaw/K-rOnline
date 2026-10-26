@@ -3,7 +3,11 @@ import { stepVehicle, vehicleFromPlacement } from "../drive/drive";
 import { buildRoadNetwork } from "../roads/roadNetwork";
 import type { OneWay, RoadPoint, RoadSegment } from "../roads/drivingRoads";
 import {
+  ADVICE_NOTE,
   EXERCISE_INSTRUCTION,
+  FEEDBACK_DID_TITLE,
+  FEEDBACK_EVENTS_TITLE,
+  FEEDBACK_PRACTICE_TITLE,
   MISSING_JUNCTION_MESSAGE,
   approachFeedback,
   beginAttempt,
@@ -80,9 +84,15 @@ describe("approach exercise", () => {
     const again = beginAttempt();
     expect(again).toEqual({ ...idleAttempt(), status: "running" });
     expect(again.approachSpeedKmh).toBeNull();
+    expect(again.speedAt30Kmh).toBeNull();
+    expect(again.speedAt40Kmh).toBeNull();
+    expect(again.speedAt20Kmh).toBeNull();
     expect(again.minApproachKmh).toBeNull();
+    expect(again.slowdownKnown).toBe(false);
     expect(again.slowedDown).toBe(false);
+    expect(again.simZoneSlowdown).toBe(false);
     expect(again.stoppedBefore).toBe(false);
+    expect(again.simulatedStop).toBe(false);
     expect(again.continuedWhileNear).toBe(false);
     expect(again.completed).toBe(false);
     expect(again.sawNearbyCar).toBe(false);
@@ -96,12 +106,22 @@ describe("approach exercise", () => {
     attempt = observeApproach(attempt, start, sample(start, start.lengthMeters - 12, 0));
     expect(attempt.reachedApproach).toBe(true);
     expect(attempt.approachSpeedKmh).toBe(29);
+    expect(attempt.speedAt30Kmh).toBe(29);
     expect(attempt.minApproachKmh).toBe(0);
+    expect(attempt.slowdownKnown).toBe(true);
     expect(attempt.slowedDown).toBe(true);
     expect(attempt.stoppedBefore).toBe(true);
+    expect(attempt.simulatedStop).toBe(false);
     expect(attempt.completed).toBe(false);
     const held = observeApproach(attempt, start, sample(start, start.lengthMeters - 12, 0));
     expect(held).toBe(attempt);
+    const feedback = approachFeedback(finishAttempt(attempt));
+    expect(feedback.did).toContain("Hastigheten var 29 km/h ungefär 30 meter före korsningen.");
+    expect(feedback.did).toContain("Du minskade hastigheten när du närmade dig korsningen.");
+    expect(feedback.did).toContain("Du stannade före korsningen.");
+    expect(feedback.did).toContain("Du nådde inte korsningen under det här försöket.");
+    expect(feedback.events).not.toContain("Bilen nådde korsningen utan att stanna före den.");
+    expect(feedback.practice.join(" ")).not.toContain("stanna före korsningen");
   });
 
   it("does not treat the forced stop at the node as an early stop", () => {
@@ -111,8 +131,14 @@ describe("approach exercise", () => {
     attempt = observeApproach(attempt, start, sample(start, start.lengthMeters, 0, "choose"));
     expect(attempt.stoppedBefore).toBe(false);
     expect(attempt.slowedDown).toBe(false);
+    expect(attempt.simulatedStop).toBe(true);
     expect(attempt.completed).toBe(true);
     expect(attempt.status).toBe("finished");
+    const feedback = approachFeedback(attempt);
+    expect(feedback.events).toContain("Bilen nådde korsningen utan att stanna före den.");
+    expect(feedback.events).toContain("Stoppet vid korsningspunkten gjordes av simuleringen.");
+    expect(feedback.did.join(" ")).not.toContain("stannade inte");
+    expect(feedback.practice).toContain("Råd: Du kan träna på att stanna före korsningen.");
   });
 
   it("describes only the events that were recorded", () => {
@@ -127,13 +153,14 @@ describe("approach exercise", () => {
     );
     attempt = observeApproach(attempt, start, sample(start, start.lengthMeters, 0, "choose"));
     const feedback = approachFeedback(attempt);
-    expect(feedback.good).toContain("Du sänkte hastigheten före korsningen.");
-    expect(feedback.good).toContain("Du stannade före korsningen.");
-    expect(feedback.good).toContain("Övningen slutfördes.");
-    expect(feedback.events).toContain("En annan bil var nära korsningen.");
-    expect(feedback.improve.join(" ")).not.toContain("väjningsplikt");
-    expect(feedback.events.join(" ")).not.toContain("stopplikt");
-    expect(feedback.good.join(" ")).not.toContain("väjningsplikt");
+    expect(feedback.did).toContain("Du minskade hastigheten när du närmade dig korsningen.");
+    expect(feedback.did).toContain("Du stannade före korsningen.");
+    expect(feedback.did).toContain("Du nådde korsningen och övningen slutfördes.");
+    expect(feedback.events).toContain("En annan bil befann sig nära korsningen under din körning.");
+    expect(feedback.events).not.toContain("Bilen nådde korsningen utan att stanna före den.");
+    const text = [...feedback.did, ...feedback.practice, ...feedback.events, feedback.adviceNote].join(" ");
+    expect(text).not.toMatch(/väjningsplikt|stopplikt/);
+    expect(text).not.toMatch(/Godkänd|Underkänd/);
   });
 
   it("records continuing while another car is near the junction", () => {
@@ -146,8 +173,11 @@ describe("approach exercise", () => {
     const feedback = approachFeedback(finishAttempt(attempt));
     expect(attempt.continuedWhileNear).toBe(true);
     expect(attempt.sawNearbyCar).toBe(true);
-    expect(feedback.improve).toContain("Du fortsatte medan en annan bil befann sig nära korsningen.");
-    expect(feedback.events).toContain("Du fortsatte medan en annan bil befann sig nära korsningen.");
+    expect(feedback.events).toContain("En annan bil befann sig nära korsningen under din körning.");
+    expect(feedback.events).toContain("Bilen fortsatte medan den andra bilen var nära korsningen.");
+    expect(feedback.practice).toContain("Råd: Du kan träna på att observera trafiken när en annan bil är nära korsningen.");
+    expect(feedback.did).toContain("Du nådde inte korsningen under det här försöket.");
+    expect(feedback.events).not.toContain("Bilen nådde korsningen utan att stanna före den.");
     expect(feedback.events.join(" ")).not.toContain("väjningsplikt");
   });
 
@@ -162,9 +192,89 @@ describe("approach exercise", () => {
     expect(findApproachStart(straight)).toBeNull();
     expect(MISSING_JUNCTION_MESSAGE).toBe("Ingen lämplig korsning finns i det laddade vägnätet.");
     const early = approachFeedback(finishAttempt(beginAttempt()));
-    expect(early.events).toContain("Ingen hastighet registrerades nära korsningen.");
-    expect(early.events).toContain("Övningen avslutades innan korsningen.");
-    expect(early.improve).toContain("Korsningen nåddes inte.");
+    expect(early.did).toContain("Du nådde inte korsningen under det här försöket.");
+    expect(early.events).toContain("Hastigheten omkring 30 meter före korsningen är okänd.");
+    expect(early.events).toContain("Om hastigheten minskade under närmandet är okänt.");
+    expect(early.events).toContain("Om bilen stannade före korsningen är okänt.");
+    expect(early.events).toContain("Om en annan bil var nära korsningen är okänt.");
+    expect(early.events).toContain("Korsningen nåddes inte.");
+    expect(early.events).not.toContain("Bilen nådde korsningen utan att stanna före den.");
+    expect(early.practice).toContain("Råd: Kör fram till korsningen om du vill öva hela närmandet.");
+  });
+
+  it("summarises a finished attempt with facts and marked advice", () => {
+    const start = findApproachStart(crossing())!;
+    let attempt = beginAttempt();
+    attempt = observeApproach(attempt, start, sample(start, start.lengthMeters - 32, 8));
+    attempt = observeApproach(attempt, start, sample(start, start.lengthMeters - 22, 8));
+    attempt = observeApproach(attempt, start, sample(start, start.lengthMeters, 0, "choose"));
+    const feedback = approachFeedback(attempt);
+    expect(FEEDBACK_DID_TITLE).toBe("Det här gjorde du");
+    expect(FEEDBACK_PRACTICE_TITLE).toBe("Det här kan du träna på");
+    expect(FEEDBACK_EVENTS_TITLE).toBe("Händelser under övningen");
+    expect(feedback.adviceNote).toBe(ADVICE_NOTE);
+    expect(feedback.did).toContain("Hastigheten var 29 km/h ungefär 30 meter före korsningen.");
+    expect(feedback.did).toContain("Du nådde korsningen och övningen slutfördes.");
+    expect(feedback.events).toContain("Hastigheten minskade inte före de sista 10 metrarna.");
+    expect(feedback.events).toContain(
+      "Närmare korsningen sjönk farten. Det kan vara simuleringens egen inbromsning och räknas inte som att du minskade hastigheten.",
+    );
+    expect(feedback.events).toContain("Stoppet vid korsningspunkten gjordes av simuleringen.");
+    expect(feedback.events).toContain("Bilen nådde korsningen utan att stanna före den.");
+    expect(feedback.events).toContain("Ingen annan bil registrerades nära korsningen.");
+    expect(feedback.practice).toContain("Råd: Du kan träna på att minska hastigheten före korsningen.");
+    expect(feedback.practice).toContain("Råd: Du kan träna på att stanna före korsningen.");
+    expect(feedback.practice.every((line) => line.startsWith("Råd:"))).toBe(true);
+  });
+
+  it("reports an unchanged speed when the attempt ends before the simulation brake", () => {
+    const start = findApproachStart(crossing())!;
+    let attempt = beginAttempt();
+    attempt = observeApproach(attempt, start, sample(start, start.lengthMeters - 30, 8));
+    attempt = observeApproach(attempt, start, sample(start, start.lengthMeters - 20, 8));
+    const feedback = approachFeedback(finishAttempt(attempt));
+    expect(attempt.simZoneSlowdown).toBe(false);
+    expect(feedback.events).toContain("Hastigheten minskade inte under närmandet.");
+    expect(feedback.events.join(" ")).not.toContain("simuleringens egen inbromsning");
+    expect(feedback.did).toContain("Du nådde inte korsningen under det här försöket.");
+    expect(feedback.events).toContain("Ingen annan bil registrerades nära korsningen.");
+  });
+
+  it("does not call a simulation stop a driver stop", () => {
+    const start = findApproachStart(crossing())!;
+    let attempt = beginAttempt();
+    attempt = observeApproach(attempt, start, sample(start, start.lengthMeters - 15, 8));
+    attempt = observeApproach(attempt, start, sample(start, start.lengthMeters - 12, 8));
+    attempt = observeApproach(attempt, start, sample(start, start.lengthMeters - 6, 0));
+    expect(attempt.stoppedBefore).toBe(false);
+    expect(attempt.slowedDown).toBe(false);
+    expect(attempt.slowdownKnown).toBe(true);
+    const feedback = approachFeedback(finishAttempt(attempt));
+    expect(feedback.did).toContain("Du nådde inte korsningen under det här försöket.");
+    expect(feedback.events).not.toContain("Bilen nådde korsningen utan att stanna före den.");
+    expect(feedback.events).toContain("Hastigheten minskade inte före de sista 10 metrarna.");
+    expect(attempt.simZoneSlowdown).toBe(true);
+    expect(feedback.events).toContain(
+      "Inget förarstopp före korsningen registrerades. Korsningen nåddes inte, så det går inte att säga att bilen passerade utan att stanna.",
+    );
+  });
+
+  it("does not judge yield or stop rules", () => {
+    const start = findApproachStart(crossing())!;
+    const stopped = finishAttempt(
+      observeApproach(beginAttempt(), start, sample(start, start.lengthMeters - 30, 0.2)),
+    );
+    const passed = observeApproach(
+      observeApproach(beginAttempt(), start, sample(start, start.lengthMeters - 30, 8)),
+      start,
+      sample(start, start.lengthMeters, 0, "choose", [{ position: start.junction }]),
+    );
+    const missed = approachFeedback(finishAttempt(beginAttempt()));
+    for (const feedback of [approachFeedback(stopped), approachFeedback(passed), missed]) {
+      const text = [...feedback.did, ...feedback.practice, ...feedback.events, feedback.adviceNote].join(" ");
+      expect(text).not.toMatch(/väjningsplikt|stopplikt/);
+      expect(text).not.toMatch(/Godkänd|Underkänd/);
+    }
   });
 
   it("still accelerates and brakes on an ordinary road", () => {
