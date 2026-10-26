@@ -265,6 +265,14 @@ input {
   margin-bottom: 8px;
 }
 
+.camera-toggle {
+  width: 100%;
+  margin-bottom: 8px;
+  background: #fffdf8;
+  color: #1f4d3a;
+  border: 1px solid #1f4d3a;
+}
+
 .training-block {
   margin-top: 16px;
   padding-top: 12px;

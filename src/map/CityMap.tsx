@@ -40,7 +40,14 @@ import {
 import { loadMaps3dLibrary } from "./loadMaps3d";
 import { publicMapError, resolveMapScreen, type MapPhase } from "./mapScreen";
 import type { Map3DViewElement, Maps3dLibrary } from "./maps3dTypes";
-import { claimCameraJob, followCameraFromView, followCameraStep, type FollowCamera } from "./followCamera";
+import {
+  CHASE_TILT_DEGREES,
+  claimCameraJob,
+  followCameraFromView,
+  followCameraStep,
+  type CameraView,
+  type FollowCamera,
+} from "./followCamera";
 import { createRoadOverlays, type RoadLine } from "./roadOverlays";
 import { mountRoadVehicle, mountTrafficVehicle, type RoadVehicle } from "./roadVehicle";
 
@@ -55,6 +62,7 @@ export type SwedenMapHandle = {
   chooseBranch: (index: number) => void;
   setPedal: (pedal: "accelerate" | "brake", pressed: boolean) => void;
   placeAlong: (edgeId: string, distanceMeters: number) => boolean;
+  setCameraView: (view: CameraView) => void;
 };
 
 type CityMapProps = {
@@ -70,6 +78,8 @@ type CityMapProps = {
   onExtendRoads: (center: RoadPoint) => void;
   onDriveSample?: (sample: DriveSample) => void;
   rideHint?: string | null;
+  cameraView?: CameraView;
+  onCameraViewChange?: (view: CameraView) => void;
 };
 
 function moveCamera(map: Map3DViewElement, lat: number, lng: number, altitude: number): void {
@@ -99,7 +109,22 @@ function poseOf(state: VehicleState) {
 }
 
 export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMap(
-  { apiKey, onRetry, roads, areas, anchor, focus, extendHint, onReadyChange, onVehicleChange, onExtendRoads, onDriveSample, rideHint = null },
+  {
+    apiKey,
+    onRetry,
+    roads,
+    areas,
+    anchor,
+    focus,
+    extendHint,
+    onReadyChange,
+    onVehicleChange,
+    onExtendRoads,
+    onDriveSample,
+    rideHint = null,
+    cameraView = "chase",
+    onCameraViewChange,
+  },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -122,6 +147,10 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
   const pedalsRef = useRef({ accelerate: false, brake: false });
   const followRef = useRef(false);
   const followCameraRef = useRef<FollowCamera | null>(null);
+  const cameraViewRef = useRef<CameraView>(cameraView);
+  const onCameraViewChangeRef = useRef(onCameraViewChange);
+  cameraViewRef.current = cameraView;
+  onCameraViewChangeRef.current = onCameraViewChange;
   const followJobRef = useRef(0);
   const lookAltitudeRef = useRef(25);
   const cameraJobRef = useRef(0);
@@ -236,8 +265,8 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     const show = (altitude: number, carLat: number, carLng: number, carHeading: number) => {
       const endCamera = {
         center: { lat: carLat, lng: carLng, altitude },
-        range: 90,
-        tilt: 67,
+        range: 42,
+        tilt: CHASE_TILT_DEGREES,
         heading: carHeading,
       };
       if (typeof map.flyCameraTo === "function") {
@@ -278,6 +307,13 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     setPedal(pedal, pressed) {
       pedalsRef.current[pedal] = pressed;
     },
+    setCameraView(view) {
+      cameraViewRef.current = view;
+      onCameraViewChangeRef.current?.(view);
+      if (vehicleRef.current) {
+        followRef.current = true;
+      }
+    },
     placeAlong(edgeId, distanceMeters) {
       const network = networkRef.current;
       const edge = network?.edgesById.get(edgeId);
@@ -317,11 +353,24 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
               ? "ArrowUp"
               : event.key === "ArrowDown"
                 ? "ArrowDown"
-                : event.key >= "1" && event.key <= "9"
-                  ? `Digit${event.key}`
-                  : "");
-      if (code === "ArrowUp" || code === "ArrowDown") {
+                : event.key === "c" || event.key === "C"
+                  ? "KeyC"
+                  : event.key >= "1" && event.key <= "9"
+                    ? `Digit${event.key}`
+                    : "");
+      if (code === "ArrowUp" || code === "ArrowDown" || code === "KeyC") {
         event.preventDefault();
+      }
+      if (code === "KeyC") {
+        if (!event.repeat) {
+          const next = cameraViewRef.current === "driver" ? "chase" : "driver";
+          cameraViewRef.current = next;
+          onCameraViewChangeRef.current?.(next);
+          if (vehicleRef.current) {
+            followRef.current = true;
+          }
+        }
+        return;
       }
       if (!code) {
         return;
@@ -633,7 +682,12 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
             headingDegrees: current.headingDegrees,
           };
           const previous = followCameraRef.current ?? followCameraFromView(map, car);
-          const camera = followCameraStep(previous, car, Math.min(Math.max(dt, 0), MAX_FRAME_SECONDS));
+          const camera = followCameraStep(
+            previous,
+            car,
+            Math.min(Math.max(dt, 0), MAX_FRAME_SECONDS),
+            cameraViewRef.current,
+          );
           followCameraRef.current = camera;
           const claim = claimCameraJob(followJobRef.current, cameraJobRef.current);
           followJobRef.current = claim.ownedJob;
