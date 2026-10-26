@@ -32,6 +32,7 @@ import {
   type RoadNetwork,
 } from "../roads/roadNetwork";
 import { refreshTraffic, stepTraffic, type TrafficCar } from "../traffic/traffic";
+import type { DriveSample } from "../training/approach";
 import {
   installGoogleMapFailureHook,
   subscribeGoogleMapFailure,
@@ -53,6 +54,7 @@ export type SwedenMapHandle = {
   readCenter: () => { lat: number; lng: number } | null;
   chooseBranch: (index: number) => void;
   setPedal: (pedal: "accelerate" | "brake", pressed: boolean) => void;
+  placeAlong: (edgeId: string, distanceMeters: number) => boolean;
 };
 
 type CityMapProps = {
@@ -66,6 +68,7 @@ type CityMapProps = {
   onReadyChange: (ready: boolean) => void;
   onVehicleChange: (status: VehicleStatus) => void;
   onExtendRoads: (center: RoadPoint) => void;
+  onDriveSample?: (sample: DriveSample) => void;
 };
 
 function moveCamera(map: Map3DViewElement, lat: number, lng: number, altitude: number): void {
@@ -95,7 +98,7 @@ function poseOf(state: VehicleState) {
 }
 
 export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMap(
-  { apiKey, onRetry, roads, areas, anchor, focus, extendHint, onReadyChange, onVehicleChange, onExtendRoads },
+  { apiKey, onRetry, roads, areas, anchor, focus, extendHint, onReadyChange, onVehicleChange, onExtendRoads, onDriveSample },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -105,6 +108,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
   const onReadyChangeRef = useRef(onReadyChange);
   const onVehicleChangeRef = useRef(onVehicleChange);
   const onExtendRef = useRef(onExtendRoads);
+  const onSampleRef = useRef(onDriveSample);
   const areasRef = useRef(areas);
   const extendHintRef = useRef(extendHint);
   const carryRef = useRef<VehicleState | null>(null);
@@ -134,6 +138,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
   onReadyChangeRef.current = onReadyChange;
   onVehicleChangeRef.current = onVehicleChange;
   onExtendRef.current = onExtendRoads;
+  onSampleRef.current = onDriveSample;
   areasRef.current = areas;
   extendHintRef.current = extendHint;
 
@@ -271,6 +276,27 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     },
     setPedal(pedal, pressed) {
       pedalsRef.current[pedal] = pressed;
+    },
+    placeAlong(edgeId, distanceMeters) {
+      const network = networkRef.current;
+      const edge = network?.edgesById.get(edgeId);
+      const map = mapRef.current;
+      const library = libraryRef.current;
+      if (!network || !edge || !map || !library) {
+        return false;
+      }
+      const distance = Math.min(edge.lengthMeters, Math.max(0, distanceMeters));
+      const placed = vehicleFromPlacement({ edge, distanceMeters: distance, gapMeters: 0 });
+      followRef.current = false;
+      vehicleRef.current = placed;
+      if (!vehicleViewRef.current) {
+        vehicleViewRef.current = mountRoadVehicle(map, library);
+      }
+      vehicleViewRef.current?.update(poseOf(placed));
+      publishRef.current(placed);
+      bindTrafficRef.current(placed.position);
+      flyToCarRef.current(placed.position.lat, placed.position.lng, placed.headingDegrees);
+      return true;
     },
   }));
 
@@ -643,6 +669,14 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
           dt,
         );
         syncTrafficViews();
+        onSampleRef.current?.({
+          speedMps: current.speedMps,
+          edgeId: current.edgeId,
+          distanceMeters: current.distanceMeters,
+          position: current.position,
+          mode: current.mode,
+          traffic: trafficRef.current.map((car) => ({ position: car.position })),
+        });
       }
       frame = requestAnimationFrame(tick);
     };
