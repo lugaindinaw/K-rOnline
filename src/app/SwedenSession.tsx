@@ -316,6 +316,11 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
           onReadyChange={setMapReady}
           onVehicleChange={setVehicle}
           onDriveSample={onDriveSample}
+          rideHint={
+            trainingOpen && attempt.status === "running"
+              ? "Övning: närma dig korsningen och observera trafiken. Gas och broms som vanligt."
+              : null
+          }
           onExtendRoads={(center) => {
             void extendRoads(center);
           }}
