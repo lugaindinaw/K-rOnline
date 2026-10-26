@@ -13,6 +13,30 @@ import {
   type ApproachAttempt,
 } from "../training/approach";
 
+function recordedSpeed(kmh: number | null): string {
+  return kmh === null ? "Inte uppmätt" : `${kmh} km/h`;
+}
+
+function speedChangeFact(attempt: ApproachAttempt): string {
+  if (attempt.slowedDown) {
+    return "Ja";
+  }
+  if (attempt.slowdownKnown) {
+    return "Nej";
+  }
+  return "Inte uppmätt";
+}
+
+function stopFact(attempt: ApproachAttempt): string {
+  if (attempt.stoppedBefore) {
+    return "Ja";
+  }
+  if (attempt.completed) {
+    return "Nej, korsningen nåddes utan stopp före den";
+  }
+  return "Inte fastställt";
+}
+
 type SwedenPanelProps = {
   query: string;
   onQueryChange: (value: string) => void;
@@ -84,10 +108,16 @@ export function SwedenPanel({
       <p className="eyebrow">Prototyp</p>
       <h1 id="sweden-title">Hela Sverige</h1>
       <p>
-        Stockholm är startposition och exempelområde. Sök en stad, en mindre ort
-        eller flytta kameran. Vägar från OpenStreetMap hämtas bara för området
-        runt den valda punkten.
+        3D-kartan är igång. Stockholm är startposition. Vägar från OpenStreetMap
+        hämtas för området runt den valda punkten. När vägarna har laddats står
+        bilen på en väg och du kan köra direkt.
       </p>
+      <h2>Så börjar du</h2>
+      <ol className="start-steps">
+        <li>Sök en ort i Sverige, eller stanna kvar i Stockholm.</li>
+        <li>Gasa med W, pil upp eller Gas. Bromsa med S, pil ned eller Broms.</li>
+        <li>Vid en korsning väljer du väg med 1–9 eller knapparna som visas.</li>
+      </ol>
       <form
         className="place-search"
         onSubmit={(event) => {
@@ -95,7 +125,7 @@ export function SwedenPanel({
           onSearch();
         }}
       >
-        <label htmlFor="place-query">Plats i Sverige</label>
+        <label htmlFor="place-query">Sök en ort i Sverige</label>
         <div className="place-search-row">
           <input
             id="place-query"
@@ -128,6 +158,148 @@ export function SwedenPanel({
           ))}
         </ul>
       ) : null}
+      <div className="drive-block">
+        <h2>Köra</h2>
+        <p>
+          Håll W eller pil upp för att gasa, och S eller pil ned för att bromsa. Knapparna Gas och
+          Broms ligger kvar tills du byter. Vid en korsning väljer du väg med 1–9. Några mindre
+          bilar märkta Trafik följer samma vägar, saktar in där vägen delar sig och håller avstånd.
+        </p>
+        <div className="drive-pedals">
+          <button
+            type="button"
+            onClick={() => {
+              onPedal("brake", false);
+              onPedal("accelerate", true);
+            }}
+          >
+            Gas
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onPedal("accelerate", false);
+              onPedal("brake", true);
+            }}
+          >
+            Broms
+          </button>
+        </div>
+        {vehicle.placed ? (
+          <p className="drive-speed" role="status">
+            {vehicle.speedKmh} km/h
+            {vehicle.roadName ? ` · ${vehicle.roadName}` : ""}
+          </p>
+        ) : (
+          <p>Bilen visas på kartan när en körbar väg har laddats.</p>
+        )}
+        {extendNote ? <p role="status">{extendNote}</p> : null}
+        {vehicle.message ? <p role="status">{vehicle.message}</p> : null}
+        {vehicle.choices.length > 0 ? (
+          <div className="drive-choices">
+            {vehicle.choices.map((choice) => (
+              <button key={choice.edgeId} type="button" onClick={() => onChooseBranch(choice.index)}>
+                {choice.index}. {choice.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+      <div className="training-block">
+        <h2>Träning</h2>
+        <button type="button" onClick={onToggleTraining} aria-pressed={trainingOpen}>
+          Träningsläge
+        </button>
+        {trainingOpen ? (
+          <>
+            <h3>{EXERCISE_TITLE}</h3>
+            <p>
+              Övningen går ut på att köra fram mot en korsning i det laddade vägnätet och observera
+              trafiken.
+            </p>
+            <ol className="training-steps">
+              <li>Starta övning ställer bilen på en väg som leder till korsningen.</li>
+              <li>Använd Gas och Broms, eller W och S.</li>
+              <li>Avsluta övning visar återkopplingen. Försök igen nollställer mätningarna.</li>
+            </ol>
+            <p>{EXERCISE_INSTRUCTION}</p>
+            {trainingError ? (
+              <p className="road-error" role="alert">
+                {trainingError}
+              </p>
+            ) : null}
+            {attempt.status === "running" ? (
+              <p role="status">Övningen pågår. Gasa och bromsa som vanligt.</p>
+            ) : null}
+            <div className="training-actions">
+              <button type="button" onClick={onStartExercise} disabled={loadingRoads}>
+                Starta övning
+              </button>
+              <button type="button" onClick={onFinishExercise} disabled={attempt.status !== "running"}>
+                Avsluta övning
+              </button>
+              <button type="button" onClick={onRetryExercise} disabled={loadingRoads}>
+                Försök igen
+              </button>
+            </div>
+            {feedback ? (
+              <div className="training-feedback">
+                <h3>Återkoppling</h3>
+                <h4>Uppmätta fakta</h4>
+                <dl className="training-facts">
+                  <div>
+                    <dt>Ungefär 40 meter</dt>
+                    <dd>{recordedSpeed(attempt.speedAt40Kmh)}</dd>
+                  </div>
+                  <div>
+                    <dt>Ungefär 30 meter</dt>
+                    <dd>{recordedSpeed(attempt.speedAt30Kmh)}</dd>
+                  </div>
+                  <div>
+                    <dt>Ungefär 20 meter</dt>
+                    <dd>{recordedSpeed(attempt.speedAt20Kmh)}</dd>
+                  </div>
+                  <div>
+                    <dt>Hastigheten minskade</dt>
+                    <dd>{speedChangeFact(attempt)}</dd>
+                  </div>
+                  <div>
+                    <dt>Stannade före korsningen</dt>
+                    <dd>{stopFact(attempt)}</dd>
+                  </div>
+                  <div>
+                    <dt>Korsningen nåddes</dt>
+                    <dd>{attempt.completed ? "Ja" : "Nej"}</dd>
+                  </div>
+                </dl>
+                <p className="training-advice-note">
+                  Tabellen visar bara registrerade prov. Inte uppmätt betyder att bilen inte
+                  passerade den punkten. Råden är inte ett godkänt- eller underkäntresultat.
+                </p>
+                <h4>{FEEDBACK_DID_TITLE}</h4>
+                <ul>
+                  {feedback.did.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+                <h4>{FEEDBACK_PRACTICE_TITLE}</h4>
+                <p className="training-advice-note">{feedback.adviceNote}</p>
+                <ul>
+                  {feedback.practice.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+                <h4>{FEEDBACK_EVENTS_TITLE}</h4>
+                <ul>
+                  {feedback.events.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </>
+        ) : null}
+      </div>
       <div className="road-block">
         <h2>Vägar i området</h2>
         <p>
@@ -169,104 +341,6 @@ export function SwedenPanel({
         <button type="button" onClick={onLoadAtCamera} disabled={!cameraAvailable || loadingRoads}>
           Hämta vägar vid kameran
         </button>
-      </div>
-      <div className="drive-block">
-        <h2>Köra</h2>
-        <p>
-          Håll W eller pil upp för att gasa, och S eller pil ned för att bromsa. Knapparna Gas och
-          Broms ligger kvar tills du byter. Vid en korsning väljer du väg med 1–9. Några mindre
-          bilar märkta Trafik följer samma vägar, saktar in där vägen delar sig och håller avstånd.
-        </p>
-        <div className="drive-pedals">
-          <button
-            type="button"
-            onClick={() => {
-              onPedal("brake", false);
-              onPedal("accelerate", true);
-            }}
-          >
-            Gas
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              onPedal("accelerate", false);
-              onPedal("brake", true);
-            }}
-          >
-            Broms
-          </button>
-        </div>
-        {vehicle.placed ? (
-          <p className="drive-speed" role="status">
-            {vehicle.speedKmh} km/h
-            {vehicle.roadName ? ` · ${vehicle.roadName}` : ""}
-          </p>
-        ) : null}
-        {extendNote ? <p role="status">{extendNote}</p> : null}
-        {vehicle.message ? <p role="status">{vehicle.message}</p> : null}
-        {vehicle.choices.length > 0 ? (
-          <div className="drive-choices">
-            {vehicle.choices.map((choice) => (
-              <button key={choice.edgeId} type="button" onClick={() => onChooseBranch(choice.index)}>
-                {choice.index}. {choice.label}
-              </button>
-            ))}
-          </div>
-        ) : null}
-      </div>
-      <div className="training-block">
-        <h2>Träning</h2>
-        <button type="button" onClick={onToggleTraining} aria-pressed={trainingOpen}>
-          Träningsläge
-        </button>
-        {trainingOpen ? (
-          <>
-            <h3>{EXERCISE_TITLE}</h3>
-            <p>{EXERCISE_INSTRUCTION}</p>
-            {trainingError ? (
-              <p className="road-error" role="alert">
-                {trainingError}
-              </p>
-            ) : null}
-            {attempt.status === "running" ? <p role="status">Övningen pågår.</p> : null}
-            <div className="training-actions">
-              <button type="button" onClick={onStartExercise} disabled={loadingRoads}>
-                Starta övning
-              </button>
-              <button type="button" onClick={onFinishExercise} disabled={attempt.status !== "running"}>
-                Avsluta övning
-              </button>
-              <button type="button" onClick={onRetryExercise} disabled={loadingRoads}>
-                Försök igen
-              </button>
-            </div>
-            {feedback ? (
-              <div className="training-feedback">
-                <h3>Återkoppling</h3>
-                <h4>{FEEDBACK_DID_TITLE}</h4>
-                <ul>
-                  {feedback.did.map((line) => (
-                    <li key={line}>{line}</li>
-                  ))}
-                </ul>
-                <h4>{FEEDBACK_PRACTICE_TITLE}</h4>
-                <p className="training-advice-note">{feedback.adviceNote}</p>
-                <ul>
-                  {feedback.practice.map((line) => (
-                    <li key={line}>{line}</li>
-                  ))}
-                </ul>
-                <h4>{FEEDBACK_EVENTS_TITLE}</h4>
-                <ul>
-                  {feedback.events.map((line) => (
-                    <li key={line}>{line}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-          </>
-        ) : null}
       </div>
       <p>
         Startvyn över Stockholm visade fotorealistisk 3D{" "}

@@ -69,6 +69,7 @@ type CityMapProps = {
   onVehicleChange: (status: VehicleStatus) => void;
   onExtendRoads: (center: RoadPoint) => void;
   onDriveSample?: (sample: DriveSample) => void;
+  rideHint?: string | null;
 };
 
 function moveCamera(map: Map3DViewElement, lat: number, lng: number, altitude: number): void {
@@ -98,7 +99,7 @@ function poseOf(state: VehicleState) {
 }
 
 export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMap(
-  { apiKey, onRetry, roads, areas, anchor, focus, extendHint, onReadyChange, onVehicleChange, onExtendRoads, onDriveSample },
+  { apiKey, onRetry, roads, areas, anchor, focus, extendHint, onReadyChange, onVehicleChange, onExtendRoads, onDriveSample, rideHint = null },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -745,6 +746,11 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       {screen.kind === "ready" && !steady ? (
         <p className="map-pending" role="status">
           Kartbiblioteket är laddat. Väntar på att vyn ska bli stadig.
+        </p>
+      ) : null}
+      {screen.kind === "ready" && rideHint ? (
+        <p className="ride-hint" role="status">
+          {rideHint}
         </p>
       ) : null}
       {screen.kind === "ready" ? (
