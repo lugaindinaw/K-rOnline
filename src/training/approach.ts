@@ -9,11 +9,20 @@ export const MISSING_JUNCTION_MESSAGE = "Ingen lämplig korsning finns i det lad
 export const APPROACH_METERS = 40;
 const LEAD_IN_METERS = 30;
 const MIN_EDGE_METERS = 30;
-const RECORD_CLEARANCE_METERS = 4;
+/** Samples closer than this can be the simulation's own brake. Max stop distance at 12 m/s is 9 m. */
+const DRIVER_CLEARANCE_METERS = 10;
+const MARK_TOLERANCE_METERS = 3;
+const SPEED_MARKS = [40, 30, 20] as const;
 const STOP_SPEED_MPS = 0.4;
 const MOVE_SPEED_MPS = 1;
 const SLOW_DROP_KMH = 4;
 export const NEAR_CAR_METERS = 22;
+
+export const FEEDBACK_DID_TITLE = "Det här gjorde du";
+export const FEEDBACK_PRACTICE_TITLE = "Det här kan du träna på";
+export const FEEDBACK_EVENTS_TITLE = "Händelser under övningen";
+export const ADVICE_NOTE =
+  "Råden är träningsförslag utifrån registrerade händelser, inte en officiell bedömning eller ett godkänt- eller underkäntresultat.";
 
 export type ApproachStart = {
   edgeId: string;
@@ -43,16 +52,27 @@ export type ApproachAttempt = {
   approachSpeedKmh: number | null;
   minApproachKmh: number | null;
   maxApproachKmh: number | null;
+  /** Speed near 40, 30 and 20 m. Null means that distance was not measured. */
+  speedAt40Kmh: number | null;
+  speedAt30Kmh: number | null;
+  speedAt20Kmh: number | null;
+  slowdownKnown: boolean;
   slowedDown: boolean;
+  /** Speed fell inside the last 10 m, where the simulation may brake by itself. */
+  simZoneSlowdown: boolean;
   stoppedBefore: boolean;
+  /** The simulation set speed to 0 at the junction point. */
+  simulatedStop: boolean;
+  lookedForTraffic: boolean;
   continuedWhileNear: boolean;
   sawNearbyCar: boolean;
 };
 
 export type ApproachFeedback = {
-  good: string[];
-  improve: string[];
+  did: string[];
+  practice: string[];
   events: string[];
+  adviceNote: string;
 };
 
 export function idleAttempt(): ApproachAttempt {
@@ -65,8 +85,15 @@ export function idleAttempt(): ApproachAttempt {
     approachSpeedKmh: null,
     minApproachKmh: null,
     maxApproachKmh: null,
+    speedAt40Kmh: null,
+    speedAt30Kmh: null,
+    speedAt20Kmh: null,
+    slowdownKnown: false,
     slowedDown: false,
+    simZoneSlowdown: false,
     stoppedBefore: false,
+    simulatedStop: false,
+    lookedForTraffic: false,
     continuedWhileNear: false,
     sawNearbyCar: false,
   };
@@ -148,26 +175,69 @@ export function observeApproach(
   }
   const onApproach = sample.edgeId === start.edgeId;
   const remaining = onApproach ? start.lengthMeters - sample.distanceMeters : Number.POSITIVE_INFINITY;
-  const inBand = onApproach && remaining <= APPROACH_METERS && remaining > RECORD_CLEARANCE_METERS;
-  const completed = onApproach && (sample.mode === "choose" || remaining <= 2);
+  const inDriverZone = onApproach && remaining <= APPROACH_METERS && remaining > DRIVER_CLEARANCE_METERS;
+  const completed = onApproach && (sample.mode === "choose" || sample.mode === "ended");
   let moved = attempt.moved;
   let reachedApproach = attempt.reachedApproach;
   let approachSpeedKmh = attempt.approachSpeedKmh;
   let minApproachKmh = attempt.minApproachKmh;
   let maxApproachKmh = attempt.maxApproachKmh;
+  let speedAt40Kmh = attempt.speedAt40Kmh;
+  let speedAt30Kmh = attempt.speedAt30Kmh;
+  let speedAt20Kmh = attempt.speedAt20Kmh;
+  let slowdownKnown = attempt.slowdownKnown;
   let slowedDown = attempt.slowedDown;
+  let simZoneSlowdown = attempt.simZoneSlowdown;
   let stoppedBefore = attempt.stoppedBefore;
+  let simulatedStop = attempt.simulatedStop;
+  let lookedForTraffic = attempt.lookedForTraffic;
   let continuedWhileNear = attempt.continuedWhileNear;
   let sawNearbyCar = attempt.sawNearbyCar;
 
-  if (inBand) {
+  if (onApproach && remaining <= APPROACH_METERS) {
+    lookedForTraffic = true;
+    if (nearby(start, sample)) {
+      sawNearbyCar = true;
+      if (sample.speedMps > MOVE_SPEED_MPS && remaining > DRIVER_CLEARANCE_METERS) {
+        continuedWhileNear = true;
+      }
+    }
+  }
+  if (onApproach && (sample.mode === "choose" || sample.mode === "ended") && remaining <= 2) {
+    simulatedStop = true;
+  }
+  if (
+    onApproach &&
+    remaining <= DRIVER_CLEARANCE_METERS &&
+    attempt.maxApproachKmh !== null &&
+    kmh(sample.speedMps) <= attempt.maxApproachKmh - SLOW_DROP_KMH
+  ) {
+    simZoneSlowdown = true;
+  }
+  if (inDriverZone && sample.speedMps > 0.8) {
+    const speedKmh = kmh(sample.speedMps);
+    if (speedAt40Kmh === null && Math.abs(remaining - SPEED_MARKS[0]) <= MARK_TOLERANCE_METERS) {
+      speedAt40Kmh = speedKmh;
+    }
+    if (speedAt30Kmh === null && Math.abs(remaining - SPEED_MARKS[1]) <= MARK_TOLERANCE_METERS) {
+      speedAt30Kmh = speedKmh;
+    }
+    if (speedAt20Kmh === null && Math.abs(remaining - SPEED_MARKS[2]) <= MARK_TOLERANCE_METERS) {
+      speedAt20Kmh = speedKmh;
+    }
+  }
+
+  if (inDriverZone) {
     const speedKmh = kmh(sample.speedMps);
     reachedApproach = true;
     if (approachSpeedKmh === null) {
       approachSpeedKmh = speedKmh;
     }
-    if (moved && maxApproachKmh !== null && speedKmh <= maxApproachKmh - SLOW_DROP_KMH) {
-      slowedDown = true;
+    if (moved && maxApproachKmh !== null) {
+      slowdownKnown = true;
+      if (speedKmh <= maxApproachKmh - SLOW_DROP_KMH) {
+        slowedDown = true;
+      }
     }
     if (maxApproachKmh === null || speedKmh > maxApproachKmh) {
       maxApproachKmh = speedKmh;
@@ -181,12 +251,6 @@ export function observeApproach(
     if (sample.speedMps > 0.8) {
       moved = true;
     }
-    if (nearby(start, sample)) {
-      sawNearbyCar = true;
-      if (sample.speedMps > MOVE_SPEED_MPS) {
-        continuedWhileNear = true;
-      }
-    }
   }
 
   const next: ApproachAttempt = {
@@ -198,8 +262,15 @@ export function observeApproach(
     approachSpeedKmh,
     minApproachKmh,
     maxApproachKmh,
+    speedAt40Kmh,
+    speedAt30Kmh,
+    speedAt20Kmh,
+    slowdownKnown,
     slowedDown,
+    simZoneSlowdown,
     stoppedBefore,
+    simulatedStop,
+    lookedForTraffic,
     continuedWhileNear,
     sawNearbyCar,
   };
@@ -211,8 +282,15 @@ export function observeApproach(
     next.approachSpeedKmh === attempt.approachSpeedKmh &&
     next.minApproachKmh === attempt.minApproachKmh &&
     next.maxApproachKmh === attempt.maxApproachKmh &&
+    next.speedAt40Kmh === attempt.speedAt40Kmh &&
+    next.speedAt30Kmh === attempt.speedAt30Kmh &&
+    next.speedAt20Kmh === attempt.speedAt20Kmh &&
+    next.slowdownKnown === attempt.slowdownKnown &&
     next.slowedDown === attempt.slowedDown &&
+    next.simZoneSlowdown === attempt.simZoneSlowdown &&
     next.stoppedBefore === attempt.stoppedBefore &&
+    next.simulatedStop === attempt.simulatedStop &&
+    next.lookedForTraffic === attempt.lookedForTraffic &&
     next.continuedWhileNear === attempt.continuedWhileNear &&
     next.sawNearbyCar === attempt.sawNearbyCar
   ) {
@@ -221,58 +299,104 @@ export function observeApproach(
   return next;
 }
 
-export function approachFeedback(attempt: ApproachAttempt): ApproachFeedback {
-  const good: string[] = [];
-  const improve: string[] = [];
-  const events: string[] = [];
+function speedMarkLine(meters: number, speedKmh: number | null): string | null {
+  if (speedKmh === null) {
+    return null;
+  }
+  return `Hastigheten var ${speedKmh} km/h ungefär ${meters} meter före korsningen.`;
+}
 
-  if (attempt.approachSpeedKmh === null) {
-    events.push("Ingen hastighet registrerades nära korsningen.");
+export function approachFeedback(attempt: ApproachAttempt): ApproachFeedback {
+  const did: string[] = [];
+  const practice: string[] = [];
+  const events: string[] = [];
+  const passedWithoutStop = attempt.completed && !attempt.stoppedBefore;
+
+  const at40 = speedMarkLine(40, attempt.speedAt40Kmh);
+  const at30 = speedMarkLine(30, attempt.speedAt30Kmh);
+  const at20 = speedMarkLine(20, attempt.speedAt20Kmh);
+  if (at40) {
+    did.push(at40);
+    events.push(at40);
+  }
+  if (at30) {
+    did.push(at30);
+    events.push(at30);
   } else {
-    events.push(`Hastighet när korsningen närmade sig: ${attempt.approachSpeedKmh} km/h.`);
-    if (attempt.minApproachKmh !== null && attempt.maxApproachKmh !== null && attempt.minApproachKmh !== attempt.maxApproachKmh) {
-      events.push(`Lägsta hastighet före korsningen: ${attempt.minApproachKmh} km/h.`);
-      events.push(`Högsta hastighet före korsningen: ${attempt.maxApproachKmh} km/h.`);
-    }
+    events.push("Hastigheten omkring 30 meter före korsningen är okänd.");
   }
+  if (at20) {
+    did.push(at20);
+    events.push(at20);
+  }
+  if (
+    attempt.minApproachKmh !== null &&
+    attempt.maxApproachKmh !== null &&
+    attempt.minApproachKmh !== attempt.maxApproachKmh
+  ) {
+    events.push(`Lägsta uppmätta hastighet före korsningen: ${attempt.minApproachKmh} km/h.`);
+    events.push(`Högsta uppmätta hastighet före korsningen: ${attempt.maxApproachKmh} km/h.`);
+  }
+
   if (attempt.slowedDown) {
-    const line = "Du sänkte hastigheten före korsningen.";
-    good.push(line);
-    events.push(line);
-  } else if (attempt.reachedApproach) {
-    improve.push("Hastigheten sjönk inte före korsningen.");
+    did.push("Du minskade hastigheten när du närmade dig korsningen.");
+    events.push("Hastigheten minskade under närmandet.");
+  } else if (attempt.slowdownKnown && attempt.simZoneSlowdown) {
+    events.push("Hastigheten minskade inte före de sista 10 metrarna.");
+    events.push(
+      "Närmare korsningen sjönk farten. Det kan vara simuleringens egen inbromsning och räknas inte som att du minskade hastigheten.",
+    );
+    practice.push("Råd: Du kan träna på att minska hastigheten före korsningen.");
+  } else if (attempt.slowdownKnown) {
+    events.push("Hastigheten minskade inte under närmandet.");
+    practice.push("Råd: Du kan träna på att minska hastigheten före korsningen.");
+  } else {
+    events.push("Om hastigheten minskade under närmandet är okänt.");
   }
+
   if (attempt.stoppedBefore) {
-    const line = "Du stannade före korsningen.";
-    good.push(line);
-    events.push(line);
-  } else if (attempt.reachedApproach) {
-    improve.push("Du stannade inte före korsningen.");
+    did.push("Du stannade före korsningen.");
+    events.push("Bilen stannade före korsningen.");
+  } else if (passedWithoutStop) {
+    events.push("Bilen nådde korsningen utan att stanna före den.");
+    practice.push("Råd: Du kan träna på att stanna före korsningen.");
+  } else if (attempt.reachedApproach || attempt.lookedForTraffic) {
+    events.push(
+      "Inget förarstopp före korsningen registrerades. Korsningen nåddes inte, så det går inte att säga att bilen passerade utan att stanna.",
+    );
+  } else {
+    events.push("Om bilen stannade före korsningen är okänt.");
   }
-  if (attempt.sawNearbyCar && !attempt.continuedWhileNear) {
-    events.push("En annan bil var nära korsningen.");
+  if (attempt.simulatedStop && !attempt.stoppedBefore) {
+    events.push("Stoppet vid korsningspunkten gjordes av simuleringen.");
   }
-  if (!attempt.sawNearbyCar && (attempt.reachedApproach || attempt.completed)) {
+
+  if (attempt.sawNearbyCar) {
+    events.push("En annan bil befann sig nära korsningen under din körning.");
+  } else if (attempt.lookedForTraffic || attempt.completed) {
     events.push("Ingen annan bil registrerades nära korsningen.");
+  } else {
+    events.push("Om en annan bil var nära korsningen är okänt.");
   }
   if (attempt.continuedWhileNear) {
-    const line = "Du fortsatte medan en annan bil befann sig nära korsningen.";
-    improve.push(line);
-    events.push(line);
+    events.push("Bilen fortsatte medan den andra bilen var nära korsningen.");
+    practice.push("Råd: Du kan träna på att observera trafiken när en annan bil är nära korsningen.");
   }
+
   if (attempt.completed) {
-    const line = "Övningen slutfördes.";
-    good.push(line);
-    events.push(line);
-  } else if (attempt.endedEarly) {
-    events.push("Övningen avslutades innan korsningen.");
-    improve.push("Korsningen nåddes inte.");
+    did.push("Du nådde korsningen och övningen slutfördes.");
+    events.push("Korsningen nåddes och övningen slutfördes.");
+  } else if (attempt.endedEarly || attempt.status === "finished") {
+    did.push("Du nådde inte korsningen under det här försöket.");
+    events.push("Korsningen nåddes inte.");
+    practice.push("Råd: Kör fram till korsningen om du vill öva hela närmandet.");
   }
-  if (good.length === 0) {
-    good.push("Inget särskilt registrerades.");
+
+  if (did.length === 0) {
+    did.push("Inget särskilt registrerades under försöket.");
   }
-  if (improve.length === 0) {
-    improve.push("Inget att förbättra utifrån det som registrerades.");
+  if (practice.length === 0) {
+    practice.push("Inget särskilt att träna på utifrån det som registrerades.");
   }
-  return { good, improve, events };
+  return { did, practice, events, adviceNote: ADVICE_NOTE };
 }

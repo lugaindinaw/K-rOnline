@@ -5,6 +5,9 @@ import { highwayLabel, roadSummary, type RoadSegment } from "../roads/drivingRoa
 import {
   EXERCISE_INSTRUCTION,
   EXERCISE_TITLE,
+  FEEDBACK_DID_TITLE,
+  FEEDBACK_EVENTS_TITLE,
+  FEEDBACK_PRACTICE_TITLE,
   approachFeedback,
   idleAttempt,
   type ApproachAttempt,
@@ -241,19 +244,20 @@ export function SwedenPanel({
             {feedback ? (
               <div className="training-feedback">
                 <h3>Återkoppling</h3>
-                <p>Det som gick bra</p>
+                <h4>{FEEDBACK_DID_TITLE}</h4>
                 <ul>
-                  {feedback.good.map((line) => (
+                  {feedback.did.map((line) => (
                     <li key={line}>{line}</li>
                   ))}
                 </ul>
-                <p>Det som kan förbättras</p>
+                <h4>{FEEDBACK_PRACTICE_TITLE}</h4>
+                <p className="training-advice-note">{feedback.adviceNote}</p>
                 <ul>
-                  {feedback.improve.map((line) => (
+                  {feedback.practice.map((line) => (
                     <li key={line}>{line}</li>
                   ))}
                 </ul>
-                <p>Registrerade händelser</p>
+                <h4>{FEEDBACK_EVENTS_TITLE}</h4>
                 <ul>
                   {feedback.events.map((line) => (
                     <li key={line}>{line}</li>
@@ -272,7 +276,10 @@ export function SwedenPanel({
       <details>
         <summary>Vad som saknas för körträning</summary>
         <p>
-          Övningen använder det laddade vägnätet och de trafikbilar som redan finns. Bilen följer
+          Övningen använder det laddade vägnätet och de trafikbilar som redan finns. Återkopplingen
+          beskriver registrerad hastighet, om farten minskade, om bilen stannade före korsningen och
+          om korsningen nåddes. Tipsen är råd. Väjningsplikt och stopplikt bedöms inte, och försöket
+          får inget godkänt- eller underkäntresultat. Bilen följer
           mittlinjen. Nästa vägavsnitt hämtas automatiskt nära kanten av området. Modellen är
           förstorad så att den syns. Det finns inga körfält, ingen NVDB och ingen realistisk
           bilfysik. Om listan beskärs kan en korsning saknas.
