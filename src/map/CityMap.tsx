@@ -10,6 +10,7 @@ import {
   vehicleStatus,
   IDLE_VEHICLE,
   MAX_FRAME_SECONDS,
+  REJOIN_METERS,
   type VehicleState,
   type VehicleStatus,
 } from "../drive/drive";
@@ -37,7 +38,7 @@ import {
 import { loadMaps3dLibrary } from "./loadMaps3d";
 import { publicMapError, resolveMapScreen, type MapPhase } from "./mapScreen";
 import type { Map3DViewElement, Maps3dLibrary } from "./maps3dTypes";
-import { followCameraFromView, followCameraStep, type FollowCamera } from "./followCamera";
+import { claimCameraJob, followCameraFromView, followCameraStep, type FollowCamera } from "./followCamera";
 import { createRoadOverlays, type RoadLine } from "./roadOverlays";
 import { mountRoadVehicle, type RoadVehicle } from "./roadVehicle";
 
@@ -113,6 +114,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
   const pedalsRef = useRef({ accelerate: false, brake: false });
   const followRef = useRef(false);
   const followCameraRef = useRef<FollowCamera | null>(null);
+  const followJobRef = useRef(0);
   const lookAltitudeRef = useRef(25);
   const cameraJobRef = useRef(0);
   const signatureRef = useRef("");
@@ -188,10 +190,13 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     };
     show(currentAltitude, lat, lng, heading);
     void readGroundElevation(lat, lng).then((ground) => {
-      if (job !== cameraJobRef.current || mapRef.current !== map || ground == null) {
+      if (mapRef.current !== map || ground == null) {
         return;
       }
       lookAltitudeRef.current = ground + 2;
+      if (job !== cameraJobRef.current) {
+        return;
+      }
       const position = vehicleRef.current?.position ?? { lat, lng };
       const carHeading = vehicleRef.current?.headingDegrees ?? heading;
       show(lookAltitudeRef.current, position.lat, position.lng, carHeading);
@@ -442,7 +447,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
 
     const explained = explainRoads(roads, anchor);
     networkRef.current = explained.network;
-    if (carried) {
+    if (carried && nearestPlacement(explained.network, carried.position, REJOIN_METERS)) {
       const rejoined = rejoinVehicle(carried, explained.network);
       vehicleRef.current = rejoined;
       const view = vehicleViewRef.current ?? mountRoadVehicle(map, library);
@@ -537,10 +542,28 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
           const previous = followCameraRef.current ?? followCameraFromView(map, car);
           const camera = followCameraStep(previous, car, Math.min(Math.max(dt, 0), MAX_FRAME_SECONDS));
           followCameraRef.current = camera;
-          map.center = { lat: camera.lat, lng: camera.lng, altitude: lookAltitudeRef.current };
-          map.range = camera.rangeMeters;
-          map.tilt = camera.tiltDegrees;
-          map.heading = camera.headingDegrees;
+          const claim = claimCameraJob(followJobRef.current, cameraJobRef.current);
+          followJobRef.current = claim.ownedJob;
+          const endCamera = {
+            center: {
+              lat: camera.lat,
+              lng: camera.lng,
+              altitude: lookAltitudeRef.current,
+            },
+            range: camera.rangeMeters,
+            tilt: camera.tiltDegrees,
+            heading: camera.headingDegrees,
+          };
+          if (claim.interrupt) {
+            cameraJobRef.current = claim.ownedJob;
+            if (typeof map.flyCameraTo === "function") {
+              map.flyCameraTo({ endCamera, durationMillis: 0 });
+            }
+          }
+          map.center = endCamera.center;
+          map.range = endCamera.range;
+          map.tilt = endCamera.tilt;
+          map.heading = endCamera.heading;
         }
       }
       frame = requestAnimationFrame(tick);
@@ -564,8 +587,12 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       if (cancelled || mapRef.current !== map || job !== cameraJobRef.current) {
         return;
       }
-      const altitude = (ground ?? 600) + 20;
-      lookAltitudeRef.current = altitude;
+      const groundAltitude = (ground ?? 600) + 2;
+      lookAltitudeRef.current = groundAltitude;
+      if (vehicleRef.current) {
+        return;
+      }
+      const altitude = groundAltitude + 18;
       try {
         moveCamera(map, focus.lat, focus.lng, altitude);
       } catch {

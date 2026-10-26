@@ -1,5 +1,6 @@
 import {
   nearestPlacement,
+  pathHeading,
   sampleEdge,
   type RoadEdge,
   type RoadNetwork,
@@ -13,7 +14,7 @@ export const BRAKE_MPS2 = 8;
 export const COAST_MPS2 = 0.6;
 export const MAX_STEP_SECONDS = 0.05;
 export const MAX_FRAME_SECONDS = 0.25;
-export const YAW_DEGREES_PER_SECOND = 180;
+export const YAW_DEGREES_PER_SECOND = 120;
 const MAX_TRANSFERS = 32;
 const STOP_SNAP_METERS = 2;
 
@@ -103,10 +104,18 @@ export function turnToward(
   return (from + step + 360) % 360;
 }
 
-function mustStopAtEnd(network: RoadNetwork, edge: RoadEdge): boolean {
+function automaticContinuation(network: RoadNetwork, edge: RoadEdge): RoadEdge | null {
   const listed = listChoices(network, edge);
   const forward = listed.choices.filter((choice) => !choice.reverse);
-  return !(forward.length === 1 && listed.hidden === 0);
+  if (forward.length !== 1 || listed.hidden !== 0) {
+    return null;
+  }
+  const only = forward[0];
+  return only ? (network.edgesById.get(only.edgeId) ?? null) : null;
+}
+
+function mustStopAtEnd(network: RoadNetwork, edge: RoadEdge): boolean {
+  return automaticContinuation(network, edge) === null;
 }
 
 function isReverse(current: RoadEdge, candidate: RoadEdge): boolean {
@@ -244,7 +253,6 @@ export function rejoinVehicle(previous: VehicleState, network: RoadNetwork): Veh
     edgeId: placement.edge.id,
     distanceMeters: placement.distanceMeters,
     position: sample.position,
-    headingDegrees: sample.headingDegrees,
     roadName: placement.edge.name,
     mode: "driving",
     choices: [],
@@ -299,9 +307,20 @@ function stepVehicleOnce(
   if (moved.mode !== "driving") {
     return moved;
   }
+  const currentEdge = network.edgesById.get(moved.edgeId) ?? edge;
+  const previousEdge = currentEdge.id === edge.id ? null : edge;
   const steered = {
     ...moved,
-    headingDegrees: turnToward(state.headingDegrees, moved.headingDegrees, dt),
+    headingDegrees: turnToward(
+      state.headingDegrees,
+      pathHeading(
+        previousEdge,
+        currentEdge,
+        moved.distanceMeters,
+        automaticContinuation(network, currentEdge),
+      ),
+      dt,
+    ),
   };
   return steered.speedMps > 0 ? steered : { ...steered, message: state.message };
 }

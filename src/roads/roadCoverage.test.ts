@@ -4,6 +4,7 @@ import {
   EXTEND_EMPTY_MESSAGE,
   coverageMargin,
   extendFailureMessage,
+  isNearCoverage,
   mergeRoadSegments,
   prefetchCenter,
   pruneCoverage,
@@ -51,6 +52,11 @@ describe("road coverage", () => {
       expect(next.lat).toBeGreaterThan(nearEdge.lat);
     }
     expect(shouldPrefetch(places[0]!.point, [])).toBe(false);
+    const stockholm = [{ center: places[0]!.point, radiusMeters: 600 }];
+    expect(shouldPrefetch(places[1]!.point, stockholm)).toBe(false);
+    expect(shouldPrefetch(places[2]!.point, stockholm)).toBe(false);
+    expect(isNearCoverage(places[1]!.point, stockholm)).toBe(false);
+    expect(isNearCoverage(northOf(places[0]!.point, 450), stockholm)).toBe(true);
   });
 
   it("stitches a continued way and refuses a nearby way with different nodes", () => {

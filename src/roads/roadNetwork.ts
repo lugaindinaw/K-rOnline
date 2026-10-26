@@ -349,3 +349,41 @@ export function sampleEdge(
     headingDegrees: segmentHeading(edge, distance),
   };
 }
+
+export const HEADING_SPAN_METERS = 5;
+
+function pointOnChain(
+  previous: RoadEdge | null,
+  edge: RoadEdge,
+  next: RoadEdge | null,
+  distance: number,
+): RoadPoint {
+  if (distance < 0) {
+    if (previous) {
+      return pointAlong(previous, Math.max(0, previous.lengthMeters + distance));
+    }
+    return pointAlong(edge, 0);
+  }
+  if (distance > edge.lengthMeters) {
+    if (next) {
+      return pointAlong(next, Math.min(next.lengthMeters, distance - edge.lengthMeters));
+    }
+    return pointAlong(edge, edge.lengthMeters);
+  }
+  return pointAlong(edge, distance);
+}
+
+export function pathHeading(
+  previous: RoadEdge | null,
+  edge: RoadEdge,
+  distanceMetersAlong: number,
+  next: RoadEdge | null = null,
+): number {
+  const distance = Math.min(edge.lengthMeters, Math.max(0, distanceMetersAlong));
+  const behind = pointOnChain(previous, edge, next, distance - HEADING_SPAN_METERS);
+  const ahead = pointOnChain(previous, edge, next, distance + HEADING_SPAN_METERS);
+  if (distanceMeters(behind, ahead) < 0.05) {
+    return segmentHeading(edge, distance);
+  }
+  return (bearingDegrees(behind, ahead) + 360) % 360;
+}

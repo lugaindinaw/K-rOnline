@@ -36,8 +36,13 @@ export function coverageMargin(point: RoadPoint, areas: readonly CoverageCircle[
   return best;
 }
 
+export function isNearCoverage(point: RoadPoint, areas: readonly CoverageCircle[]): boolean {
+  const outsideLimit = PREFETCH_AHEAD_METERS + PREFETCH_MARGIN_METERS;
+  return areas.some((area) => distanceMeters(point, area.center) <= area.radiusMeters + outsideLimit);
+}
+
 export function shouldPrefetch(point: RoadPoint, areas: readonly CoverageCircle[]): boolean {
-  if (areas.length === 0) {
+  if (!isNearCoverage(point, areas)) {
     return false;
   }
   return coverageMargin(point, areas) < PREFETCH_MARGIN_METERS;

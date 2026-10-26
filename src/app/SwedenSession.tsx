@@ -9,6 +9,7 @@ import {
   EXTEND_EMPTY_MESSAGE,
   EXTEND_LOADING_MESSAGE,
   extendFailureMessage,
+  isNearCoverage,
   mergeRoadSegments,
   pruneCoverage,
   type CoverageCircle,
@@ -118,6 +119,9 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
 
   async function extendRoads(center: RoadPoint) {
     const requestId = requestRef.current;
+    if (!isNearCoverage(center, coverageRef.current)) {
+      return;
+    }
     const key = roadRequestKey(center);
     if (loadedKeys.current.has(key) || pendingKeys.current.has(key) || failureKeys.current.has(key)) {
       return;
@@ -126,7 +130,10 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
     setExtendNote(EXTEND_LOADING_MESSAGE);
     const result = await fetchDrivingRoads(center);
     pendingKeys.current.delete(key);
-    if (requestId !== requestRef.current) {
+    if (requestId !== requestRef.current || !isNearCoverage(center, coverageRef.current)) {
+      if (requestId === requestRef.current) {
+        setExtendNote(null);
+      }
       return;
     }
     if (!result.ok) {
