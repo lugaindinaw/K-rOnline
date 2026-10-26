@@ -276,7 +276,9 @@ export function SwedenPanel({
       <details>
         <summary>Vad som saknas för körträning</summary>
         <p>
-          Övningen använder det laddade vägnätet och de trafikbilar som redan finns. Återkopplingen
+          Övningen använder det laddade vägnätet och de trafikbilar som redan finns. Mätningen
+          följer samma korsningsnod om vägsegmentet byts. Försvinner noden blir senare värden
+          okända. Återkopplingen
           beskriver registrerad hastighet, om farten minskade, om bilen stannade före korsningen och
           om korsningen nåddes. Tipsen är råd. Väjningsplikt och stopplikt bedöms inte, och försöket
           får inget godkänt- eller underkäntresultat. Bilen följer

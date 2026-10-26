@@ -12,6 +12,9 @@ const MIN_EDGE_METERS = 30;
 /** Samples closer than this can be the simulation's own brake. Max stop distance at 12 m/s is 9 m. */
 const DRIVER_CLEARANCE_METERS = 10;
 const MARK_TOLERANCE_METERS = 3;
+const MAX_MARK_GAP_METERS = 8;
+const JUNCTION_MATCH_METERS = 25;
+const MAX_PATH_HOPS = 4;
 const SPEED_MARKS = [40, 30, 20] as const;
 const STOP_SPEED_MPS = 0.4;
 const MOVE_SPEED_MPS = 1;
@@ -41,6 +44,8 @@ export type DriveSample = {
   position: RoadPoint;
   mode: "driving" | "choose" | "ended";
   traffic: { position: RoadPoint }[];
+  /** Live network after a refetch. Absent samples keep the original edge. */
+  network?: RoadNetwork | null;
 };
 
 export type ApproachAttempt = {
@@ -66,6 +71,8 @@ export type ApproachAttempt = {
   lookedForTraffic: boolean;
   continuedWhileNear: boolean;
   sawNearbyCar: boolean;
+  /** Last reliable distance to the target junction. Not a measurement result. */
+  previousRemainingMeters: number | null;
 };
 
 export type ApproachFeedback = {
@@ -96,6 +103,7 @@ export function idleAttempt(): ApproachAttempt {
     lookedForTraffic: false,
     continuedWhileNear: false,
     sawNearbyCar: false,
+    previousRemainingMeters: null,
   };
 }
 
@@ -162,6 +170,97 @@ function nearby(start: ApproachStart, sample: DriveSample): boolean {
   return sample.traffic.some((car) => distanceMeters(start.junction, car.position) < NEAR_CAR_METERS);
 }
 
+function junctionStillPresent(network: RoadNetwork, start: ApproachStart): boolean {
+  return network.edges.some((edge) => {
+    if (edge.toNode !== start.toNode) {
+      return false;
+    }
+    const end = edge.points[edge.points.length - 1];
+    return end !== undefined && distanceMeters(end, start.junction) <= JUNCTION_MATCH_METERS;
+  });
+}
+
+function isReverseEdge(current: RoadEdge, candidate: RoadEdge): boolean {
+  return (
+    candidate.osmWayId === current.osmWayId &&
+    candidate.fromNode === current.toNode &&
+    candidate.toNode === current.fromNode
+  );
+}
+
+function extraDistanceToNode(network: RoadNetwork, fromEdge: RoadEdge, targetNode: string): number | null {
+  const queue: { node: string; distance: number; hops: number; prev: RoadEdge }[] = [
+    { node: fromEdge.toNode, distance: 0, hops: 0, prev: fromEdge },
+  ];
+  const used = new Set<string>([fromEdge.id]);
+  let found: number | null = null;
+  let steps = 0;
+  while (queue.length > 0 && steps < 64) {
+    const item = queue.shift();
+    if (!item) {
+      break;
+    }
+    steps += 1;
+    if (item.node === targetNode) {
+      if (found !== null) {
+        return null;
+      }
+      found = item.distance;
+      continue;
+    }
+    if (item.hops >= MAX_PATH_HOPS) {
+      continue;
+    }
+    for (const edge of network.outgoing.get(item.node) ?? []) {
+      if (used.has(edge.id) || isReverseEdge(item.prev, edge)) {
+        continue;
+      }
+      used.add(edge.id);
+      queue.push({
+        node: edge.toNode,
+        distance: item.distance + edge.lengthMeters,
+        hops: item.hops + 1,
+        prev: edge,
+      });
+    }
+  }
+  return steps >= 64 ? null : found;
+}
+
+/** Distance along the roads to the saved junction node, or null when that node cannot be followed. */
+function resolveRemaining(start: ApproachStart, sample: DriveSample): number | null {
+  const network = sample.network ?? null;
+  if (network) {
+    if (!junctionStillPresent(network, start)) {
+      return null;
+    }
+    const edge = network.edgesById.get(sample.edgeId);
+    if (!edge || sample.distanceMeters < 0 || sample.distanceMeters > edge.lengthMeters + 0.5) {
+      return null;
+    }
+    const along = edge.lengthMeters - sample.distanceMeters;
+    if (edge.toNode === start.toNode) {
+      return along;
+    }
+    const extra = extraDistanceToNode(network, edge, start.toNode);
+    return extra === null ? null : along + extra;
+  }
+  if (sample.edgeId !== start.edgeId) {
+    return null;
+  }
+  return start.lengthMeters - sample.distanceMeters;
+}
+
+function passedMark(previous: number | null, remaining: number, mark: number): boolean {
+  if (previous === null || !(previous > mark)) {
+    return false;
+  }
+  if (previous - remaining > MAX_MARK_GAP_METERS) {
+    return false;
+  }
+  return Math.abs(remaining - mark) <= MARK_TOLERANCE_METERS;
+}
+
 export function observeApproach(
   attempt: ApproachAttempt,
   start: ApproachStart,
@@ -173,10 +272,12 @@ export function observeApproach(
   if (!Number.isFinite(sample.speedMps) || !sample.edgeId || !Number.isFinite(sample.distanceMeters)) {
     return attempt;
   }
-  const onApproach = sample.edgeId === start.edgeId;
-  const remaining = onApproach ? start.lengthMeters - sample.distanceMeters : Number.POSITIVE_INFINITY;
-  const inDriverZone = onApproach && remaining <= APPROACH_METERS && remaining > DRIVER_CLEARANCE_METERS;
-  const completed = onApproach && (sample.mode === "choose" || sample.mode === "ended");
+  const resolved = resolveRemaining(start, sample);
+  const known = resolved !== null && Number.isFinite(resolved);
+  const remaining = known ? resolved : Number.POSITIVE_INFINITY;
+  const previousRemaining = attempt.previousRemainingMeters;
+  const inDriverZone = known && remaining <= APPROACH_METERS && remaining > DRIVER_CLEARANCE_METERS;
+  const completed = known && remaining <= 2 && (sample.mode === "choose" || sample.mode === "ended");
   let moved = attempt.moved;
   let reachedApproach = attempt.reachedApproach;
   let approachSpeedKmh = attempt.approachSpeedKmh;
@@ -194,7 +295,7 @@ export function observeApproach(
   let continuedWhileNear = attempt.continuedWhileNear;
   let sawNearbyCar = attempt.sawNearbyCar;
 
-  if (onApproach && remaining <= APPROACH_METERS) {
+  if (known && remaining <= APPROACH_METERS) {
     lookedForTraffic = true;
     if (nearby(start, sample)) {
       sawNearbyCar = true;
@@ -203,26 +304,26 @@ export function observeApproach(
       }
     }
   }
-  if (onApproach && (sample.mode === "choose" || sample.mode === "ended") && remaining <= 2) {
+  if (known && (sample.mode === "choose" || sample.mode === "ended") && remaining <= 2) {
     simulatedStop = true;
   }
   if (
-    onApproach &&
+    known &&
     remaining <= DRIVER_CLEARANCE_METERS &&
     attempt.maxApproachKmh !== null &&
     kmh(sample.speedMps) <= attempt.maxApproachKmh - SLOW_DROP_KMH
   ) {
     simZoneSlowdown = true;
   }
-  if (inDriverZone && sample.speedMps > 0.8) {
+  if (known && sample.speedMps > 0.8) {
     const speedKmh = kmh(sample.speedMps);
-    if (speedAt40Kmh === null && Math.abs(remaining - SPEED_MARKS[0]) <= MARK_TOLERANCE_METERS) {
+    if (speedAt40Kmh === null && passedMark(previousRemaining, remaining, SPEED_MARKS[0])) {
       speedAt40Kmh = speedKmh;
     }
-    if (speedAt30Kmh === null && Math.abs(remaining - SPEED_MARKS[1]) <= MARK_TOLERANCE_METERS) {
+    if (speedAt30Kmh === null && passedMark(previousRemaining, remaining, SPEED_MARKS[1])) {
       speedAt30Kmh = speedKmh;
     }
-    if (speedAt20Kmh === null && Math.abs(remaining - SPEED_MARKS[2]) <= MARK_TOLERANCE_METERS) {
+    if (speedAt20Kmh === null && passedMark(previousRemaining, remaining, SPEED_MARKS[2])) {
       speedAt20Kmh = speedKmh;
     }
   }
@@ -273,6 +374,7 @@ export function observeApproach(
     lookedForTraffic,
     continuedWhileNear,
     sawNearbyCar,
+    previousRemainingMeters: known ? remaining : null,
   };
   if (
     next.status === attempt.status &&
@@ -294,6 +396,7 @@ export function observeApproach(
     next.continuedWhileNear === attempt.continuedWhileNear &&
     next.sawNearbyCar === attempt.sawNearbyCar
   ) {
+    attempt.previousRemainingMeters = known ? remaining : null;
     return attempt;
   }
   return next;
