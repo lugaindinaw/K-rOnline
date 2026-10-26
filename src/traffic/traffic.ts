@@ -13,10 +13,14 @@ export const TRAFFIC_GAP_METERS = 22;
 export const TRAFFIC_STOP_METERS = 8;
 export const MAX_TRAFFIC = 5;
 const TRAFFIC_ACCEL_MPS2 = 4;
+const JUNCTION_APPROACH_METERS = 30;
+const JUNCTION_CREEP_MPS = 3;
 const MIN_EDGE_METERS = 30;
 const SPAWN_CLEARANCE_METERS = 40;
 const REJOIN_METERS = 25;
 const MAX_TRANSFERS = 8;
+
+export type RoadEndKind = "continuation" | "branch" | "crossing" | "dead-end";
 
 export type TrafficCar = {
   id: string;
@@ -52,34 +56,135 @@ function headingDelta(left: number, right: number): number {
   return Math.min(raw, 360 - raw);
 }
 
-function nextEdge(network: RoadNetwork, edge: RoadEdge): RoadEdge | null {
+function forwardChoices(network: RoadNetwork, edge: RoadEdge): RoadEdge[] {
   const listed = listChoices(network, edge);
-  const forward = listed.choices
-    .filter((choice) => !choice.reverse)
-    .sort((left, right) => left.edgeId.localeCompare(right.edgeId));
-  const choice = forward[0] ?? listed.choices.find((item) => item.reverse);
-  return choice ? (network.edgesById.get(choice.edgeId) ?? null) : null;
+  return listed.choices.flatMap((choice) => {
+    if (choice.reverse) {
+      return [];
+    }
+    const next = network.edgesById.get(choice.edgeId);
+    return next && next.fromNode === edge.toNode ? [next] : [];
+  });
+}
+
+export function roadEndKind(network: RoadNetwork, edge: RoadEdge): RoadEndKind {
+  const listed = listChoices(network, edge);
+  const forward = listed.choices.filter((choice) => !choice.reverse);
+  if (forward.length >= 3 || listed.hidden > 0) {
+    return "crossing";
+  }
+  if (forward.length === 2) {
+    return "branch";
+  }
+  if (forward.length === 1) {
+    return "continuation";
+  }
+  return "dead-end";
+}
+
+function isDecision(kind: RoadEndKind): boolean {
+  return kind === "branch" || kind === "crossing";
+}
+
+function nextEdge(network: RoadNetwork, edge: RoadEdge): RoadEdge | null {
+  const forward = [...forwardChoices(network, edge)].sort((left, right) => left.id.localeCompare(right.id));
+  const choice = forward[0];
+  if (choice) {
+    return choice;
+  }
+  const listed = listChoices(network, edge);
+  const reverse = listed.choices.find((item) => item.reverse);
+  const turned = reverse ? network.edgesById.get(reverse.edgeId) : undefined;
+  return turned && turned.fromNode === edge.toNode ? turned : null;
 }
 
 function moveAlong(
   network: RoadNetwork,
   edge: RoadEdge,
   distance: number,
+  maxHops: number,
 ): { edge: RoadEdge; distance: number } {
   let current = edge;
   let cursor = distance;
-  for (let hop = 0; hop < MAX_TRANSFERS; hop += 1) {
+  for (let hop = 0; hop < maxHops; hop += 1) {
     if (cursor <= current.lengthMeters) {
       return { edge: current, distance: Math.max(0, cursor) };
     }
     const next = nextEdge(network, current);
-    if (!next || next.id === current.id) {
+    if (!next || next.id === current.id || next.fromNode !== current.toNode) {
       return { edge: current, distance: current.lengthMeters };
     }
     cursor -= current.lengthMeters;
     current = next;
   }
   return { edge: current, distance: Math.min(current.lengthMeters, Math.max(0, cursor)) };
+}
+
+function endpoint(edge: RoadEdge): RoadPoint | null {
+  return edge.points[edge.points.length - 1] ?? null;
+}
+
+function junctionBlocked(
+  network: RoadNetwork,
+  edge: RoadEdge,
+  car: TrafficCar,
+  cars: readonly TrafficCar[],
+  player: TrafficLead | null,
+): boolean {
+  if (!isDecision(roadEndKind(network, edge))) {
+    return false;
+  }
+  const node = endpoint(edge);
+  if (!node) {
+    return true;
+  }
+  const ourGap = edge.lengthMeters - car.distanceMeters;
+  if (player && !(player.edgeId === car.edgeId && player.distanceMeters <= car.distanceMeters + 0.5)) {
+    const playerGap = distanceMeters(node, player.position);
+    if (Number.isFinite(playerGap) && playerGap < TRAFFIC_GAP_METERS) {
+      return true;
+    }
+  }
+  const exits = new Set(forwardChoices(network, edge).map((item) => item.id));
+  for (const other of cars) {
+    if (other.id === car.id) {
+      continue;
+    }
+    if (other.edgeId === car.edgeId && other.distanceMeters <= car.distanceMeters + 0.5) {
+      continue;
+    }
+    const gap = distanceMeters(node, other.position);
+    if (!Number.isFinite(gap) || gap >= TRAFFIC_GAP_METERS) {
+      continue;
+    }
+    if (exits.has(other.edgeId) && other.distanceMeters < TRAFFIC_GAP_METERS) {
+      return true;
+    }
+    if (gap + 0.5 < ourGap) {
+      return true;
+    }
+    if (other.id < car.id && gap <= ourGap + 1) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function junctionSpeed(remaining: number, blocked: boolean, kind: RoadEndKind, speed: number): number {
+  if (!isDecision(kind)) {
+    return TRAFFIC_SPEED_MPS;
+  }
+  if (blocked) {
+    if (remaining <= JUNCTION_APPROACH_METERS) {
+      return 0;
+    }
+    return targetSpeed(Math.max(0, remaining), speed);
+  }
+  if (remaining >= JUNCTION_APPROACH_METERS) {
+    return TRAFFIC_SPEED_MPS;
+  }
+  const ratio = Math.max(0, remaining) / JUNCTION_APPROACH_METERS;
+  return JUNCTION_CREEP_MPS + (TRAFFIC_SPEED_MPS - JUNCTION_CREEP_MPS) * ratio;
 }
 
 function distanceAhead(network: RoadNetwork, car: TrafficCar, lead: TrafficLead): number | null {
@@ -147,10 +252,18 @@ function stepOne(
     leads.push(player);
   }
   const ahead = closestAhead(network, car, leads);
-  const desired = targetSpeed(ahead, car.speedMps);
+  const kind = roadEndKind(network, edge);
+  const remaining = edge.lengthMeters - car.distanceMeters;
+  const blocked = junctionBlocked(network, edge, car, cars, player);
+  const desired = Math.min(
+    targetSpeed(ahead, car.speedMps),
+    junctionSpeed(remaining, blocked, kind, car.speedMps),
+  );
   const delta = Math.max(-TRAFFIC_ACCEL_MPS2 * dt, Math.min(TRAFFIC_ACCEL_MPS2 * dt, desired - car.speedMps));
   const speed = Math.max(0, Math.min(TRAFFIC_SPEED_MPS, car.speedMps + delta));
-  const moved = moveAlong(network, edge, car.distanceMeters + speed * dt);
+  const travel = car.distanceMeters + speed * dt;
+  const capped = blocked ? Math.min(travel, edge.lengthMeters) : travel;
+  const moved = moveAlong(network, edge, capped, isDecision(kind) ? 1 : MAX_TRANSFERS);
   const sample = sampleEdge(moved.edge, moved.distance);
   return {
     ...car,

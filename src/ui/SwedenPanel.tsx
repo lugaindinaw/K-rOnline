@@ -150,7 +150,7 @@ export function SwedenPanel({
         <p>
           Håll W eller pil upp för att gasa, och S eller pil ned för att bromsa. Knapparna Gas och
           Broms ligger kvar tills du byter. Vid en korsning väljer du väg med 1–9. Några mindre
-          bilar märkta Trafik följer samma vägar och håller avstånd.
+          bilar märkta Trafik följer samma vägar, saktar in där vägen delar sig och håller avstånd.
         </p>
         <div className="drive-pedals">
           <button

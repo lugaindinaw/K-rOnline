@@ -99,6 +99,37 @@ function readOneWay(value: unknown): OneWay {
   return "both";
 }
 
+export type TrafficControlReport = {
+  oneway: OneWay | "unknown";
+  stop: "unknown";
+  giveWay: "unknown";
+  signal: "unknown";
+};
+
+const UNKNOWN_CONTROLS: TrafficControlReport = {
+  oneway: "unknown",
+  stop: "unknown",
+  giveWay: "unknown",
+  signal: "unknown",
+};
+
+export function readTrafficControls(tags: unknown): TrafficControlReport {
+  if (typeof tags !== "object" || tags === null) {
+    return { ...UNKNOWN_CONTROLS };
+  }
+  const oneway = (tags as { oneway?: unknown }).oneway;
+  if (oneway === "yes" || oneway === "1" || oneway === "true" || oneway === true) {
+    return { ...UNKNOWN_CONTROLS, oneway: "forward" };
+  }
+  if (oneway === "-1" || oneway === "reverse") {
+    return { ...UNKNOWN_CONTROLS, oneway: "backward" };
+  }
+  if (oneway === "no") {
+    return { ...UNKNOWN_CONTROLS, oneway: "both" };
+  }
+  return { ...UNKNOWN_CONTROLS };
+}
+
 function readWayGeometry(
   geometry: unknown,
   nodes: unknown,
