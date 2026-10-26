@@ -1,11 +1,13 @@
 import { turnToward } from "../drive/drive";
-import type { RoadPoint } from "../roads/drivingRoads";
+import { distanceMeters, type RoadPoint } from "../roads/drivingRoads";
 
-export const FOLLOW_RANGE_METERS = 85;
-export const FOLLOW_TILT_DEGREES = 64;
-export const CAMERA_LOOKAHEAD_METERS = 8;
-export const CAMERA_YAW_DEGREES_PER_SECOND = 140;
-const CAMERA_RESPONSE_PER_SECOND = 8;
+export const FOLLOW_RANGE_METERS = 160;
+export const FOLLOW_TILT_DEGREES = 58;
+export const CAMERA_LOOKAHEAD_METERS = 6;
+export const CAMERA_YAW_DEGREES_PER_SECOND = 90;
+const CAMERA_RESPONSE_PER_SECOND = 6;
+const NEAR_CAMERA_METERS = 40;
+const MAX_NEAR_METERS_PER_SECOND = 24;
 
 export type FollowCamera = {
   lat: number;
@@ -36,6 +38,25 @@ function blend(current: number, target: number, dtSeconds: number): number {
   return current + (target - current) * gain;
 }
 
+function moveToward(from: RoadPoint, to: RoadPoint, maxMeters: number): RoadPoint {
+  const distance = distanceMeters(from, to);
+  if (!Number.isFinite(distance) || distance <= maxMeters || distance < 0.05) {
+    return to;
+  }
+  const scale = maxMeters / distance;
+  return {
+    lat: from.lat + (to.lat - from.lat) * scale,
+    lng: from.lng + (to.lng - from.lng) * scale,
+  };
+}
+
+export function claimCameraJob(ownedJob: number, activeJob: number): { ownedJob: number; interrupt: boolean } {
+  if (ownedJob === activeJob) {
+    return { ownedJob, interrupt: false };
+  }
+  return { ownedJob: activeJob + 1, interrupt: true };
+}
+
 export function followCameraFromView(view: FollowView, car: RoadPoint & { headingDegrees: number }): FollowCamera {
   return {
     lat: typeof view.center?.lat === "number" ? view.center.lat : car.lat,
@@ -52,9 +73,17 @@ export function followCameraStep(
   dtSeconds: number,
 ): FollowCamera {
   const target = lookAhead(car, car.headingDegrees, CAMERA_LOOKAHEAD_METERS);
-  return {
+  const blended = {
     lat: blend(previous.lat, target.lat, dtSeconds),
     lng: blend(previous.lng, target.lng, dtSeconds),
+  };
+  const center =
+    distanceMeters(previous, car) < NEAR_CAMERA_METERS
+      ? moveToward(previous, blended, MAX_NEAR_METERS_PER_SECOND * Math.max(0, dtSeconds))
+      : blended;
+  return {
+    lat: center.lat,
+    lng: center.lng,
     headingDegrees: turnToward(
       previous.headingDegrees,
       car.headingDegrees,

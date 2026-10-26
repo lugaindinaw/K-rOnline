@@ -4,6 +4,7 @@ import {
   CAMERA_LOOKAHEAD_METERS,
   CAMERA_YAW_DEGREES_PER_SECOND,
   FOLLOW_RANGE_METERS,
+  claimCameraJob,
   followCameraFromView,
   followCameraStep,
 } from "./followCamera";
@@ -18,6 +19,16 @@ function headingDelta(left: number, right: number): number {
   const raw = Math.abs(left - right) % 360;
   return Math.min(raw, 360 - raw);
 }
+
+describe("claimCameraJob", () => {
+  it("interrupts an in-flight camera fly once and then keeps the chase", () => {
+    const first = claimCameraJob(0, 2);
+    expect(first.interrupt).toBe(true);
+    expect(first.ownedJob).toBe(3);
+    const steady = claimCameraJob(first.ownedJob, first.ownedJob);
+    expect(steady).toEqual({ ownedJob: 3, interrupt: false });
+  });
+});
 
 describe("followCameraStep", () => {
   it("eases toward a point ahead of the car and limits how fast the view spins", () => {
@@ -44,6 +55,22 @@ describe("followCameraStep", () => {
       expect(headingDelta(camera.headingDegrees, 0)).toBeLessThan(2);
       expect(camera.rangeMeters).toBeLessThan(FOLLOW_RANGE_METERS + 5);
       expect(camera.rangeMeters).toBeGreaterThan(FOLLOW_RANGE_METERS - 5);
+      expect(camera.lat).toBeGreaterThan(car.lat);
+    }
+  });
+
+  it("does not spin or jump when the car heading changes suddenly", () => {
+    for (const place of places) {
+      const car = { ...place, headingDegrees: 0 };
+      let camera = followCameraFromView({ center: place, heading: 0, range: FOLLOW_RANGE_METERS, tilt: 62 }, car);
+      for (let step = 0; step < 40; step += 1) {
+        camera = followCameraStep(camera, car, 0.05);
+      }
+      const turned = followCameraStep(camera, { ...car, headingDegrees: 90 }, 0.05);
+      expect(headingDelta(turned.headingDegrees, camera.headingDegrees)).toBeLessThanOrEqual(
+        CAMERA_YAW_DEGREES_PER_SECOND * 0.05 + 0.001,
+      );
+      expect(distanceMeters(turned, camera)).toBeLessThan(2);
     }
   });
 });

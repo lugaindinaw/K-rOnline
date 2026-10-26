@@ -186,6 +186,23 @@ describe("rejoinVehicle", () => {
     expect(rejoined.message).toBe("Bilen står på Gatan.");
   });
 
+  it("keeps the current heading when the network refreshes mid-edge", () => {
+    const short = buildRoadNetwork([segment("gata", ["1", "2"], [start, junction], { name: "Gatan" })]);
+    const edge = short.edges.find((item) => item.id.endsWith(":forward"));
+    const driving = {
+      ...vehicleFromPlacement({ edge: edge!, distanceMeters: edge!.lengthMeters / 2, gapMeters: 0 }),
+      speedMps: 8,
+      headingDegrees: 25,
+    };
+    const extended = buildRoadNetwork([
+      segment("gata", ["1", "2", "3"], [start, junction, east], { name: "Gatan" }),
+    ]);
+    const rejoined = rejoinVehicle(driving, extended);
+    expect(rejoined.mode).toBe("driving");
+    expect(rejoined.headingDegrees).toBe(25);
+    expect(rejoined.speedMps).toBe(8);
+  });
+
   it("offers a real connecting road after the next area arrives and ignores a nearby node", () => {
     const first = buildRoadNetwork([
       segment("ett", ["1", "2"], [start, junction], { name: "Ett", oneway: "forward" }),
@@ -278,6 +295,87 @@ describe("steering and stops", () => {
       expect(headingDelta(state.headingDegrees, 90)).toBeLessThan(8);
       expect(state.position.lng).toBeGreaterThan(corner.lng);
       expect(Math.abs(state.position.lat - corner.lat)).toBeLessThan(0.0002);
+    }
+  });
+
+  it("starts a sharp turn before the corner and stays on the centerline", () => {
+    for (const place of places) {
+      const corner = northOf(place, 80);
+      const end = eastOf(corner, 80);
+      const network = buildRoadNetwork([
+        segment(`${place.name}-sväng`, ["1", "2", "3"], [place, corner, end], {
+          name: place.name,
+          oneway: "forward",
+        }),
+      ]);
+      const edge = network.edges.find((item) => item.id.endsWith(":forward"));
+      const cornerDistance = edge!.cumulativeMeters[1] ?? 0;
+      let state = vehicleFromPlacement({
+        edge: edge!,
+        distanceMeters: cornerDistance - 3,
+        gapMeters: 0,
+      });
+      state = { ...state, speedMps: 4, headingDegrees: 0, message: null };
+      let turned = false;
+      for (let index = 0; index < 12 && state.distanceMeters < cornerDistance - 0.4; index += 1) {
+        const before = state.headingDegrees;
+        state = stepVehicle(network, state, { accelerate: false, brake: false }, 0.05);
+        expect(headingDelta(state.headingDegrees, before)).toBeLessThanOrEqual(YAW_DEGREES_PER_SECOND * 0.05 + 0.001);
+        expect(nearestPlacement(network, state.position, 5)?.gapMeters ?? 99).toBeLessThan(0.5);
+        if (state.headingDegrees > 5 && state.headingDegrees < 55) {
+          turned = true;
+        }
+      }
+      expect(turned).toBe(true);
+      expect(state.distanceMeters).toBeLessThan(cornerDistance);
+    }
+  });
+
+  it("follows a gentle bend without sliding off the centerline", () => {
+    const origin: RoadPoint = { lat: places[0]!.lat, lng: places[0]!.lng };
+    const points = [origin];
+    let cursor = origin;
+    let bearing = 0;
+    for (let index = 0; index < 5; index += 1) {
+      const radians = (bearing * Math.PI) / 180;
+      const cosine = Math.cos((cursor.lat * Math.PI) / 180);
+      cursor = {
+        lat: cursor.lat + (Math.cos(radians) * 20) / 111320,
+        lng: cursor.lng + (Math.sin(radians) * 20) / (111320 * Math.max(0.2, cosine)),
+      };
+      points.push(cursor);
+      bearing += 12;
+    }
+    const network = buildRoadNetwork([
+      segment("böj", ["1", "2", "3", "4", "5", "6"], points, { name: "Böjen", oneway: "forward" }),
+    ]);
+    const edge = network.edges.find((item) => item.id.endsWith(":forward"));
+    let state = vehicleFromPlacement({ edge: edge!, distanceMeters: 0, gapMeters: 0 });
+    state = { ...state, speedMps: 10 };
+    for (let index = 0; index < 100; index += 1) {
+      const before = state.headingDegrees;
+      state = stepVehicle(network, state, { accelerate: false, brake: false }, 0.05);
+      expect(state.mode).toBe("driving");
+      expect(headingDelta(state.headingDegrees, before)).toBeLessThanOrEqual(YAW_DEGREES_PER_SECOND * 0.05 + 0.001);
+      expect(nearestPlacement(network, state.position, 8)?.gapMeters ?? 99).toBeLessThan(1);
+    }
+    expect(state.headingDegrees).toBeGreaterThan(8);
+    expect(state.headingDegrees).toBeLessThan(50);
+  });
+
+  it("slows down when the accelerator is released", () => {
+    const network = buildRoadNetwork([
+      segment("norr", ["1", "2"], [start, northOf(start, 200)], { oneway: "forward" }),
+    ]);
+    const edge = network.edges.find((item) => item.id.endsWith(":forward"));
+    let state = vehicleFromPlacement({ edge: edge!, distanceMeters: 10, gapMeters: 0 });
+    state = { ...state, speedMps: 8, message: null };
+    const dt = 0.05;
+    for (let index = 0; index < 10; index += 1) {
+      const before = state.speedMps;
+      state = stepVehicle(network, state, { accelerate: false, brake: false }, dt);
+      expect(before - state.speedMps).toBeCloseTo(COAST_MPS2 * dt, 5);
+      expect(state.speedMps).toBeGreaterThan(0);
     }
   });
 

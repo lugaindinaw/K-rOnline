@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { explainRoads, nearestPlacement, placementWithRunway, pointAlong, buildRoadNetwork } from "./roadNetwork";
+import {
+  explainRoads,
+  nearestPlacement,
+  pathHeading,
+  placementWithRunway,
+  pointAlong,
+  buildRoadNetwork,
+} from "./roadNetwork";
 import type { OneWay, RoadPoint, RoadSegment } from "./drivingRoads";
 
 const a: RoadPoint = { lat: 59.33, lng: 18.07 };
@@ -80,5 +87,29 @@ describe("buildRoadNetwork", () => {
     expect(placed?.gapMeters).toBeLessThan(10);
     const nearEnd = placementWithRunway({ edge: placed!.edge, distanceMeters: placed!.edge.lengthMeters - 1, gapMeters: 0 });
     expect(placed!.edge.lengthMeters - nearEnd.distanceMeters).toBeGreaterThanOrEqual(25);
+  });
+
+  it("blends heading across a sharp corner while the samples stay on the centerline", () => {
+    const corner = { lat: a.lat + 80 / 111320, lng: a.lng };
+    const end = {
+      lat: corner.lat,
+      lng: a.lng + 80 / (111320 * Math.cos((a.lat * Math.PI) / 180)),
+    };
+    const network = buildRoadNetwork([
+      segment("sväng", ["1", "2", "3"], [a, corner, end], { oneway: "forward" }),
+    ]);
+    const edge = network.edges.find((item) => item.id.endsWith(":forward"));
+    const cornerDistance = edge?.cumulativeMeters[1] ?? 0;
+    const delta = (left: number, right: number) => {
+      const raw = Math.abs(left - right) % 360;
+      return Math.min(raw, 360 - raw);
+    };
+    expect(delta(pathHeading(null, edge!, cornerDistance - 20), 0)).toBeLessThan(5);
+    const near = pathHeading(null, edge!, cornerDistance - 2);
+    expect(delta(near, 0)).toBeGreaterThan(8);
+    expect(delta(near, 90)).toBeGreaterThan(20);
+    expect(delta(pathHeading(null, edge!, cornerDistance), 45)).toBeLessThan(20);
+    expect(delta(pathHeading(null, edge!, cornerDistance + 20), 90)).toBeLessThan(8);
+    expect(nearestPlacement(network, pointAlong(edge!, cornerDistance - 2), 5)?.gapMeters ?? 99).toBeLessThan(0.2);
   });
 });
