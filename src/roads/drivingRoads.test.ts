@@ -5,6 +5,7 @@ import {
   buildDrivingRoadQuery,
   capRoads,
   parseOverpassRoads,
+  readTrafficControls,
   roadSummary,
   sliceRoadsNear,
   type RoadSegment,
@@ -110,6 +111,36 @@ describe("parseOverpassRoads", () => {
       nodeIds: ["1", "2", "3"],
     });
     expect(roads[1]).toMatchObject({ oneway: "backward", nodeIds: null });
+  });
+
+  it("reads a reliable oneway tag and leaves stop, yield and signals unknown", () => {
+    expect(readTrafficControls(null)).toEqual({
+      oneway: "unknown",
+      stop: "unknown",
+      giveWay: "unknown",
+      signal: "unknown",
+    });
+    expect(readTrafficControls({ highway: "residential" })).toMatchObject({
+      oneway: "unknown",
+      stop: "unknown",
+      giveWay: "unknown",
+      signal: "unknown",
+    });
+    expect(
+      readTrafficControls({
+        highway: "residential",
+        oneway: "yes",
+        stop: "all",
+        give_way: "yes",
+        traffic_signals: "signal",
+      }),
+    ).toEqual({
+      oneway: "forward",
+      stop: "unknown",
+      giveWay: "unknown",
+      signal: "unknown",
+    });
+    expect(readTrafficControls({ oneway: "maybe" }).oneway).toBe("unknown");
   });
 });
 

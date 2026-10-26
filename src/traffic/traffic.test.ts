@@ -8,6 +8,7 @@ import {
   createTraffic,
   refreshTraffic,
   rejoinTraffic,
+  roadEndKind,
   stepTraffic,
   trafficCount,
   type TrafficCar,
@@ -290,5 +291,115 @@ describe("createTraffic", () => {
       onRoad(car, far);
       expect(distanceMeters(car.position, kiruna)).toBeLessThan(200);
     }
+  });
+});
+
+function crossingRoads(extra = true) {
+  const start = { lat: places[0]!.lat, lng: places[0]!.lng };
+  const node = northOf(start, 90);
+  const roads = [
+    segment("in", ["a", "n"], [start, node], "forward"),
+    segment("ut-n", ["n", "b"], [node, northOf(node, 80)], "forward"),
+    segment("ut-o", ["n", "c"], [node, eastOf(node, 80)], "forward"),
+  ];
+  if (extra) {
+    roads.push(segment("ut-v", ["n", "d"], [node, eastOf(node, -80)], "forward"));
+    roads.push(segment("fjar", ["x", "y"], [northOf(start, 2500), northOf(start, 2600)], "forward"));
+  }
+  return buildRoadNetwork(roads);
+}
+
+function carAt(network: ReturnType<typeof buildRoadNetwork>, edgeId: string, distance: number, id: string): TrafficCar {
+  const edge = network.edgesById.get(edgeId)!;
+  const sample = sampleEdge(edge, distance);
+  return {
+    id,
+    edgeId,
+    distanceMeters: distance,
+    speedMps: TRAFFIC_SPEED_MPS,
+    position: sample.position,
+    headingDegrees: sample.headingDegrees,
+  };
+}
+
+describe("junctions", () => {
+  it("tells a continuation, a branch, a crossing and a dead end apart", () => {
+    const start = { lat: places[2]!.lat, lng: places[2]!.lng };
+    const node = northOf(start, 70);
+    const straight = buildRoadNetwork([
+      segment("in", ["a", "n"], [start, node], "forward"),
+      segment("ut", ["n", "b"], [node, northOf(node, 70)], "forward"),
+    ]);
+    const branch = buildRoadNetwork([
+      segment("in", ["a", "n"], [start, node], "forward"),
+      segment("ut", ["n", "b"], [node, northOf(node, 70)], "forward"),
+      segment("sida", ["n", "c"], [node, eastOf(node, 70)], "forward"),
+    ]);
+    const crossing = crossingRoads();
+    const dead = buildRoadNetwork([segment("slut", ["a", "n"], [start, node], "forward")]);
+    expect(roadEndKind(straight, straight.edges.find((edge) => edge.osmWayId === "in")!)).toBe("continuation");
+    expect(roadEndKind(branch, branch.edges.find((edge) => edge.osmWayId === "in")!)).toBe("branch");
+    expect(roadEndKind(crossing, crossing.edges.find((edge) => edge.osmWayId === "in")!)).toBe("crossing");
+    expect(roadEndKind(dead, dead.edges[0]!)).toBe("dead-end");
+  });
+
+  it("slows down on the way into a crossing and stays on the approach", () => {
+    const network = crossingRoads();
+    const approach = network.edges.find((edge) => edge.osmWayId === "in")!;
+    let cars = [carAt(network, approach.id, approach.lengthMeters - 24, "trafik-1")];
+    const started = cars[0]!.speedMps;
+    for (let step = 0; step < 8; step += 1) {
+      cars = stepTraffic(network, cars, null, 0.05);
+    }
+    const car = cars[0]!;
+    onRoad(car, network);
+    expect(car.edgeId).toBe(approach.id);
+    expect(car.speedMps).toBeLessThan(started);
+    expect(car.distanceMeters).toBeLessThanOrEqual(approach.lengthMeters);
+  });
+
+  it("stops before a crossing when another car is too close to continue", () => {
+    const start = { lat: places[0]!.lat, lng: places[0]!.lng };
+    const node = northOf(start, 90);
+    const network = buildRoadNetwork([
+      segment("in", ["a", "n"], [start, node], "forward"),
+      segment("ut-n", ["n", "b"], [node, northOf(node, 80)], "forward"),
+      segment("ut-o", ["n", "c"], [node, eastOf(node, 10)], "forward"),
+      segment("ut-v", ["n", "d"], [node, eastOf(node, -80)], "forward"),
+    ]);
+    const approach = network.edges.find((edge) => edge.osmWayId === "in")!;
+    const exit = network.edges.find((edge) => edge.osmWayId === "ut-o")!;
+    let cars = [
+      carAt(network, approach.id, approach.lengthMeters - 18, "trafik-2"),
+      carAt(network, exit.id, exit.lengthMeters, "trafik-1"),
+    ];
+    for (let step = 0; step < 12; step += 1) {
+      cars = stepTraffic(network, cars, null, 0.25);
+    }
+    const waiting = cars.find((car) => car.id === "trafik-2")!;
+    onRoad(waiting, network);
+    expect(waiting.edgeId).toBe(approach.id);
+    expect(waiting.speedMps).toBeLessThan(1);
+    expect(waiting.distanceMeters).toBeLessThanOrEqual(approach.lengthMeters);
+    expect(distanceMeters(waiting.position, sampleEdge(approach, approach.lengthMeters).position)).toBeLessThan(20);
+    expect(Number.isFinite(waiting.position.lat)).toBe(true);
+    expect(Number.isFinite(waiting.position.lng)).toBe(true);
+  });
+
+  it("continues onto a connected edge when the crossing is clear", () => {
+    const network = crossingRoads();
+    const approach = network.edges.find((edge) => edge.osmWayId === "in")!;
+    let cars = [carAt(network, approach.id, approach.lengthMeters - 8, "trafik-1")];
+    for (let step = 0; step < 10; step += 1) {
+      cars = stepTraffic(network, cars, null, 0.25);
+    }
+    const car = cars[0]!;
+    onRoad(car, network);
+    const edge = network.edgesById.get(car.edgeId)!;
+    expect(car.edgeId).not.toBe(approach.id);
+    expect(edge.fromNode).toBe(approach.toNode);
+    expect(edge.osmWayId).not.toBe("fjar");
+    expect(distanceMeters(car.position, sampleEdge(approach, approach.lengthMeters).position)).toBeGreaterThan(1);
+    expect(distanceMeters(car.position, sampleEdge(approach, approach.lengthMeters).position)).toBeLessThan(25);
   });
 });
