@@ -1,4 +1,5 @@
 import { IDLE_VEHICLE, type VehicleStatus } from "../drive/drive";
+import type { CameraView } from "../map/followCamera";
 import { STOCKHOLM_CANDIDATE } from "../geo/stockholmCandidate";
 import { PLACE_EXAMPLES, type SwedishPlace } from "../places/swedishPlaces";
 import { highwayLabel, roadSummary, type RoadSegment } from "../roads/drivingRoads";
@@ -66,6 +67,8 @@ type SwedenPanelProps = {
   onStartExercise: () => void;
   onFinishExercise: () => void;
   onRetryExercise: () => void;
+  cameraView: CameraView;
+  onToggleCamera: () => void;
 };
 
 export function SwedenPanel({
@@ -97,6 +100,8 @@ export function SwedenPanel({
   onStartExercise,
   onFinishExercise,
   onRetryExercise,
+  cameraView,
+  onToggleCamera,
 }: SwedenPanelProps) {
   const summary = roadSummary(roads);
   const feedback = attempt.status === "finished" ? approachFeedback(attempt) : null;
@@ -117,6 +122,7 @@ export function SwedenPanel({
         <li>Sök en ort i Sverige, eller stanna kvar i Stockholm.</li>
         <li>Gasa med W, pil upp eller Gas. Bromsa med S, pil ned eller Broms.</li>
         <li>Vid en korsning väljer du väg med 1–9 eller knapparna som visas.</li>
+        <li>C eller knappen växlar mellan förarvy och vy bakifrån.</li>
       </ol>
       <form
         className="place-search"
@@ -162,8 +168,10 @@ export function SwedenPanel({
         <h2>Köra</h2>
         <p>
           Håll W eller pil upp för att gasa, och S eller pil ned för att bromsa. Knapparna Gas och
-          Broms ligger kvar tills du byter. Vid en korsning väljer du väg med 1–9. Några mindre
-          bilar märkta Trafik följer samma vägar, saktar in där vägen delar sig och håller avstånd.
+          Broms ligger kvar tills du byter. Vid en korsning väljer du väg med 1–9. C eller knappen
+          växlar kameran. Förarvyn sitter strax framför hytten, ungefär i förarens ögonhöjd, och
+          tittar framåt i 3D-kartan. Några andra bilar märkta Trafik följer samma vägar, saktar in
+          där vägen delar sig och håller avstånd.
         </p>
         <div className="drive-pedals">
           <button
@@ -185,6 +193,9 @@ export function SwedenPanel({
             Broms
           </button>
         </div>
+        <button type="button" className="camera-toggle" onClick={onToggleCamera} aria-pressed={cameraView === "driver"}>
+          {cameraView === "driver" ? "Vy bakifrån" : "Förarvy"}
+        </button>
         {vehicle.placed ? (
           <p className="drive-speed" role="status">
             {vehicle.speedKmh} km/h
@@ -356,10 +367,11 @@ export function SwedenPanel({
           beskriver registrerad hastighet, om farten minskade, om bilen stannade före korsningen och
           om korsningen nåddes. Tipsen är råd. Väjningsplikt och stopplikt bedöms inte, och försöket
           får inget godkänt- eller underkäntresultat. Bilen följer
-          mittlinjen. Nästa vägavsnitt hämtas automatiskt nära kanten av området. Modellen är
-          förstorad så att den syns. Det finns inga körfält, ingen NVDB och ingen realistisk
-          bilfysik. Om listan beskärs kan en korsning saknas.
-          Kameran följer bakom bilen efter första gaspådraget och tittar framåt längs vägen.
+          mittlinjen. Nästa vägavsnitt hämtas automatiskt nära kanten av området. Bilmodellen är i
+          personbilsstorlek, ungefär 4 meter lång. Det finns inga körfält, ingen NVDB och ingen
+          realistisk bilfysik. Om listan beskärs kan en korsning saknas. Kameran kan följa bakom
+          bilen eller sitta i förarvyn. Modellen har ingen kupé, så förarvyn visar gatan framför
+          motorhuven.
         </p>
       </details>
     </section>

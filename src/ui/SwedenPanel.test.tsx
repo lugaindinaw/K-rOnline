@@ -35,6 +35,8 @@ function markup(overrides: Partial<Parameters<typeof SwedenPanel>[0]> = {}): str
       onStartExercise={() => undefined}
       onFinishExercise={() => undefined}
       onRetryExercise={() => undefined}
+      cameraView="chase"
+      onToggleCamera={() => undefined}
       {...overrides}
     />,
   );
@@ -48,6 +50,8 @@ describe("SwedenPanel", () => {
     expect(html).toContain("Gasa med W, pil upp eller Gas");
     expect(html).toContain("Bromsa med S, pil ned eller Broms");
     expect(html).toContain("1–9");
+    expect(html).toContain("Förarvy");
+    expect(html).toContain("förarens ögonhöjd");
     expect(html).toContain("Stockholm är startposition");
     expect(html).toContain("OpenStreetMap");
     expect(html).not.toContain("Närma dig en korsning");

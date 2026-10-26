@@ -1,8 +1,17 @@
 import type { Maps3dLibrary, Marker3DView, Model3DView } from "./maps3dTypes";
 
 export const CAR_MODEL_URL = "/car.glb";
-export const CAR_SCALE = 4;
-export const TRAFFIC_SCALE = 2;
+/**
+ * The glTF is already a passenger car: about 4.2 m long, 2.0 m wide and 1.7 m tall.
+ * Scale 1 keeps that size in the map's meters. Traffic gaps are measured between
+ * road positions, not between mesh bounds, so the scale must stay 1 for the cars
+ * to match those distances.
+ */
+export const CAR_LENGTH_METERS = 4.17;
+export const CAR_WIDTH_METERS = 1.96;
+export const CAR_HEIGHT_METERS = 1.68;
+export const CAR_SCALE = 1;
+export const TRAFFIC_SCALE = 1;
 export const CAR_TILT_DEGREES = 270;
 export const CAR_HEADING_OFFSET = 180;
 

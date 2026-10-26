@@ -3,7 +3,11 @@ import { distanceMeters } from "../roads/drivingRoads";
 import {
   CAMERA_LOOKAHEAD_METERS,
   CAMERA_YAW_DEGREES_PER_SECOND,
+  DRIVER_EYE_HEIGHT_METERS,
+  DRIVER_FORWARD_METERS,
+  DRIVER_LOOKAHEAD_METERS,
   FOLLOW_RANGE_METERS,
+  cameraProfile,
   claimCameraJob,
   followCameraFromView,
   followCameraStep,
@@ -71,6 +75,42 @@ describe("followCameraStep", () => {
         CAMERA_YAW_DEGREES_PER_SECOND * 0.05 + 0.001,
       );
       expect(distanceMeters(turned, camera)).toBeLessThan(2);
+    }
+  });
+
+  it("keeps a driver view near eye height and eases into it", () => {
+    const driver = cameraProfile("driver");
+    const back = DRIVER_LOOKAHEAD_METERS - DRIVER_FORWARD_METERS;
+    expect(driver.tiltDegrees).toBeGreaterThan(80);
+    expect(driver.tiltDegrees).toBeLessThan(89);
+    expect(driver.rangeMeters).toBeCloseTo(Math.hypot(back, DRIVER_EYE_HEIGHT_METERS), 5);
+    expect(driver.leftMeters).toBeGreaterThan(0);
+
+    for (const place of places) {
+      const car = { ...place, headingDegrees: 0 };
+      let camera = followCameraFromView(
+        { center: place, heading: 0, range: FOLLOW_RANGE_METERS, tilt: 64 },
+        car,
+      );
+      for (let step = 0; step < 30; step += 1) {
+        camera = followCameraStep(camera, car, 0.05, "chase");
+      }
+      const before = camera;
+      const switched = followCameraStep(camera, car, 0.05, "driver");
+      expect(Math.abs(switched.rangeMeters - before.rangeMeters)).toBeLessThan(3);
+      expect(Math.abs(switched.tiltDegrees - before.tiltDegrees)).toBeLessThan(12);
+      expect(Math.abs(driver.tiltDegrees - before.tiltDegrees)).toBeGreaterThan(15);
+      expect(headingDelta(switched.headingDegrees, before.headingDegrees)).toBeLessThanOrEqual(
+        CAMERA_YAW_DEGREES_PER_SECOND * 0.05 + 0.001,
+      );
+      for (let step = 0; step < 80; step += 1) {
+        camera = followCameraStep(camera, car, 0.05, "driver");
+      }
+      expect(camera.lat).toBeGreaterThan(car.lat);
+      expect(camera.lng).toBeLessThan(car.lng);
+      expect(distanceMeters(camera, car)).toBeGreaterThan(DRIVER_LOOKAHEAD_METERS - 4);
+      expect(distanceMeters(camera, car)).toBeLessThan(DRIVER_LOOKAHEAD_METERS + 4);
+      expect(camera.tiltDegrees).toBeGreaterThan(80);
     }
   });
 });

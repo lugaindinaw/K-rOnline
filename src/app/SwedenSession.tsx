@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { STOCKHOLM_CANDIDATE } from "../geo/stockholmCandidate";
 import { CityMap, type MapFocus, type SwedenMapHandle } from "../map/CityMap";
+import type { CameraView } from "../map/followCamera";
 import { searchSwedishPlaces, type SwedishPlace } from "../places/swedishPlaces";
 import { IDLE_VEHICLE, type VehicleStatus } from "../drive/drive";
 import { buildRoadNetwork } from "../roads/roadNetwork";
@@ -65,6 +66,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
   const [trainingOpen, setTrainingOpen] = useState(false);
   const [trainingError, setTrainingError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState<ApproachAttempt>(idleAttempt());
+  const [cameraView, setCameraView] = useState<CameraView>("chase");
   const attemptRef = useRef(attempt);
   const startRef = useRef<ApproachStart | null>(null);
 
@@ -295,6 +297,12 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
         onStartExercise={startExercise}
         onFinishExercise={() => commitAttempt(finishAttempt(attemptRef.current))}
         onRetryExercise={startExercise}
+        cameraView={cameraView}
+        onToggleCamera={() => {
+          const next = cameraView === "driver" ? "chase" : "driver";
+          setCameraView(next);
+          mapRef.current?.setCameraView(next);
+        }}
         onLoadAtCamera={() => {
           const center = mapRef.current?.readCenter() ?? null;
           if (!center) {
@@ -316,6 +324,8 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
           onReadyChange={setMapReady}
           onVehicleChange={setVehicle}
           onDriveSample={onDriveSample}
+          cameraView={cameraView}
+          onCameraViewChange={setCameraView}
           rideHint={
             trainingOpen && attempt.status === "running"
               ? "Övning: närma dig korsningen och observera trafiken. Gas och broms som vanligt."
