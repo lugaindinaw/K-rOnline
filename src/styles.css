@@ -243,6 +243,28 @@ input {
   margin-bottom: 8px;
 }
 
+.training-block {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #ddd6c8;
+}
+
+.training-block h3 {
+  margin: 12px 0 6px;
+  font-size: 1rem;
+}
+
+.training-actions {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.training-feedback ul {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+
 details {
   margin-top: 16px;
 }

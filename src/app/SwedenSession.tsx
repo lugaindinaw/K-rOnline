@@ -3,6 +3,18 @@ import { STOCKHOLM_CANDIDATE } from "../geo/stockholmCandidate";
 import { CityMap, type MapFocus, type SwedenMapHandle } from "../map/CityMap";
 import { searchSwedishPlaces, type SwedishPlace } from "../places/swedishPlaces";
 import { IDLE_VEHICLE, type VehicleStatus } from "../drive/drive";
+import { buildRoadNetwork } from "../roads/roadNetwork";
+import {
+  MISSING_JUNCTION_MESSAGE,
+  beginAttempt,
+  findApproachStart,
+  finishAttempt,
+  idleAttempt,
+  observeApproach,
+  type ApproachAttempt,
+  type ApproachStart,
+  type DriveSample,
+} from "../training/approach";
 import { fetchDrivingRoads, roadRequestKey } from "../roads/fetchDrivingRoads";
 import type { RoadPoint, RoadSegment } from "../roads/drivingRoads";
 import {
@@ -50,6 +62,58 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
   const pendingKeys = useRef(new Set<string>());
   const [focus, setFocus] = useState<MapFocus | null>(null);
   const [mapReady, setMapReady] = useState(false);
+  const [trainingOpen, setTrainingOpen] = useState(false);
+  const [trainingError, setTrainingError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState<ApproachAttempt>(idleAttempt());
+  const attemptRef = useRef(attempt);
+  const startRef = useRef<ApproachStart | null>(null);
+
+  function commitAttempt(next: ApproachAttempt) {
+    attemptRef.current = next;
+    setAttempt(next);
+  }
+
+  function startExercise() {
+    setTrainingOpen(true);
+    if (loadingRoads) {
+      setTrainingError("Vänta tills vägdata har hämtats.");
+      startRef.current = null;
+      commitAttempt(idleAttempt());
+      return;
+    }
+    const start = findApproachStart(buildRoadNetwork(roads));
+    if (!start) {
+      setTrainingError(MISSING_JUNCTION_MESSAGE);
+      startRef.current = null;
+      commitAttempt(idleAttempt());
+      return;
+    }
+    const placed = mapRef.current?.placeAlong(start.edgeId, start.distanceMeters) ?? false;
+    if (!placed) {
+      setTrainingError("Bilen kan inte ställas vid korsningen just nu.");
+      startRef.current = null;
+      commitAttempt(idleAttempt());
+      return;
+    }
+    mapRef.current?.setPedal("accelerate", false);
+    mapRef.current?.setPedal("brake", false);
+    setTrainingError(null);
+    startRef.current = start;
+    commitAttempt(beginAttempt());
+  }
+
+  function onDriveSample(sample: DriveSample) {
+    const current = attemptRef.current;
+    const start = startRef.current;
+    if (current.status !== "running" || !start) {
+      return;
+    }
+    const next = observeApproach(current, start, sample);
+    if (next === current) {
+      return;
+    }
+    commitAttempt(next);
+  }
 
   function applyCoverage(stored: StoredArea[], focus: RoadPoint) {
     const kept = pruneCoverage(stored, focus);
@@ -224,6 +288,13 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
           mapRef.current?.setPedal(pedal, pressed);
         }}
         cameraAvailable={Boolean(apiKey) && mapReady}
+        trainingOpen={trainingOpen}
+        onToggleTraining={() => setTrainingOpen((open) => !open)}
+        trainingError={trainingError}
+        attempt={attempt}
+        onStartExercise={startExercise}
+        onFinishExercise={() => commitAttempt(finishAttempt(attemptRef.current))}
+        onRetryExercise={startExercise}
         onLoadAtCamera={() => {
           const center = mapRef.current?.readCenter() ?? null;
           if (!center) {
@@ -244,6 +315,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
           extendHint={extendNote}
           onReadyChange={setMapReady}
           onVehicleChange={setVehicle}
+          onDriveSample={onDriveSample}
           onExtendRoads={(center) => {
             void extendRoads(center);
           }}
