@@ -28,6 +28,18 @@ npm run typecheck
 npm run build
 ```
 
+## Körmodell som ännu inte styr kartan
+
+`stepFreeVehicle` i `src/drive/freeDrive.ts` räknar en egen position, kurs och fart i kartans plan. Gas, broms och styrning använder samma enheter som den inkopplade bilen. Funktionen läser inget vägnät och flyttar inte positionen till en mittlinje. Kartan, ortssökningen, trafiken, kamerorna och körkortsövningen använder fortfarande `stepVehicle`. Fri körning är därför inte igång i webbläsaren.
+
+Så är den tänkt att kopplas in senare, utan att byta ut de delarna i ett svep:
+
+- OpenStreetMap-vägnätet används som en fråga efter steget. Närmaste kanter kan begränsa rörelsen. Positionen skrivs inte över med mittlinjens punkt. Bredd används bara när en `width`- eller `lanes`-tagg finns. Annars är asfaltkanten okänd.
+- Vid en korsning jämförs kursen med kanter som delar en nod. Den riktning som ligger närmast blir fortsatt väg. Den fria körningen ska inte stanna och kräva 1–9. Övningen kan behålla det stoppet tills mätningen ändras för sig.
+- Kamerans förarvy och vy bakifrån tar redan latitud, longitud och kurs. Den fria posen kan skickas dit utan en ny kameramodell.
+- Trafikbilarna fortsätter på mittlinjen. Spelarens fria punkt är bara en position de kan mäta avstånd till.
+- Övningen ”Närma dig en korsning” behöver en separat projektion från den fria positionen till `edgeId` och `distanceMeters` mot den sparade noden. `observeApproach` ska vara oförändrad tills den projektionen finns och är testad.
+
 ## Avgränsning
 
 Det här är inte körträning. Bilen har enkel gas och broms längs mittlinjen, och styrningen är en sidoförskjutning på högst några meter. Den kan inte lämna vägen. Trafikbilarna följer mittlinjen, saktar in vid en förgrening eller korsning och håller avstånd. Hämtade vägdata har enkelriktning när taggen finns. Stopplikt, väjningsplikt och trafiksignaler ingår inte, så de används inte. Vägarna är mittlinjer från OpenStreetMap, inte NVDB. Bara vägar som delar en OSM-nod kopplas ihop. Fotorealistisk 3D varierar över landet och är inte ett krav för att vägdata ska visas. Startvyn över centrala Stockholm ritade fotorealistisk 3D-yta 2026-10-25.
