@@ -1,4 +1,5 @@
 import type { RoadPoint } from "../roads/drivingRoads";
+import { nearestPlacement, type RoadNetwork } from "../roads/roadNetwork";
 import {
   ACCEL_MPS2,
   BRAKE_MPS2,
@@ -9,6 +10,7 @@ import {
   YAW_DEGREES_PER_SECOND,
   steerAngleDegrees,
   type DriveInput,
+  type VehicleState,
 } from "./drive";
 
 /**
@@ -22,7 +24,7 @@ const METERS_PER_DEGREE = 111320;
 /**
  * Pose of a car that moves in the map plane.
  * Heading 0 points north and 90 points east, matching the road network.
- * The live map still uses stepVehicle. This pose is not connected to a road.
+ * The visible car uses this pose. It is not written back onto a centerline.
  */
 export type FreeVehicleState = {
   position: RoadPoint;
@@ -30,16 +32,97 @@ export type FreeVehicleState = {
   speedMps: number;
 };
 
+/** Nearest centerline within this distance. Farther than this, the car is not linked to a road. */
+export const FREE_ROAD_ASSOCIATION_METERS = 40;
+
+export const OFF_ROAD_MESSAGE = "Bilen är utanför de hämtade vägarna.";
+
+/** Link to a centerline. This is not a position, and applying it must not move the car. */
+export type FreeRoadAssociation = {
+  edgeId: string;
+  distanceMeters: number;
+  gapMeters: number;
+  roadName: string | null;
+};
+
+export function associateFreePosition(
+  network: RoadNetwork,
+  position: RoadPoint,
+  maxGapMeters = FREE_ROAD_ASSOCIATION_METERS,
+): FreeRoadAssociation | null {
+  const nearest = nearestPlacement(network, position, maxGapMeters);
+  if (!nearest) {
+    return null;
+  }
+  return {
+    edgeId: nearest.edge.id,
+    distanceMeters: nearest.distanceMeters,
+    gapMeters: nearest.gapMeters,
+    roadName: nearest.edge.name,
+  };
+}
+
+function roadMessage(previous: string | null, associated: boolean, moving: boolean): string | null {
+  if (!associated) {
+    return OFF_ROAD_MESSAGE;
+  }
+  if (moving) {
+    return null;
+  }
+  return previous === OFF_ROAD_MESSAGE ? null : previous;
+}
+
+/** Refresh the nearest-road label without changing the car's pose. */
+export function describeFreeVehicle(state: VehicleState, network: RoadNetwork): VehicleState {
+  const association = associateFreePosition(network, state.position);
+  return {
+    ...state,
+    position: state.position,
+    headingDegrees: state.headingDegrees,
+    speedMps: state.speedMps,
+    offsetMeters: 0,
+    edgeId: association?.edgeId ?? "",
+    distanceMeters: association?.distanceMeters ?? 0,
+    roadName: association?.roadName ?? null,
+    mode: "driving",
+    choices: [],
+    message: roadMessage(state.message, association !== null, state.speedMps > 0),
+  };
+}
+
 /**
- * Later integration, not done here:
- * The map can pass this pose to the existing chase and driver cameras, which
- * already follow latitude, longitude and heading. A road query can then read
- * nearby OpenStreetMap edges without writing the car back onto a centerline.
- * Junction choice can compare this heading with edges that share a node.
- * Traffic can keep following centerlines and only measure distance to this
- * position. The junction exercise can keep observeApproach unchanged once a
- * separate projection fills edgeId and distanceMeters from this pose.
+ * One frame of the visible car. Position, heading and speed come only from
+ * stepFreeVehicle. The nearest OpenStreetMap edge is recorded for the label
+ * and for traffic distance. It is not copied onto the car.
+ * Junction choice and road-edge limits are not applied here.
+ * The along-track distance is not reliable enough for the junction exercise.
  */
+export function advanceFreeVehicle(
+  state: VehicleState,
+  input: DriveInput,
+  dtSeconds: number,
+  network: RoadNetwork,
+): VehicleState {
+  const moved = stepFreeVehicle(
+    {
+      position: state.position,
+      headingDegrees: state.headingDegrees,
+      speedMps: state.speedMps,
+    },
+    input,
+    dtSeconds,
+  );
+  return describeFreeVehicle(
+    {
+      ...state,
+      position: moved.position,
+      headingDegrees: moved.headingDegrees,
+      speedMps: moved.speedMps,
+    },
+    network,
+  );
+}
+
 export function stepFreeVehicle(
   state: FreeVehicleState,
   input: DriveInput,

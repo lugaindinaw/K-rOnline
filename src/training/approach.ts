@@ -46,6 +46,11 @@ export type DriveSample = {
   traffic: { position: RoadPoint }[];
   /** Live network after a refetch. Absent samples keep the original edge. */
   network?: RoadNetwork | null;
+  /**
+   * False when distanceMeters is only the nearest centerline, not a driven
+   * path. observeApproach is unchanged and must not be fed those samples.
+   */
+  roadDistanceReliable?: boolean;
 };
 
 export type ApproachAttempt = {
