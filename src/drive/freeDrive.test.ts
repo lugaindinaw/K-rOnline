@@ -8,9 +8,19 @@ import {
   YAW_DEGREES_PER_SECOND,
   steerAngleDegrees,
 } from "./drive";
-import { FREE_WHEELBASE_METERS, stepFreeVehicle, type FreeVehicleState } from "./freeDrive";
-import { buildRoadNetwork, nearestPlacement } from "../roads/roadNetwork";
-import { distanceMeters, type RoadPoint } from "../roads/drivingRoads";
+import { vehicleFromPlacement } from "./drive";
+import {
+  FREE_ROAD_ASSOCIATION_METERS,
+  OFF_ROAD_MESSAGE,
+  advanceFreeVehicle,
+  associateFreePosition,
+  describeFreeVehicle,
+  FREE_WHEELBASE_METERS,
+  stepFreeVehicle,
+  type FreeVehicleState,
+} from "./freeDrive";
+import { buildRoadNetwork, nearestPlacement, pointAlong } from "../roads/roadNetwork";
+import { distanceMeters, type RoadPoint, type RoadSegment } from "../roads/drivingRoads";
 
 const origin: RoadPoint = { lat: 59.33, lng: 18.07 };
 
@@ -155,5 +165,71 @@ describe("stepFreeVehicle", () => {
       expect(state.speedMps).toBeLessThanOrEqual(MAX_SPEED_MPS + 1e-9);
     }
     expect(state.speedMps).toBeCloseTo(MAX_SPEED_MPS, 2);
+  });
+});
+
+function segment(coordinates: RoadPoint[]): RoadSegment {
+  return {
+    id: "norr",
+    osmWayId: "norr",
+    name: "Testvägen",
+    highway: "residential",
+    oneway: "both",
+    coordinates,
+    nodeIds: ["a", "b"],
+  };
+}
+
+describe("advanceFreeVehicle", () => {
+  const road = segment([origin, northOf(origin, 200)]);
+
+  it("keeps the stepped pose and only records the nearest centerline", () => {
+    const network = buildRoadNetwork([road]);
+    const edge = network.edges[0];
+    if (!edge) {
+      throw new Error("missing edge");
+    }
+    let state = vehicleFromPlacement({ edge, distanceMeters: 20, gapMeters: 0 });
+    state = { ...state, position: eastOf(state.position, 12) };
+    const before = state.position;
+    for (let index = 0; index < 20; index += 1) {
+      state = advanceFreeVehicle(
+        state,
+        { accelerate: true, brake: false, steer: 1 },
+        0.05,
+        network,
+      );
+    }
+    const linked = network.edgesById.get(state.edgeId);
+    const center = linked ? pointAlong(linked, state.distanceMeters) : before;
+    expect(state.speedMps).toBeGreaterThan(1);
+    expect(state.position).not.toEqual(before);
+    expect(distanceMeters(state.position, center)).toBeGreaterThan(5);
+    expect(linked?.name).toBe("Testvägen");
+    expect(state.roadName).toBe("Testvägen");
+    expect(state.mode).toBe("driving");
+    expect(state.choices).toEqual([]);
+    expect(state.offsetMeters).toBe(0);
+  });
+
+  it("does not invent a road when the car is far from every centerline", () => {
+    const network = buildRoadNetwork([road]);
+    const edge = network.edges[0];
+    if (!edge) {
+      throw new Error("missing edge");
+    }
+    const state = describeFreeVehicle(
+      {
+        ...vehicleFromPlacement({ edge, distanceMeters: 10, gapMeters: 0 }),
+        position: eastOf(origin, FREE_ROAD_ASSOCIATION_METERS + 30),
+      },
+      network,
+    );
+    expect(associateFreePosition(network, state.position)).toBeNull();
+    expect(nearestPlacement(network, state.position, FREE_ROAD_ASSOCIATION_METERS)).toBeNull();
+    expect(state.edgeId).toBe("");
+    expect(state.roadName).toBeNull();
+    expect(state.message).toBe(OFF_ROAD_MESSAGE);
+    expect(state.position.lng).toBeGreaterThan(origin.lng);
   });
 });

@@ -3,23 +3,20 @@ import {
   choiceIndexFromKey,
   driveInputFromKeys,
   isTextEntry,
-  rejoinVehicle,
   selectBranch,
-  stepVehicle,
   vehicleFromPlacement,
   vehicleStatus,
   IDLE_VEHICLE,
   MAX_FRAME_SECONDS,
-  REJOIN_METERS,
   type VehicleState,
   type VehicleStatus,
 } from "../drive/drive";
+import { advanceFreeVehicle, describeFreeVehicle } from "../drive/freeDrive";
 import { formatGeographicPosition, readGeographicPosition, type GeographicPosition } from "../geo/coordinates";
 import { readGroundElevation } from "../geo/groundElevation";
 import { STOCKHOLM_CANDIDATE } from "../geo/stockholmCandidate";
 import type { RoadPoint, RoadSegment } from "../roads/drivingRoads";
 import {
-  EXTEND_LOADING_MESSAGE,
   prefetchCenter,
   shouldPrefetch,
   type CoverageCircle,
@@ -73,7 +70,6 @@ type CityMapProps = {
   areas: CoverageCircle[];
   anchor: RoadPoint | null;
   focus: MapFocus | null;
-  extendHint: string | null;
   onReadyChange: (ready: boolean) => void;
   onVehicleChange: (status: VehicleStatus) => void;
   onExtendRoads: (center: RoadPoint) => void;
@@ -117,7 +113,6 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     areas,
     anchor,
     focus,
-    extendHint,
     onReadyChange,
     onVehicleChange,
     onExtendRoads,
@@ -137,7 +132,6 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
   const onExtendRef = useRef(onExtendRoads);
   const onSampleRef = useRef(onDriveSample);
   const areasRef = useRef(areas);
-  const extendHintRef = useRef(extendHint);
   const carryRef = useRef<VehicleState | null>(null);
   const vehicleRef = useRef<VehicleState | null>(null);
   const networkRef = useRef<RoadNetwork | null>(null);
@@ -172,7 +166,6 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
   onExtendRef.current = onExtendRoads;
   onSampleRef.current = onDriveSample;
   areasRef.current = areas;
-  extendHintRef.current = extendHint;
 
   const clearTraffic = () => {
     for (const view of trafficViewsRef.current.values()) {
@@ -619,14 +612,14 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
 
     const explained = explainRoads(roads, anchor);
     networkRef.current = explained.network;
-    if (carried && nearestPlacement(explained.network, carried.position, REJOIN_METERS)) {
-      const rejoined = rejoinVehicle(carried, explained.network);
-      vehicleRef.current = rejoined;
+    if (carried) {
+      const kept = describeFreeVehicle(carried, explained.network);
+      vehicleRef.current = kept;
       const view = vehicleViewRef.current ?? mountRoadVehicle(map, library);
       vehicleViewRef.current = view;
-      view?.update(poseOf(rejoined));
-      publishRef.current(rejoined);
-      bindTraffic(rejoined.position);
+      view?.update(poseOf(kept));
+      publishRef.current(kept);
+      bindTraffic(kept.position);
       return () => {
         carryRef.current = vehicleRef.current;
         vehicleViewRef.current?.remove();
@@ -693,14 +686,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
         if (input.accelerate || input.steer) {
           followRef.current = true;
         }
-        let next = stepVehicle(network, vehicle, input, dt);
-        if (next.mode === "ended" && shouldPrefetch(next.position, areasRef.current)) {
-          const hint = extendHintRef.current;
-          const message = hint && hint.length > 0 ? hint : EXTEND_LOADING_MESSAGE;
-          if (next.message !== message) {
-            next = { ...next, message };
-          }
-        }
+        const next = advanceFreeVehicle(vehicle, input, dt, network);
         if (shouldPrefetch(next.position, areasRef.current)) {
           onExtendRef.current(prefetchCenter(next.position, next.headingDegrees));
         }
@@ -768,6 +754,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
           mode: current.mode,
           traffic: trafficRef.current.map((car) => ({ position: car.position })),
           network,
+          roadDistanceReliable: false,
         });
       }
       frame = requestAnimationFrame(tick);

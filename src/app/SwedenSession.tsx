@@ -107,7 +107,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
   function onDriveSample(sample: DriveSample) {
     const current = attemptRef.current;
     const start = startRef.current;
-    if (current.status !== "running" || !start) {
+    if (sample.roadDistanceReliable === false || current.status !== "running" || !start) {
       return;
     }
     const next = observeApproach(current, start, sample);
@@ -323,7 +323,6 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
           areas={areas}
           anchor={anchor}
           focus={focus}
-          extendHint={extendNote}
           onReadyChange={setMapReady}
           onVehicleChange={setVehicle}
           onDriveSample={onDriveSample}
@@ -331,7 +330,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
           onCameraViewChange={setCameraView}
           rideHint={
             trainingOpen && attempt.status === "running"
-              ? "Övning: närma dig korsningen och observera trafiken. Gas och broms som vanligt."
+              ? "Övning: gas och broms som vanligt. Avstånd längs vägen mäts inte medan bilen kör fritt."
               : null
           }
           onExtendRoads={(center) => {

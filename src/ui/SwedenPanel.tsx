@@ -124,10 +124,10 @@ export function SwedenPanel({
         <li>Sök en ort i Sverige, eller stanna kvar i Stockholm.</li>
         <li>Gasa med W, pil upp eller Gas. Bromsa med S, pil ned eller Broms.</li>
         <li>
-          Styr i sidled längs vägen med A, D, pilarna eller Vänster och Höger. Bilen stannar på
-          vägen den redan följer, högst några meter från mittlinjen.
+          Sväng med A, D, pilarna eller Vänster och Höger. Bilen flyttas inte tillbaka till
+          mittlinjen.
         </li>
-        <li>Vid en korsning väljer du väg med 1–9 eller knapparna som visas.</li>
+        <li>Korsningar och vägkanter är inte färdiga. Vägval med 1–9 används inte av den här bilen.</li>
         <li>C eller knappen växlar mellan förarvy och vy bakifrån.</li>
       </ol>
       <form
@@ -174,12 +174,12 @@ export function SwedenPanel({
         <h2>Köra</h2>
         <p>
           Håll W eller pil upp för att gasa, och S eller pil ned för att bromsa. Knapparna Gas och
-          Broms ligger kvar tills du byter. Håll A, pil vänster eller Vänster för att flytta bilen
-          i sidled längs vägen, och D, pil höger eller Höger åt andra hållet. Styrningen ligger
-          kvar där du släpper den och byter inte väg av sig själv. Vid en korsning väljer du väg
-          med 1–9. C eller knappen växlar kameran. Förarvyn sitter strax framför hytten, ungefär i
-          förarens ögonhöjd, och tittar framåt i 3D-kartan. Några andra bilar märkta Trafik följer
-          samma vägar, saktar in där vägen delar sig och håller avstånd.
+          Broms ligger kvar tills du byter. Håll A, pil vänster eller Vänster för att svänga
+          vänster, och D, pil höger eller Höger för att svänga höger. Bilen flyttas inte tillbaka
+          till mittlinjen. Korsningar och vägkanter är inte färdiga, så vägval med 1–9 används
+          inte av den här bilen. C eller knappen växlar kameran. Förarvyn sitter strax framför
+          hytten, ungefär i förarens ögonhöjd, och tittar framåt i 3D-kartan. Några andra bilar
+          märkta Trafik följer samma vägar, saktar in där vägen delar sig och håller avstånd.
         </p>
         <div className="drive-pedals">
           <button
@@ -264,7 +264,7 @@ export function SwedenPanel({
             </p>
             <ol className="training-steps">
               <li>Starta övning ställer bilen på en väg som leder till korsningen.</li>
-              <li>Använd Gas och Broms, eller W och S. A och D styr i sidled längs samma väg.</li>
+              <li>Använd Gas och Broms, eller W och S. Avstånd längs vägen mäts inte medan bilen kör fritt.</li>
               <li>Avsluta övning visar återkopplingen. Försök igen nollställer mätningarna.</li>
             </ol>
             <p>{EXERCISE_INSTRUCTION}</p>
@@ -274,7 +274,10 @@ export function SwedenPanel({
               </p>
             ) : null}
             {attempt.status === "running" ? (
-              <p role="status">Övningen pågår. Gasa och bromsa som vanligt.</p>
+              <p role="status">
+                Övningen pågår. Gasa och bromsa som vanligt. Avstånd längs vägen mäts inte medan
+                bilen kör fritt.
+              </p>
             ) : null}
             <div className="training-actions">
               <button type="button" onClick={onStartExercise} disabled={loadingRoads}>
@@ -400,11 +403,14 @@ export function SwedenPanel({
           okända. Återkopplingen
           beskriver registrerad hastighet, om farten minskade, om bilen stannade före korsningen och
           om korsningen nåddes. Tipsen är råd. Väjningsplikt och stopplikt bedöms inte, och försöket
-          får inget godkänt- eller underkäntresultat. Styrningen flyttar bilen i sidled längs
-          vägen den redan följer, högst några meter från mittlinjen. Den lämnar inte vägnätet och
-          väljer ingen ny väg. Nästa vägavsnitt hämtas automatiskt nära kanten av området.
-          Bilmodellen är i personbilsstorlek, ungefär 4 meter lång. Det finns inga körfält, ingen
-          NVDB och ingen fri bilfysik. Om listan beskärs kan en korsning saknas. Kameran kan följa
+          får inget godkänt- eller underkäntresultat. Den synliga bilen svänger fritt och flyttas
+          inte tillbaka till mittlinjen. Närmaste väg används bara som namn, inte som en ny
+          position. Avståndet i övningen mäts inte från den fria positionen, så omärkta värden
+          förblir okända. Korsningar och vägkanter är inte färdiga. Nästa vägavsnitt hämtas
+          automatiskt nära kanten av området.
+          Bilmodellen är i personbilsstorlek, ungefär 4 meter lång. Det finns inga körfält och ingen
+          NVDB. Körmodellen är enkel gas, broms och sväng, inte en fullständig bilfysik. Om listan
+          beskärs kan en korsning saknas. Kameran kan följa
           bakom bilen eller sitta i förarvyn. Modellen har ingen kupé, så förarvyn visar gatan
           framför motorhuven.
         </p>
