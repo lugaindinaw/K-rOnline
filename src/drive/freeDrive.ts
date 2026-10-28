@@ -12,6 +12,10 @@ import {
   type DriveInput,
   type VehicleState,
 } from "./drive";
+import { guideFreePose, OFF_ROAD_MESSAGE as GUIDE_OFF_ROAD_MESSAGE, FREE_ROAD_ASSOCIATION_METERS as GUIDE_ASSOCIATION_METERS } from "./roadGuide";
+
+export const FREE_ROAD_ASSOCIATION_METERS = GUIDE_ASSOCIATION_METERS;
+export const OFF_ROAD_MESSAGE = GUIDE_OFF_ROAD_MESSAGE;
 
 /**
  * Distance between the axles of the free model. The drawn car is about 4.2 m
@@ -31,11 +35,6 @@ export type FreeVehicleState = {
   headingDegrees: number;
   speedMps: number;
 };
-
-/** Nearest centerline within this distance. Farther than this, the car is not linked to a road. */
-export const FREE_ROAD_ASSOCIATION_METERS = 40;
-
-export const OFF_ROAD_MESSAGE = "Bilen är utanför de hämtade vägarna.";
 
 /** Link to a centerline. This is not a position, and applying it must not move the car. */
 export type FreeRoadAssociation = {
@@ -62,40 +61,25 @@ export function associateFreePosition(
   };
 }
 
-function roadMessage(previous: string | null, associated: boolean, moving: boolean): string | null {
-  if (!associated) {
-    return OFF_ROAD_MESSAGE;
-  }
-  if (moving) {
-    return null;
-  }
-  return previous === OFF_ROAD_MESSAGE ? null : previous;
-}
-
-/** Refresh the nearest-road label without changing the car's pose. */
+/** Refresh the road link without moving the car onto a centerline. */
 export function describeFreeVehicle(state: VehicleState, network: RoadNetwork): VehicleState {
-  const association = associateFreePosition(network, state.position);
-  return {
-    ...state,
-    position: state.position,
-    headingDegrees: state.headingDegrees,
-    speedMps: state.speedMps,
-    offsetMeters: 0,
-    edgeId: association?.edgeId ?? "",
-    distanceMeters: association?.distanceMeters ?? 0,
-    roadName: association?.roadName ?? null,
-    mode: "driving",
-    choices: [],
-    message: roadMessage(state.message, association !== null, state.speedMps > 0),
-  };
+  return guideFreePose(
+    state,
+    {
+      position: state.position,
+      headingDegrees: state.headingDegrees,
+      speedMps: state.speedMps,
+    },
+    network,
+    0,
+  );
 }
 
 /**
- * One frame of the visible car. Position, heading and speed come only from
- * stepFreeVehicle. The nearest OpenStreetMap edge is recorded for the label
- * and for traffic distance. It is not copied onto the car.
- * Junction choice and road-edge limits are not applied here.
- * The along-track distance is not reliable enough for the junction exercise.
+ * One frame of the visible car. Position, heading and speed start from
+ * stepFreeVehicle. guideFreePose may stop the step at the preliminary
+ * corridor, and it never writes a centerline point back onto the car.
+ * The tracked edge is a way that shares a node with the current way.
  */
 export function advanceFreeVehicle(
   state: VehicleState,
@@ -112,15 +96,7 @@ export function advanceFreeVehicle(
     input,
     dtSeconds,
   );
-  return describeFreeVehicle(
-    {
-      ...state,
-      position: moved.position,
-      headingDegrees: moved.headingDegrees,
-      speedMps: moved.speedMps,
-    },
-    network,
-  );
+  return guideFreePose(state, moved, network, dtSeconds);
 }
 
 export function stepFreeVehicle(

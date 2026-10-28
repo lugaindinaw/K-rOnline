@@ -183,33 +183,28 @@ function segment(coordinates: RoadPoint[]): RoadSegment {
 describe("advanceFreeVehicle", () => {
   const road = segment([origin, northOf(origin, 200)]);
 
-  it("keeps the stepped pose and only records the nearest centerline", () => {
+  it("drives beside the centerline and does not jump back onto it", () => {
     const network = buildRoadNetwork([road]);
-    const edge = network.edges[0];
+    const edge = network.edges.find((item) => item.id.endsWith(":forward"));
     if (!edge) {
       throw new Error("missing edge");
     }
-    let state = vehicleFromPlacement({ edge, distanceMeters: 20, gapMeters: 0 });
-    state = { ...state, position: eastOf(state.position, 12) };
-    const before = state.position;
+    let state = vehicleFromPlacement({ edge, distanceMeters: 30, gapMeters: 0 });
+    state = { ...state, position: eastOf(state.position, 2) };
+    const startGap = distanceMeters(state.position, pointAlong(edge, 30));
     for (let index = 0; index < 20; index += 1) {
-      state = advanceFreeVehicle(
-        state,
-        { accelerate: true, brake: false, steer: 1 },
-        0.05,
-        network,
-      );
+      state = advanceFreeVehicle(state, { accelerate: true, brake: false, steer: 0 }, 0.05, network);
     }
-    const linked = network.edgesById.get(state.edgeId);
-    const center = linked ? pointAlong(linked, state.distanceMeters) : before;
+    const center = pointAlong(edge, state.distanceMeters);
     expect(state.speedMps).toBeGreaterThan(1);
-    expect(state.position).not.toEqual(before);
-    expect(distanceMeters(state.position, center)).toBeGreaterThan(5);
-    expect(linked?.name).toBe("Testvägen");
+    expect(state.position.lat).toBeGreaterThan(origin.lat);
+    expect(distanceMeters(state.position, center)).toBeGreaterThan(1);
+    expect(distanceMeters(state.position, center)).toBeLessThan(startGap + 1.5);
+    expect(state.edgeId).toBe(edge.id);
     expect(state.roadName).toBe("Testvägen");
+    expect(state.measurementReliable).toBe(true);
     expect(state.mode).toBe("driving");
     expect(state.choices).toEqual([]);
-    expect(state.offsetMeters).toBe(0);
   });
 
   it("does not invent a road when the car is far from every centerline", () => {

@@ -50,6 +50,11 @@ export type VehicleState = {
   message: string | null;
   choices: DriveChoice[];
   roadName: string | null;
+  /**
+   * True only when the free position lies in the tracked way's carriageway.
+   * The junction exercise may use that sample. A flare or a miss stays false.
+   */
+  measurementReliable?: boolean;
 };
 
 export type VehicleStatus = {

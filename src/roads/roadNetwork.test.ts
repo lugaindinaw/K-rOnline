@@ -112,4 +112,19 @@ describe("buildRoadNetwork", () => {
     expect(delta(pathHeading(null, edge!, cornerDistance + 20), 90)).toBeLessThan(8);
     expect(nearestPlacement(network, pointAlong(edge!, cornerDistance - 2), 5)?.gapMeters ?? 99).toBeLessThan(0.2);
   });
+
+  it("finds the middle of a long road without returning a distant road", () => {
+    const far = { lat: a.lat + 500 / 111320, lng: a.lng };
+    const north = { lat: a.lat + 400 / 111320, lng: a.lng };
+    const network = buildRoadNetwork([
+      segment("lång", ["1", "2"], [a, north]),
+      segment("fjärran", ["8", "9"], [far, { lat: far.lat + 40 / 111320, lng: far.lng }]),
+    ]);
+    const middle = { lat: a.lat + 200 / 111320, lng: a.lng + 3 / (111320 * Math.cos((a.lat * Math.PI) / 180)) };
+    const near = network.edgesNear(middle, 30);
+    expect(near.some((edge) => edge.osmWayId === "lång")).toBe(true);
+    expect(near.some((edge) => edge.osmWayId === "fjärran")).toBe(false);
+    expect(near.length).toBeLessThan(network.edges.length);
+    expect(nearestPlacement(network, middle, 20)?.edge.osmWayId).toBe("lång");
+  });
 });

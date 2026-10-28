@@ -58,6 +58,10 @@ export type RoadSegment = {
   oneway: OneWay;
   coordinates: RoadPoint[];
   nodeIds: string[] | null;
+  /** Carriageway width in meters when the OSM `width` tag is a plain meter value. */
+  widthMeters?: number | null;
+  /** Lane count from the OSM `lanes` tag. This is not a width. */
+  lanes?: number | null;
 };
 
 export type RoadArea = {
@@ -87,6 +91,35 @@ export function buildDrivingRoadQuery(
   const lat = center.lat.toFixed(6);
   const lng = center.lng.toFixed(6);
   return `[out:json][timeout:20];way["highway"~"^(${HIGHWAY_PATTERN})$"](around:${radius},${lat},${lng});out geom;`;
+}
+
+function readMeterValue(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value !== "string") {
+    return null;
+  }
+  const text = value.trim().toLowerCase().replace(",", ".");
+  if (text.includes("ft") || text.includes("feet") || text.includes("'")) {
+    return null;
+  }
+  const match = /^(\d+(?:\.\d+)?)(?:\s*m)?$/.exec(text);
+  if (!match?.[1]) {
+    return null;
+  }
+  const meters = Number(match[1]);
+  return Number.isFinite(meters) ? meters : null;
+}
+
+function readLaneCount(value: unknown): number | null {
+  const text = typeof value === "number" ? String(value) : typeof value === "string" ? value.trim() : "";
+  const match = /^(\d+)/.exec(text);
+  if (!match?.[1]) {
+    return null;
+  }
+  const lanes = Number(match[1]);
+  return Number.isInteger(lanes) ? lanes : null;
 }
 
 function readOneWay(value: unknown): OneWay {
@@ -235,16 +268,19 @@ export function parseOverpassRoads(payload: unknown): RoadSegment[] {
     if (!geometry) {
       continue;
     }
-    const name = (tags as { name?: unknown }).name;
+    const tagRecord = tags as { name?: unknown; oneway?: unknown; width?: unknown; lanes?: unknown };
+    const name = tagRecord.name;
     const wayId = String(record.id);
     roads.push({
       id: wayId,
       osmWayId: wayId,
       name: typeof name === "string" && name.trim() ? name.trim() : null,
       highway,
-      oneway: readOneWay((tags as { oneway?: unknown }).oneway),
+      oneway: readOneWay(tagRecord.oneway),
       coordinates: geometry.coordinates,
       nodeIds: geometry.nodeIds,
+      widthMeters: readMeterValue(tagRecord.width),
+      lanes: readLaneCount(tagRecord.lanes),
     });
   }
   return roads;

@@ -754,7 +754,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
           mode: current.mode,
           traffic: trafficRef.current.map((car) => ({ position: car.position })),
           network,
-          roadDistanceReliable: false,
+          roadDistanceReliable: current.measurementReliable === true,
         });
       }
       frame = requestAnimationFrame(tick);
