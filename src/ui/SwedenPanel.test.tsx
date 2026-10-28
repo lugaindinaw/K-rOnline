@@ -54,7 +54,9 @@ describe("SwedenPanel", () => {
     expect(html).toContain("Vänster");
     expect(html).toContain("Höger");
     expect(html).toContain("flyttas inte tillbaka till mittlinjen");
-    expect(html).toContain("Korsningar och vägkanter är inte färdiga");
+    expect(html).toContain("samma nod");
+    expect(html).toContain("Byggnader känns inte av");
+    expect(html).toContain("preliminär körgräns");
     expect(html).not.toContain("fri styrning");
     expect(html).toContain("Förarvy");
     expect(html).toContain("förarens ögonhöjd");

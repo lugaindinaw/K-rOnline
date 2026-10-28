@@ -127,7 +127,10 @@ export function SwedenPanel({
           Sväng med A, D, pilarna eller Vänster och Höger. Bilen flyttas inte tillbaka till
           mittlinjen.
         </li>
-        <li>Korsningar och vägkanter är inte färdiga. Vägval med 1–9 används inte av den här bilen.</li>
+        <li>
+          Nära en korsning styr du in på en väg som delar samma nod. Bilen stannar inte av sig
+          själv där. Vägval med 1–9 används inte.
+        </li>
         <li>C eller knappen växlar mellan förarvy och vy bakifrån.</li>
       </ol>
       <form
@@ -176,10 +179,12 @@ export function SwedenPanel({
           Håll W eller pil upp för att gasa, och S eller pil ned för att bromsa. Knapparna Gas och
           Broms ligger kvar tills du byter. Håll A, pil vänster eller Vänster för att svänga
           vänster, och D, pil höger eller Höger för att svänga höger. Bilen flyttas inte tillbaka
-          till mittlinjen. Korsningar och vägkanter är inte färdiga, så vägval med 1–9 används
-          inte av den här bilen. C eller knappen växlar kameran. Förarvyn sitter strax framför
-          hytten, ungefär i förarens ögonhöjd, och tittar framåt i 3D-kartan. Några andra bilar
-          märkta Trafik följer samma vägar, saktar in där vägen delar sig och håller avstånd.
+          till mittlinjen. En preliminär körgräns håller bilen vid vägen. Den är inte en uppmätt
+          vägkant. Byggnader känns inte av. I en korsning följer bilen den anslutna väg som styrningen
+          pekar mot, och den stannar inte av sig själv. Vägval med 1–9 används inte. C eller knappen
+          växlar kameran. Förarvyn sitter strax framför hytten, ungefär i förarens ögonhöjd, och
+          tittar framåt i 3D-kartan. Några andra bilar märkta Trafik följer samma vägar, saktar in
+          där vägen delar sig och håller avstånd.
         </p>
         <div className="drive-pedals">
           <button
@@ -264,7 +269,10 @@ export function SwedenPanel({
             </p>
             <ol className="training-steps">
               <li>Starta övning ställer bilen på en väg som leder till korsningen.</li>
-              <li>Använd Gas och Broms, eller W och S. Avstånd längs vägen mäts inte medan bilen kör fritt.</li>
+              <li>
+                Använd Gas och Broms, eller W och S. Avstånd registreras bara när bilen är kvar i
+                körbanan mot korsningen.
+              </li>
               <li>Avsluta övning visar återkopplingen. Försök igen nollställer mätningarna.</li>
             </ol>
             <p>{EXERCISE_INSTRUCTION}</p>
@@ -275,8 +283,8 @@ export function SwedenPanel({
             ) : null}
             {attempt.status === "running" ? (
               <p role="status">
-                Övningen pågår. Gasa och bromsa som vanligt. Avstånd längs vägen mäts inte medan
-                bilen kör fritt.
+                Övningen pågår. Gasa och bromsa som vanligt. Avstånd registreras bara i körbanan mot
+                korsningen.
               </p>
             ) : null}
             <div className="training-actions">
@@ -403,11 +411,12 @@ export function SwedenPanel({
           okända. Återkopplingen
           beskriver registrerad hastighet, om farten minskade, om bilen stannade före korsningen och
           om korsningen nåddes. Tipsen är råd. Väjningsplikt och stopplikt bedöms inte, och försöket
-          får inget godkänt- eller underkäntresultat. Den synliga bilen svänger fritt och flyttas
-          inte tillbaka till mittlinjen. Närmaste väg används bara som namn, inte som en ny
-          position. Avståndet i övningen mäts inte från den fria positionen, så omärkta värden
-          förblir okända. Korsningar och vägkanter är inte färdiga. Nästa vägavsnitt hämtas
-          automatiskt nära kanten av området.
+          får inget godkänt- eller underkäntresultat. Den synliga bilen svänger i kartans plan och
+          flyttas inte tillbaka till mittlinjen. Körgränsen är preliminär: OpenStreetMap-bredd
+          används när taggen finns, annars en uppskattning. Den visas inte som en verklig vägkant,
+          och byggnader känns inte av. Avstånd i övningen registreras bara när bilen är kvar i
+          körbanan på vägen mot korsningen. Annars förblir värdet Inte uppmätt. Nästa vägavsnitt
+          hämtas automatiskt nära kanten av området.
           Bilmodellen är i personbilsstorlek, ungefär 4 meter lång. Det finns inga körfält och ingen
           NVDB. Körmodellen är enkel gas, broms och sväng, inte en fullständig bilfysik. Om listan
           beskärs kan en korsning saknas. Kameran kan följa

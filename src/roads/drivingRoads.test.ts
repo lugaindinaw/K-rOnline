@@ -113,6 +113,35 @@ describe("parseOverpassRoads", () => {
     expect(roads[1]).toMatchObject({ oneway: "backward", nodeIds: null });
   });
 
+  it("keeps a meter width and a lane count, and ignores widths that are not meters", () => {
+    const roads = parseOverpassRoads({
+      elements: [
+        {
+          type: "way",
+          id: 20,
+          nodes: [1, 2],
+          tags: { highway: "residential", width: "8.5 m", lanes: "2" },
+          geometry: [
+            { lat: 65.258, lon: 19.654 },
+            { lat: 65.2582, lon: 19.654 },
+          ],
+        },
+        {
+          type: "way",
+          id: 21,
+          nodes: [3, 4],
+          tags: { highway: "residential", width: "30 ft", lanes: "3;1" },
+          geometry: [
+            { lat: 65.257, lon: 19.65 },
+            { lat: 65.2572, lon: 19.65 },
+          ],
+        },
+      ],
+    });
+    expect(roads[0]).toMatchObject({ widthMeters: 8.5, lanes: 2 });
+    expect(roads[1]).toMatchObject({ widthMeters: null, lanes: 3 });
+  });
+
   it("reads a reliable oneway tag and leaves stop, yield and signals unknown", () => {
     expect(readTrafficControls(null)).toEqual({
       oneway: "unknown",

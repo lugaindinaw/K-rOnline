@@ -330,7 +330,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
           onCameraViewChange={setCameraView}
           rideHint={
             trainingOpen && attempt.status === "running"
-              ? "Övning: gas och broms som vanligt. Avstånd längs vägen mäts inte medan bilen kör fritt."
+              ? "Övning: gas och broms som vanligt. Avstånd registreras bara i körbanan mot korsningen."
               : null
           }
           onExtendRoads={(center) => {

@@ -12,6 +12,10 @@ export type RoadEdge = {
   points: RoadPoint[];
   lengthMeters: number;
   cumulativeMeters: number[];
+  /** OSM `width` in meters, or null when the tag is missing or not in meters. */
+  widthMeters: number | null;
+  /** OSM `lanes` count, or null when the tag is missing. */
+  lanes: number | null;
 };
 
 export type RoadNetwork = {
@@ -19,6 +23,8 @@ export type RoadNetwork = {
   edgesById: Map<string, RoadEdge>;
   outgoing: Map<string, RoadEdge[]>;
   unlinked: number;
+  /** Edges whose geometry may lie within radiusMeters of the point. Not a full scan. */
+  edgesNear: (point: RoadPoint, radiusMeters: number) => RoadEdge[];
 };
 
 export type RoadPlacement = {
@@ -101,6 +107,8 @@ function pushEdge(
     points: directedPoints,
     lengthMeters: measured.lengthMeters,
     cumulativeMeters: measured.cumulativeMeters,
+    widthMeters: road.widthMeters ?? null,
+    lanes: road.lanes ?? null,
   });
 }
 
@@ -143,7 +151,90 @@ export function buildRoadNetwork(roads: RoadSegment[]): RoadNetwork {
     list.push(edge);
     outgoing.set(edge.fromNode, list);
   }
-  return { edges, edgesById, outgoing, unlinked };
+  const edgesNear = edgesInCells(edges);
+  return { edges, edgesById, outgoing, unlinked, edgesNear };
+}
+
+const CELL_METERS = 40;
+const EARTH_RADIUS_METERS = 6371000;
+
+function edgesInCells(edges: RoadEdge[]): (point: RoadPoint, radiusMeters: number) => RoadEdge[] {
+  const cells = new Map<string, number[]>();
+  const cosLat = Math.cos((((edges[0]?.points[0]?.lat ?? 59) * Math.PI) / 180));
+  const toCell = (point: RoadPoint) => ({
+    x: Math.floor(((point.lng * Math.PI) / 180) * EARTH_RADIUS_METERS * cosLat / CELL_METERS),
+    y: Math.floor(((point.lat * Math.PI) / 180) * EARTH_RADIUS_METERS / CELL_METERS),
+  });
+  const add = (x: number, y: number, edgeIndex: number) => {
+    const key = `${x}:${y}`;
+    const list = cells.get(key);
+    if (!list) {
+      cells.set(key, [edgeIndex]);
+      return;
+    }
+    if (list[list.length - 1] !== edgeIndex) {
+      list.push(edgeIndex);
+    }
+  };
+  edges.forEach((edge, edgeIndex) => {
+    for (let index = 1; index < edge.points.length; index += 1) {
+      const start = edge.points[index - 1];
+      const end = edge.points[index];
+      if (!start || !end) {
+        continue;
+      }
+      const from = toCell(start);
+      const to = toCell(end);
+      let x = from.x;
+      let y = from.y;
+      const dx = Math.abs(to.x - from.x);
+      const dy = Math.abs(to.y - from.y);
+      const sx = from.x < to.x ? 1 : -1;
+      const sy = from.y < to.y ? 1 : -1;
+      let error = dx - dy;
+      for (let step = 0; step < 800; step += 1) {
+        add(x, y, edgeIndex);
+        if (x === to.x && y === to.y) {
+          break;
+        }
+        const doubled = 2 * error;
+        if (doubled > -dy) {
+          error -= dy;
+          x += sx;
+        }
+        if (doubled < dx) {
+          error += dx;
+          y += sy;
+        }
+      }
+    }
+  });
+  return (point, radiusMeters) => {
+    const radius = Number.isFinite(radiusMeters) && radiusMeters > 0 ? radiusMeters : 0;
+    const reach = Math.ceil(radius / CELL_METERS) + 1;
+    const center = toCell(point);
+    const seen = new Set<number>();
+    const found: RoadEdge[] = [];
+    for (let y = center.y - reach; y <= center.y + reach; y += 1) {
+      for (let x = center.x - reach; x <= center.x + reach; x += 1) {
+        const list = cells.get(`${x}:${y}`);
+        if (!list) {
+          continue;
+        }
+        for (const edgeIndex of list) {
+          if (seen.has(edgeIndex)) {
+            continue;
+          }
+          seen.add(edgeIndex);
+          const edge = edges[edgeIndex];
+          if (edge) {
+            found.push(edge);
+          }
+        }
+      }
+    }
+    return found;
+  };
 }
 
 function toLocal(origin: RoadPoint, point: RoadPoint): { x: number; y: number } {
@@ -188,30 +279,42 @@ function prefers(candidate: RoadPlacement, current: RoadPlacement): boolean {
   return candidate.edge.id < current.edge.id;
 }
 
+export function placementOnEdge(edge: RoadEdge, point: RoadPoint): RoadPlacement {
+  let best: RoadPlacement = { edge, distanceMeters: 0, gapMeters: Number.POSITIVE_INFINITY };
+  for (let index = 1; index < edge.points.length; index += 1) {
+    const start = edge.points[index - 1];
+    const end = edge.points[index];
+    const startDistance = edge.cumulativeMeters[index - 1];
+    const endDistance = edge.cumulativeMeters[index];
+    if (!start || !end || startDistance === undefined || endDistance === undefined) {
+      continue;
+    }
+    const projected = projectSegment(start, end, point);
+    const placement = {
+      edge,
+      distanceMeters: startDistance + projected.t * (endDistance - startDistance),
+      gapMeters: projected.gapMeters,
+    };
+    if (prefers(placement, best)) {
+      best = placement;
+    }
+  }
+  return best;
+}
+
 export function nearestPlacement(
   network: RoadNetwork,
   point: RoadPoint,
   maxGapMeters = START_SNAP_METERS,
 ): RoadPlacement | null {
   let best: RoadPlacement | null = null;
-  for (const edge of network.edges) {
-    for (let index = 1; index < edge.points.length; index += 1) {
-      const start = edge.points[index - 1];
-      const end = edge.points[index];
-      const startDistance = edge.cumulativeMeters[index - 1];
-      const endDistance = edge.cumulativeMeters[index];
-      if (!start || !end || startDistance === undefined || endDistance === undefined) {
-        continue;
-      }
-      const projected = projectSegment(start, end, point);
-      const placement = {
-        edge,
-        distanceMeters: startDistance + projected.t * (endDistance - startDistance),
-        gapMeters: projected.gapMeters,
-      };
-      if (!best || prefers(placement, best)) {
-        best = placement;
-      }
+  for (const edge of network.edgesNear(point, maxGapMeters)) {
+    const placement = placementOnEdge(edge, point);
+    if (!Number.isFinite(placement.gapMeters)) {
+      continue;
+    }
+    if (!best || prefers(placement, best)) {
+      best = placement;
     }
   }
   if (!best || best.gapMeters > maxGapMeters) {
