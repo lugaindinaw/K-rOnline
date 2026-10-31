@@ -1,6 +1,7 @@
-import { distanceMeters, type RoadPoint } from "../roads/drivingRoads";
+import { distanceMeters, highwayClass, type RoadPoint } from "../roads/drivingRoads";
 import {
   bearingDegrees,
+  pathHeading,
   placementOnEdge,
   pointAlong,
   type RoadEdge,
@@ -18,19 +19,51 @@ export const OFF_ROAD_MESSAGE = "Bilen är utanför de hämtade vägarna.";
  * Meters per lane when OSM has a lane count but no width tag.
  * The lane count can be measured. This length is not.
  */
-export const ESTIMATED_LANE_METERS = 3.25;
+export const ESTIMATED_LANE_METERS = 3.5;
 
 /**
- * Carriageway used when both width and lanes are missing.
- * This is a play estimate for one lane in each direction, not a surveyed edge.
+ * Play width when width is missing, by simplified road class.
+ * These are not surveyed edges. A one-lane tag must not shrink the road below
+ * this: Gustav Adolfs Torg is often unclassified with lanes=1 and no width,
+ * and a 3.5 m ribbon stops the car before the junction.
  */
-export const ESTIMATED_CARRIAGEWAY_METERS = 6.5;
+export const ESTIMATED_CARRIAGEWAY_BY_CLASS: Record<string, number> = {
+  motorway: 20,
+  trunk: 16,
+  primary: 14,
+  secondary: 12,
+  tertiary: 10,
+  unclassified: 9,
+  residential: 8,
+  living_street: 7,
+};
+
+export const ESTIMATED_CARRIAGEWAY_METERS = ESTIMATED_CARRIAGEWAY_BY_CLASS.residential ?? 8;
 
 /** How far the play area may flare around a node that joins two OSM ways. Not an intersection survey. */
-export const JUNCTION_DISK_METERS = 12;
+export const JUNCTION_DISK_METERS = 16;
 
 /** Distance from a junction node where connected ways become available to steering. */
-export const JUNCTION_APPROACH_METERS = 18;
+export const JUNCTION_APPROACH_METERS = 24;
+
+/**
+ * Distance to a shared node where the heading may ease onto a gentle continuation.
+ * This is not a point far ahead on the current way. Sampling the tangent there
+ * cut the inside of Gustav Adolfs Torg and met the boundary within about 10 m.
+ */
+export const CURVE_LOOKAHEAD_METERS = 16;
+
+/** Fastest heading assist toward the road. Player steering reduces this. */
+export const CURVE_ASSIST_DEGREES_PER_SECOND = 50;
+
+/**
+ * Offset that is left as the player placed it. Past this, the heading eases
+ * back toward the road so a bend does not walk into the boundary.
+ */
+const OFFSET_COMFORT_METERS = 2.4;
+const OFFSET_BIAS_DEGREES_PER_METER = 2.2;
+const OFFSET_BIAS_MAX_DEGREES = 7;
+const METERS_PER_DEGREE = 111320;
 
 export const BOUNDARY_MESSAGE = "Preliminär körgräns. Exakt vägkant och byggnader saknas.";
 
@@ -47,16 +80,75 @@ type FreePose = {
   speedMps: number;
 };
 
-export function corridorOf(edge: { widthMeters?: number | null; lanes?: number | null }): Corridor {
+export function estimatedCarriagewayMeters(highway?: string | null): number {
+  if (!highway) {
+    return ESTIMATED_CARRIAGEWAY_METERS;
+  }
+  return ESTIMATED_CARRIAGEWAY_BY_CLASS[highwayClass(highway)] ?? ESTIMATED_CARRIAGEWAY_METERS;
+}
+
+export function corridorOf(edge: {
+  widthMeters?: number | null;
+  lanes?: number | null;
+  highway?: string | null;
+}): Corridor {
   const width = edge.widthMeters;
   if (typeof width === "number" && width >= 2 && width <= 40) {
     return { halfMeters: width / 2, basis: "width" };
   }
+  const fallback = estimatedCarriagewayMeters(edge.highway);
   const lanes = edge.lanes;
   if (typeof lanes === "number" && lanes >= 1 && lanes <= 8) {
-    return { halfMeters: (lanes * ESTIMATED_LANE_METERS) / 2, basis: "lanes" };
+    const fromLanes = lanes * ESTIMATED_LANE_METERS;
+    if (fromLanes > fallback + 0.05) {
+      return { halfMeters: fromLanes / 2, basis: "lanes" };
+    }
   }
-  return { halfMeters: ESTIMATED_CARRIAGEWAY_METERS / 2, basis: "estimate" };
+  return { halfMeters: fallback / 2, basis: "estimate" };
+}
+
+/**
+ * Ease the heading toward the road ahead. One frame never jumps to that heading.
+ * Full steering leaves only a small assist, so the player still turns.
+ * This does not move the car sideways.
+ */
+export function followRoadCurve(
+  headingDegrees: number,
+  roadAheadDegrees: number,
+  steer: number,
+  dtSeconds: number,
+): number {
+  const dt = !Number.isFinite(dtSeconds) || dtSeconds <= 0 ? 0 : Math.min(0.25, dtSeconds);
+  const heading = wrapDegrees(headingDegrees);
+  if (dt === 0) {
+    return heading;
+  }
+  const error = signedDelta(heading, wrapDegrees(roadAheadDegrees));
+  if (Math.abs(error) < 1.5) {
+    return heading;
+  }
+  const steerAbs = Math.max(0, Math.min(1, Number.isFinite(steer) ? Math.abs(steer) : 0));
+  const authority = 1 - 0.8 * steerAbs;
+  const maxStep = CURVE_ASSIST_DEGREES_PER_SECOND * dt * authority;
+  const step = Math.max(-maxStep, Math.min(maxStep, error * 0.7));
+  return wrapDegrees(heading + step);
+}
+
+/** Heading used for the next free step. The position is left where it is. */
+export function headingForFreeStep(
+  state: VehicleState,
+  steer: number,
+  dtSeconds: number,
+  network: RoadNetwork,
+): number {
+  const edge = network.edgesById.get(state.edgeId);
+  if (!edge || !playOf(network, edge, state.position).inside) {
+    return wrapDegrees(state.headingDegrees);
+  }
+  const place = placementOnEdge(edge, state.position);
+  const ahead = headingAhead(network, edge, place.distanceMeters, steer);
+  const offset = signedOffsetMeters(edge, state.position, place.distanceMeters);
+  return followRoadCurve(state.headingDegrees, headingWithOffset(ahead, offset, steer), steer, dtSeconds);
 }
 
 /**
@@ -240,8 +332,81 @@ function edgeHeading(edge: RoadEdge): number {
 }
 
 function headingDelta(from: number, to: number): number {
-  const raw = Math.abs(from - to) % 360;
-  return Math.min(raw, 360 - raw);
+  return Math.abs(signedDelta(from, to));
+}
+
+function signedDelta(from: number, to: number): number {
+  return ((to - from + 540) % 360) - 180;
+}
+
+function wrapDegrees(degrees: number): number {
+  if (!Number.isFinite(degrees)) {
+    return 0;
+  }
+  return ((degrees % 360) + 360) % 360;
+}
+
+function mixHeading(from: number, to: number, amount: number): number {
+  const blend = Math.max(0, Math.min(1, amount));
+  return wrapDegrees(from + signedDelta(from, to) * blend);
+}
+
+function headingAhead(network: RoadNetwork, edge: RoadEdge, distance: number, steer: number): number {
+  const remaining = edge.lengthMeters - distance;
+  const local = pathHeading(null, edge, distance);
+  if (Math.abs(steer) > 0.35 || remaining > CURVE_LOOKAHEAD_METERS) {
+    return local;
+  }
+  const next = gentleContinuation(network, edge, local);
+  if (!next) {
+    return local;
+  }
+  const nextHeading = pathHeading(null, next, Math.min(next.lengthMeters, Math.max(4, CURVE_LOOKAHEAD_METERS - remaining)));
+  return mixHeading(local, nextHeading, 1 - remaining / CURVE_LOOKAHEAD_METERS);
+}
+
+/** Positive when the car sits to the right of the road direction. */
+function signedOffsetMeters(edge: RoadEdge, point: RoadPoint, distance: number): number {
+  const along = Math.min(edge.lengthMeters, Math.max(0, distance));
+  const center = pointAlong(edge, along);
+  const heading = (pathHeading(null, edge, along) * Math.PI) / 180;
+  const north = (point.lat - center.lat) * METERS_PER_DEGREE;
+  const east =
+    (point.lng - center.lng) * METERS_PER_DEGREE * Math.cos((center.lat * Math.PI) / 180);
+  return east * Math.cos(heading) - north * Math.sin(heading);
+}
+
+/**
+ * A few degrees back toward the road once the car is well off the middle.
+ * Full steering removes the bias. The position is not moved.
+ */
+function headingWithOffset(roadDegrees: number, offsetMeters: number, steer: number): number {
+  const steerAbs = Math.max(0, Math.min(1, Number.isFinite(steer) ? Math.abs(steer) : 0));
+  const excess = Math.max(0, Math.abs(offsetMeters) - OFFSET_COMFORT_METERS);
+  const bias =
+    Math.min(OFFSET_BIAS_MAX_DEGREES, excess * OFFSET_BIAS_DEGREES_PER_METER) *
+    Math.sign(offsetMeters) *
+    (1 - steerAbs);
+  return wrapDegrees(roadDegrees - bias);
+}
+
+function gentleContinuation(network: RoadNetwork, edge: RoadEdge, fromHeading: number): RoadEdge | null {
+  let best: RoadEdge | null = null;
+  let bestDelta = 45;
+  for (const out of network.outgoing.get(edge.toNode) ?? []) {
+    if (out.id === edge.id) {
+      continue;
+    }
+    if (out.toNode === edge.fromNode && out.osmWayId === edge.osmWayId) {
+      continue;
+    }
+    const delta = headingDelta(fromHeading, pathHeading(null, out, Math.min(12, out.lengthMeters)));
+    if (delta < bestDelta) {
+      best = out;
+      bestDelta = delta;
+    }
+  }
+  return best;
 }
 
 function gapOutside(

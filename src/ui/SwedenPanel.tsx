@@ -179,8 +179,10 @@ export function SwedenPanel({
           Håll W eller pil upp för att gasa, och S eller pil ned för att bromsa. Knapparna Gas och
           Broms ligger kvar tills du byter. Håll A, pil vänster eller Vänster för att svänga
           vänster, och D, pil höger eller Höger för att svänga höger. Bilen flyttas inte tillbaka
-          till mittlinjen. En preliminär körgräns håller bilen vid vägen. Den är inte en uppmätt
-          vägkant. Byggnader känns inte av. I en korsning följer bilen den anslutna väg som styrningen
+          till mittlinjen. Utan styrning följer den vägens kurva. En preliminär körgräns håller
+          bilen vid vägen. Bredden är uppmätt bara när OpenStreetMap har en bredd i meter. Annars
+          beror uppskattningen på vägklass, och ett körfält är inte en vägkant. Byggnader känns
+          inte av. I en korsning följer bilen den anslutna väg som styrningen
           pekar mot, och den stannar inte av sig själv. Vägval med 1–9 används inte. C eller knappen
           växlar kameran. Förarvyn sitter strax framför hytten, ungefär i förarens ögonhöjd, och
           tittar framåt i 3D-kartan. Några andra bilar märkta Trafik följer samma vägar, saktar in
