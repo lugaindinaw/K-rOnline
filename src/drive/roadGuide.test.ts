@@ -3,8 +3,13 @@ import { vehicleFromPlacement } from "./drive";
 import { advanceFreeVehicle } from "./freeDrive";
 import {
   BOUNDARY_MESSAGE,
+  CAR_BODY_WIDTH_METERS,
   ESTIMATED_CARRIAGEWAY_METERS,
   ESTIMATED_LANE_METERS,
+  MEASURED_LEAVE_MESSAGE,
+  TRACK_SLACK_METERS,
+  UNCERTAIN_WIDTH_MESSAGE,
+  clearanceOf,
   corridorOf,
   estimatedCarriagewayMeters,
   followRoadCurve,
@@ -78,6 +83,20 @@ describe("corridorOf", () => {
       basis: "estimate",
     });
     expect(estimatedCarriagewayMeters("unclassified")).toBeGreaterThan(3.5);
+  });
+
+  it("keeps the car body inside a measured width and does not widen a narrower tag", () => {
+    const fitted = clearanceOf({ widthMeters: 6, highway: "residential" }, 0);
+    expect(fitted.basis).toBe("width");
+    expect(fitted.roadHoldsCar).toBe(true);
+    expect(fitted.centerLimit).toBeLessThan(3);
+    expect(fitted.centerLimit).toBeGreaterThan(3 - CAR_BODY_WIDTH_METERS / 2 - 0.2);
+    expect(fitted.centerLimit).toBeLessThanOrEqual(3 + TRACK_SLACK_METERS);
+    const yawed = clearanceOf({ widthMeters: 6, highway: "residential" }, 90);
+    expect(yawed.centerLimit).toBeLessThan(fitted.centerLimit);
+    const tooNarrow = clearanceOf({ widthMeters: 1.7, highway: "residential" }, 0);
+    expect(tooNarrow.roadHoldsCar).toBe(false);
+    expect(tooNarrow.centerLimit).toBeLessThanOrEqual(1.7 / 2 + TRACK_SLACK_METERS);
   });
 });
 
@@ -175,11 +194,11 @@ describe("guideFreePose", () => {
       state = guideFreePose(state, step, narrow, 0.05);
     }
     const gap = placementOnEdge(edge, state.position).gapMeters;
-    expect(gap).toBeGreaterThan(2);
-    expect(gap).toBeLessThan(4);
-    expect(distanceMeters(state.position, center)).toBeGreaterThan(2);
+    expect(gap).toBeGreaterThan(0.7);
+    expect(gap).toBeLessThan(2);
+    expect(distanceMeters(state.position, center)).toBeGreaterThan(0.7);
     expect(state.edgeId).toBe(edge.id);
-    expect(state.message).toBe(BOUNDARY_MESSAGE);
+    expect(state.message).toBe(MEASURED_LEAVE_MESSAGE);
     expect(state.measurementReliable).toBe(true);
     expect(placementOnEdge(edge, state.position).gapMeters).toBeLessThan(4);
   });
@@ -294,6 +313,70 @@ describe("curve following", () => {
     expect(state.position).not.toEqual(pointAlong(linked, state.distanceMeters));
   });
 
+  it("drives a narrow measured road from the center without stopping", () => {
+    const network = buildRoadNetwork([
+      segment("smal", ["a", "b"], [origin, northOf(origin, 160)], {
+        name: "Smal",
+        highway: "residential",
+        widthMeters: 3.6,
+      }),
+    ]);
+    const edge = edgeNamed(network, "smal", "forward");
+    let state = vehicleFromPlacement({ edge, distanceMeters: 8, gapMeters: 0 });
+    for (let index = 0; index < 70; index += 1) {
+      state = advanceFreeVehicle(state, { accelerate: true, brake: false, steer: 0 }, 0.05, network);
+    }
+    const gap = placementOnEdge(edge, state.position).gapMeters;
+    expect(state.speedMps).toBeGreaterThan(6);
+    expect(state.message).toBeNull();
+    expect(gap).toBeLessThan(0.8);
+    expect(state.roadName).toBe("Smal");
+  });
+
+  it("stops beside a measured edge and marks a too-narrow tag as uncertain", () => {
+    const fitted = buildRoadNetwork([
+      segment("smal", ["a", "b"], [origin, northOf(origin, 80)], { name: "Smal", widthMeters: 3.6 }),
+    ]);
+    const edge = edgeNamed(fitted, "smal", "forward");
+    let state = vehicleFromPlacement({ edge, distanceMeters: 30, gapMeters: 0 });
+    for (let index = 0; index < 20; index += 1) {
+      state = guideFreePose(
+        state,
+        { position: eastOf(state.position, 0.45), headingDegrees: 0, speedMps: 6 },
+        fitted,
+        0.05,
+      );
+    }
+    const gap = placementOnEdge(edge, state.position).gapMeters;
+    expect(gap).toBeGreaterThan(0.6);
+    expect(gap).toBeLessThan(1.7);
+    expect(state.message).toBe(MEASURED_LEAVE_MESSAGE);
+    expect(state.position).not.toEqual(pointAlong(edge, state.distanceMeters));
+
+    const tight = buildRoadNetwork([
+      segment("trång", ["a", "b"], [origin, northOf(origin, 80)], { name: "Trång", widthMeters: 1.7 }),
+    ]);
+    const narrowEdge = edgeNamed(tight, "trång", "forward");
+    let narrow = vehicleFromPlacement({ edge: narrowEdge, distanceMeters: 10, gapMeters: 0 });
+    for (let index = 0; index < 40; index += 1) {
+      narrow = advanceFreeVehicle(narrow, { accelerate: true, brake: false, steer: 0 }, 0.05, tight);
+    }
+    expect(narrow.speedMps).toBeGreaterThan(4);
+    expect(narrow.message).not.toBe(UNCERTAIN_WIDTH_MESSAGE);
+    for (let index = 0; index < 16; index += 1) {
+      narrow = guideFreePose(
+        narrow,
+        { position: eastOf(narrow.position, 0.4), headingDegrees: narrow.headingDegrees, speedMps: 5 },
+        tight,
+        0.05,
+      );
+    }
+    const tightGap = placementOnEdge(narrowEdge, narrow.position).gapMeters;
+    expect(narrow.message).toBe(UNCERTAIN_WIDTH_MESSAGE);
+    expect(tightGap).toBeGreaterThan(0.4);
+    expect(tightGap).toBeLessThan(1.7 / 2 + TRACK_SLACK_METERS + 0.15);
+  });
+
   it("lets a held steer turn away from the road heading", () => {
     const network = buildRoadNetwork([
       segment("rak", ["a", "b"], [origin, northOf(origin, 200)], { name: "Raka" }),
@@ -305,5 +388,63 @@ describe("curve following", () => {
       state = advanceFreeVehicle(state, { accelerate: true, brake: false, steer: 1 }, 0.05, network);
     }
     expect(state.headingDegrees).toBeGreaterThan(15);
+  });
+});
+
+describe("junction steering", () => {
+  const junction = northOf(origin, 70);
+  const network = buildRoadNetwork([
+    segment("söder", ["s", "j"], [origin, junction], { name: "Södergatan", highway: "residential" }),
+    segment("norr", ["j", "n"], [junction, northOf(junction, 80)], { name: "Norrgatan", highway: "residential" }),
+    segment("öster", ["j", "e"], [junction, eastOf(junction, 80)], { name: "Östergatan", highway: "tertiary" }),
+    segment("väster", ["j", "w"], [junction, eastOf(junction, -80)], { name: "Västergatan", highway: "tertiary" }),
+  ]);
+  const south = edgeNamed(network, "söder", "forward");
+
+  function drive(steer: number) {
+    let state = vehicleFromPlacement({ edge: south, distanceMeters: 8, gapMeters: 0 });
+    state = { ...state, position: eastOf(state.position, 1.1) };
+    const wanted = steer === 0 ? "Norrgatan" : steer > 0 ? "Östergatan" : "Västergatan";
+    for (let index = 0; index < 220 && state.roadName !== wanted; index += 1) {
+      const linked = network.edgesById.get(state.edgeId);
+      const remaining = linked && state.roadName === "Södergatan" ? linked.lengthMeters - state.distanceMeters : 99;
+      const command = steer !== 0 && remaining < 16 ? steer : 0;
+      state = advanceFreeVehicle(state, { accelerate: true, brake: false, steer: command }, 0.05, network);
+    }
+    for (let index = 0; index < 30; index += 1) {
+      state = advanceFreeVehicle(state, { accelerate: true, brake: false, steer: 0 }, 0.05, network);
+    }
+    return state;
+  }
+
+  it("continues straight onto the gentle connection without steering", () => {
+    const state = drive(0);
+    const linked = network.edgesById.get(state.edgeId);
+    expect(state.roadName).toBe("Norrgatan");
+    expect(state.speedMps).toBeGreaterThan(4);
+    expect(state.message).toBeNull();
+    expect(linked).toBeTruthy();
+    expect(state.position).not.toEqual(pointAlong(linked!, state.distanceMeters));
+    expect(placementOnEdge(linked!, state.position).gapMeters).toBeGreaterThan(0.3);
+  });
+
+  it("turns right onto a shared-node street past 45 degrees", () => {
+    const state = drive(1);
+    expect(state.roadName).toBe("Östergatan");
+    expect(state.speedMps).toBeGreaterThan(4);
+    expect(state.message).toBeNull();
+    const linked = network.edgesById.get(state.edgeId);
+    expect(linked).toBeTruthy();
+    expect(state.position).not.toEqual(pointAlong(linked!, state.distanceMeters));
+  });
+
+  it("turns left onto a shared-node street past 45 degrees", () => {
+    const state = drive(-1);
+    expect(state.roadName).toBe("Västergatan");
+    expect(state.speedMps).toBeGreaterThan(4);
+    expect(state.message).toBeNull();
+    const linked = network.edgesById.get(state.edgeId);
+    expect(linked).toBeTruthy();
+    expect(state.position).not.toEqual(pointAlong(linked!, state.distanceMeters));
   });
 });
