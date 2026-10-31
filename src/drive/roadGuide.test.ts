@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { vehicleFromPlacement } from "./drive";
+import { advanceFreeVehicle } from "./freeDrive";
 import {
   BOUNDARY_MESSAGE,
   ESTIMATED_CARRIAGEWAY_METERS,
   ESTIMATED_LANE_METERS,
   corridorOf,
+  estimatedCarriagewayMeters,
+  followRoadCurve,
   guideFreePose,
 } from "./roadGuide";
 import { buildRoadNetwork, placementOnEdge, pointAlong } from "../roads/roadNetwork";
@@ -29,13 +32,13 @@ function segment(
   id: string,
   nodes: string[],
   coordinates: RoadPoint[],
-  options?: { name?: string; oneway?: OneWay; widthMeters?: number; lanes?: number },
+  options?: { name?: string; oneway?: OneWay; widthMeters?: number; lanes?: number; highway?: string },
 ): RoadSegment {
   return {
     id,
     osmWayId: id,
     name: options?.name ?? id,
-    highway: "residential",
+    highway: options?.highway ?? "residential",
     oneway: options?.oneway ?? "both",
     coordinates,
     nodeIds: nodes,
@@ -53,16 +56,43 @@ function edgeNamed(network: ReturnType<typeof buildRoadNetwork>, wayId: string, 
 }
 
 describe("corridorOf", () => {
-  it("uses a measured width, estimates meters from a lane count, and otherwise uses a documented fallback", () => {
-    expect(corridorOf({ widthMeters: 8, lanes: 2 })).toEqual({ halfMeters: 4, basis: "width" });
-    expect(corridorOf({ widthMeters: null, lanes: 2 })).toEqual({
-      halfMeters: ESTIMATED_LANE_METERS,
+  it("uses a measured width, and does not let one lane shrink a city street", () => {
+    expect(corridorOf({ widthMeters: 8, lanes: 2, highway: "residential" })).toEqual({
+      halfMeters: 4,
+      basis: "width",
+    });
+    expect(corridorOf({ widthMeters: null, lanes: 4, highway: "residential" })).toEqual({
+      halfMeters: (4 * ESTIMATED_LANE_METERS) / 2,
       basis: "lanes",
+    });
+    expect(corridorOf({ widthMeters: null, lanes: 1, highway: "unclassified" })).toEqual({
+      halfMeters: estimatedCarriagewayMeters("unclassified") / 2,
+      basis: "estimate",
+    });
+    expect(corridorOf({ widthMeters: null, lanes: null, highway: "tertiary" })).toEqual({
+      halfMeters: estimatedCarriagewayMeters("tertiary") / 2,
+      basis: "estimate",
     });
     expect(corridorOf({ widthMeters: null, lanes: null })).toEqual({
       halfMeters: ESTIMATED_CARRIAGEWAY_METERS / 2,
       basis: "estimate",
     });
+    expect(estimatedCarriagewayMeters("unclassified")).toBeGreaterThan(3.5);
+  });
+});
+
+describe("followRoadCurve", () => {
+  it("turns toward a bend gradually and leaves the turn to the player", () => {
+    let heading = 0;
+    for (let index = 0; index < 10; index += 1) {
+      heading = followRoadCurve(heading, 40, 0, 0.05);
+    }
+    expect(heading).toBeGreaterThan(12);
+    expect(heading).toBeLessThan(32);
+    const assisted = followRoadCurve(0, 40, 0, 0.05);
+    const steered = followRoadCurve(0, 40, 1, 0.05);
+    expect(steered).toBeLessThan(assisted);
+    expect(followRoadCurve(10, 10, 0, 0.05)).toBeCloseTo(10, 5);
   });
 });
 
@@ -160,5 +190,120 @@ describe("guideFreePose", () => {
     const next = guideFreePose(before, { position: flared, headingDegrees: 0, speedMps: 4 }, network, 0.05);
     expect(next.position).toEqual(flared);
     expect(next.measurementReliable).toBe(false);
+  });
+});
+
+describe("curve following", () => {
+  it("drives through a bend without stopping or returning to the centerline", () => {
+    const points: RoadPoint[] = [origin];
+    const nodes = ["0"];
+    let cursor = origin;
+    let bearing = 0;
+    for (let index = 1; index <= 8; index += 1) {
+      bearing += 6;
+      const heading = (bearing * Math.PI) / 180;
+      const cosine = Math.cos((cursor.lat * Math.PI) / 180);
+      cursor = {
+        lat: cursor.lat + (12 * Math.cos(heading)) / 111320,
+        lng: cursor.lng + (12 * Math.sin(heading)) / (111320 * Math.max(0.2, cosine)),
+      };
+      points.push(cursor);
+      nodes.push(String(index));
+    }
+    const network = buildRoadNetwork([
+      segment("kurva", nodes, points, { name: "Kurvan", highway: "unclassified", lanes: 1 }),
+    ]);
+    const edge = edgeNamed(network, "kurva", "forward");
+    let state = vehicleFromPlacement({ edge, distanceMeters: 10, gapMeters: 0 });
+    state = { ...state, position: eastOf(state.position, 1.6) };
+    for (let index = 0; index < 70; index += 1) {
+      state = advanceFreeVehicle(state, { accelerate: true, brake: false, steer: 0 }, 0.05, network);
+    }
+    const linked = network.edgesById.get(state.edgeId) ?? edge;
+    const gap = placementOnEdge(linked, state.position).gapMeters;
+    expect(state.speedMps).toBeGreaterThan(4);
+    expect(state.headingDegrees).toBeGreaterThan(12);
+    expect(state.headingDegrees).toBeLessThan(70);
+    expect(gap).toBeGreaterThan(0.4);
+    expect(gap).toBeLessThan(6);
+    expect(state.message).not.toBe(BOUNDARY_MESSAGE);
+    expect(state.position).not.toEqual(pointAlong(linked, state.distanceMeters));
+  });
+
+  it("follows a tight city bend onto the connected street", () => {
+    const pieces: Array<[number, number]> = [
+      [8.3, 331.6],
+      [4.59, 326.6],
+      [4.46, 327.5],
+      [3.59, 343.3],
+      [3.17, 352.5],
+      [4, 9.1],
+      [4.96, 32.9],
+      [6.09, 51.1],
+      [8.95, 59.1],
+      [12.74, 62.1],
+      [3.25, 60.5],
+      [2.7, 48.1],
+      [2.06, 15.5],
+      [1.71, 355.6],
+      [4.3, 344.2],
+    ];
+    const points: RoadPoint[] = [origin];
+    const nodes = ["0"];
+    let cursor = origin;
+    pieces.forEach(([length, heading], index) => {
+      const radians = (heading * Math.PI) / 180;
+      const cosine = Math.cos((cursor.lat * Math.PI) / 180);
+      cursor = {
+        lat: cursor.lat + (length * Math.cos(radians)) / 111320,
+        lng: cursor.lng + (length * Math.sin(radians)) / (111320 * Math.max(0.2, cosine)),
+      };
+      points.push(cursor);
+      nodes.push(String(index + 1));
+    });
+    const join = nodes[nodes.length - 1] ?? "end";
+    const streetHeading = 344.2;
+    const streetRadians = (streetHeading * Math.PI) / 180;
+    const cosine = Math.cos((cursor.lat * Math.PI) / 180);
+    const streetEnd = {
+      lat: cursor.lat + (40 * Math.cos(streetRadians)) / 111320,
+      lng: cursor.lng + (40 * Math.sin(streetRadians)) / (111320 * Math.max(0.2, cosine)),
+    };
+    const network = buildRoadNetwork([
+      segment("torg", nodes, points, { name: "Gustav Adolfs Torg", highway: "unclassified", lanes: 1, oneway: "forward" }),
+      segment("reg", [join, "reg-end"], [cursor, streetEnd], {
+        name: "Regeringsgatan",
+        highway: "tertiary",
+        lanes: 1,
+        oneway: "forward",
+      }),
+    ]);
+    const edge = edgeNamed(network, "torg", "forward");
+    let state = vehicleFromPlacement({ edge, distanceMeters: 2, gapMeters: 0 });
+    state = { ...state, position: eastOf(state.position, 1.2) };
+    for (let index = 0; index < 200; index += 1) {
+      state = advanceFreeVehicle(state, { accelerate: true, brake: false, steer: 0 }, 0.05, network);
+    }
+    const linked = network.edgesById.get(state.edgeId) ?? edge;
+    const gap = placementOnEdge(linked, state.position).gapMeters;
+    expect(state.roadName).toBe("Regeringsgatan");
+    expect(state.speedMps).toBeGreaterThan(4);
+    expect(state.message).not.toBe(BOUNDARY_MESSAGE);
+    expect(gap).toBeGreaterThan(0.2);
+    expect(gap).toBeLessThan(4.5);
+    expect(state.position).not.toEqual(pointAlong(linked, state.distanceMeters));
+  });
+
+  it("lets a held steer turn away from the road heading", () => {
+    const network = buildRoadNetwork([
+      segment("rak", ["a", "b"], [origin, northOf(origin, 200)], { name: "Raka" }),
+    ]);
+    const edge = edgeNamed(network, "rak", "forward");
+    let state = vehicleFromPlacement({ edge, distanceMeters: 20, gapMeters: 0 });
+    state = { ...state, speedMps: 8 };
+    for (let index = 0; index < 20; index += 1) {
+      state = advanceFreeVehicle(state, { accelerate: true, brake: false, steer: 1 }, 0.05, network);
+    }
+    expect(state.headingDegrees).toBeGreaterThan(15);
   });
 });

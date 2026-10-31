@@ -12,7 +12,12 @@ import {
   type DriveInput,
   type VehicleState,
 } from "./drive";
-import { guideFreePose, OFF_ROAD_MESSAGE as GUIDE_OFF_ROAD_MESSAGE, FREE_ROAD_ASSOCIATION_METERS as GUIDE_ASSOCIATION_METERS } from "./roadGuide";
+import {
+  guideFreePose,
+  headingForFreeStep,
+  OFF_ROAD_MESSAGE as GUIDE_OFF_ROAD_MESSAGE,
+  FREE_ROAD_ASSOCIATION_METERS as GUIDE_ASSOCIATION_METERS,
+} from "./roadGuide";
 
 export const FREE_ROAD_ASSOCIATION_METERS = GUIDE_ASSOCIATION_METERS;
 export const OFF_ROAD_MESSAGE = GUIDE_OFF_ROAD_MESSAGE;
@@ -87,10 +92,11 @@ export function advanceFreeVehicle(
   dtSeconds: number,
   network: RoadNetwork,
 ): VehicleState {
+  const headingDegrees = headingForFreeStep(state, input.steer ?? 0, dtSeconds, network);
   const moved = stepFreeVehicle(
     {
       position: state.position,
-      headingDegrees: state.headingDegrees,
+      headingDegrees,
       speedMps: state.speedMps,
     },
     input,
