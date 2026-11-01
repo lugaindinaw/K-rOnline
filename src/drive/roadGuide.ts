@@ -136,14 +136,24 @@ export function corridorOf(edge: {
   return { halfMeters: fallback / 2, basis: "estimate" };
 }
 
-/** How far the body reaches from the center when the car is yawed relative to the road. */
+/**
+ * How far the body reaches from the center when the car is yawed relative to the road.
+ * A few degrees of tracking lag still uses the car's width. The length only sticks
+ * out once the car is clearly angled across the carriageway.
+ */
 export function bodyExtentMeters(yawDegrees: number): number {
   let yaw = Math.abs(signedDelta(0, yawDegrees));
   if (yaw > 90) {
     yaw = 180 - yaw;
   }
+  const halfWidth = CAR_BODY_WIDTH_METERS / 2;
+  if (yaw <= 8) {
+    return halfWidth;
+  }
   const radians = (yaw * Math.PI) / 180;
-  return (CAR_BODY_WIDTH_METERS / 2) * Math.cos(radians) + (CAR_BODY_LENGTH_METERS / 2) * Math.sin(radians);
+  const angled = halfWidth * Math.cos(radians) + (CAR_BODY_LENGTH_METERS / 2) * Math.sin(radians);
+  const blend = Math.min(1, (yaw - 8) / 16);
+  return halfWidth + (angled - halfWidth) * blend;
 }
 
 export type Clearance = {
@@ -469,10 +479,23 @@ function headingAhead(network: RoadNetwork, edge: RoadEdge, distance: number, st
   if (!next) {
     return local;
   }
-  const approach = 1 - remaining / JUNCTION_CHOICE_METERS;
-  const steerBlend = Math.abs(steer) <= 0.35 ? 1 : Math.min(1, Math.abs(steer));
   const nextHeading = pathHeading(null, next, Math.min(next.lengthMeters, 12));
+  const preview = previewMeters(signedDelta(local, nextHeading));
+  if (remaining > preview) {
+    return local;
+  }
+  const approach = 1 - remaining / preview;
+  const steerBlend = Math.abs(steer) <= 0.35 ? 1 : Math.min(1, Math.abs(steer));
   return mixHeading(local, nextHeading, approach * steerBlend);
+}
+
+/** A mild bend is followed near the node. A sharp steered exit may begin earlier. */
+function previewMeters(turnDegrees: number): number {
+  const turn = Math.abs(turnDegrees);
+  if (turn <= 15) {
+    return 8;
+  }
+  return Math.min(JUNCTION_CHOICE_METERS, 8 + (turn - 15) * 0.4);
 }
 
 /** Positive when the car sits to the right of the road direction. */

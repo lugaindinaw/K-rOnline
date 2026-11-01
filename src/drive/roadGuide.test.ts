@@ -9,6 +9,7 @@ import {
   MEASURED_LEAVE_MESSAGE,
   TRACK_SLACK_METERS,
   UNCERTAIN_WIDTH_MESSAGE,
+  bodyExtentMeters,
   clearanceOf,
   corridorOf,
   estimatedCarriagewayMeters,
@@ -94,6 +95,10 @@ describe("corridorOf", () => {
     expect(fitted.centerLimit).toBeLessThanOrEqual(3 + TRACK_SLACK_METERS);
     const yawed = clearanceOf({ widthMeters: 6, highway: "residential" }, 90);
     expect(yawed.centerLimit).toBeLessThan(fitted.centerLimit);
+    const tracking = clearanceOf({ widthMeters: 6, highway: "residential" }, 5);
+    expect(tracking.centerLimit).toBeCloseTo(fitted.centerLimit, 5);
+    expect(bodyExtentMeters(5)).toBeCloseTo(CAR_BODY_WIDTH_METERS / 2, 5);
+    expect(bodyExtentMeters(20)).toBeGreaterThan(CAR_BODY_WIDTH_METERS / 2);
     const tooNarrow = clearanceOf({ widthMeters: 1.7, highway: "residential" }, 0);
     expect(tooNarrow.roadHoldsCar).toBe(false);
     expect(tooNarrow.centerLimit).toBeLessThanOrEqual(1.7 / 2 + TRACK_SLACK_METERS);
@@ -247,6 +252,30 @@ describe("curve following", () => {
     expect(gap).toBeLessThan(6);
     expect(state.message).not.toBe(BOUNDARY_MESSAGE);
     expect(state.position).not.toEqual(pointAlong(linked, state.distanceMeters));
+  });
+
+  it("drives through a short mild kink without stopping on the inside", () => {
+    const bend = northOf(eastOf(origin, 12.4 * Math.sin((352 * Math.PI) / 180)), 12.4 * Math.cos((352 * Math.PI) / 180));
+    const end = northOf(eastOf(bend, 80 * Math.sin((340 * Math.PI) / 180)), 80 * Math.cos((340 * Math.PI) / 180));
+    const network = buildRoadNetwork([
+      segment("första", ["a", "b"], [origin, bend], { name: "Regeringsgatan", highway: "residential" }),
+      segment("andra", ["b", "c"], [bend, end], { name: "Regeringsgatan", highway: "residential" }),
+    ]);
+    const first = edgeNamed(network, "första", "forward");
+    let state = vehicleFromPlacement({ edge: first, distanceMeters: 1, gapMeters: 0 });
+    state = { ...state, position: eastOf(state.position, -1.2), speedMps: 10, headingDegrees: 352 };
+    let slowest = state.speedMps;
+    for (let step = 0; step < 120; step += 1) {
+      state = advanceFreeVehicle(state, { accelerate: true, brake: false, steer: 0 }, 0.05, network);
+      slowest = Math.min(slowest, state.speedMps);
+    }
+    const linked = network.edgesById.get(state.edgeId);
+    expect(linked?.osmWayId).toBe("andra");
+    expect(state.roadName).toBe("Regeringsgatan");
+    expect(state.speedMps).toBeGreaterThan(8);
+    expect(slowest).toBeGreaterThan(6);
+    expect(state.message).not.toBe(BOUNDARY_MESSAGE);
+    expect(placementOnEdge(linked!, state.position).gapMeters).toBeLessThan(3.2);
   });
 
   it("follows a tight city bend onto the connected street", () => {
