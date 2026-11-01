@@ -377,6 +377,53 @@ describe("curve following", () => {
     expect(tightGap).toBeLessThan(1.7 / 2 + TRACK_SLACK_METERS + 0.15);
   });
 
+  it("stops and says so when the body leaves a measured road with no side street", () => {
+    const network = buildRoadNetwork([
+      segment("smal", ["a", "b"], [origin, northOf(origin, 160)], {
+        name: "Smal",
+        widthMeters: 4,
+        highway: "residential",
+      }),
+    ]);
+    const edge = edgeNamed(network, "smal", "forward");
+    let state = vehicleFromPlacement({ edge, distanceMeters: 30, gapMeters: 0 });
+    state = { ...state, speedMps: 8 };
+    for (let index = 0; index < 50; index += 1) {
+      state = advanceFreeVehicle(state, { accelerate: true, brake: false, steer: 1 }, 0.05, network);
+    }
+    expect(state.roadName).toBe("Smal");
+    expect(state.speedMps).toBeLessThan(2);
+    expect(state.message).toBe(MEASURED_LEAVE_MESSAGE);
+    expect(placementOnEdge(edge, state.position).gapMeters).toBeGreaterThan(0.5);
+    expect(state.position).not.toEqual(pointAlong(edge, state.distanceMeters));
+  });
+
+  it("drives on when steering is released after the body has left a measured road", () => {
+    const network = buildRoadNetwork([
+      segment("smal", ["a", "b"], [origin, northOf(origin, 160)], {
+        name: "Smal",
+        widthMeters: 4,
+        highway: "residential",
+      }),
+    ]);
+    const edge = edgeNamed(network, "smal", "forward");
+    let state = vehicleFromPlacement({ edge, distanceMeters: 30, gapMeters: 0 });
+    state = { ...state, speedMps: 8 };
+    for (let index = 0; index < 40; index += 1) {
+      state = advanceFreeVehicle(state, { accelerate: true, brake: false, steer: 1 }, 0.05, network);
+    }
+    expect(state.speedMps).toBe(0);
+    expect(state.message).toBe(MEASURED_LEAVE_MESSAGE);
+    for (let index = 0; index < 80; index += 1) {
+      state = advanceFreeVehicle(state, { accelerate: true, brake: false, steer: 0 }, 0.05, network);
+    }
+    expect(state.roadName).toBe("Smal");
+    expect(state.speedMps).toBeGreaterThan(6);
+    expect(state.message).toBeNull();
+    expect(placementOnEdge(edge, state.position).gapMeters).toBeGreaterThan(0.3);
+    expect(state.position).not.toEqual(pointAlong(edge, state.distanceMeters));
+  });
+
   it("lets a held steer turn away from the road heading", () => {
     const network = buildRoadNetwork([
       segment("rak", ["a", "b"], [origin, northOf(origin, 200)], { name: "Raka" }),

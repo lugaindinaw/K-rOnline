@@ -73,6 +73,12 @@ export const CURVE_LOOKAHEAD_METERS = 16;
 export const CURVE_ASSIST_DEGREES_PER_SECOND = 50;
 
 /**
+ * Once a leave has been shown and the center is this close to the limit,
+ * another outward step is refused. The slack above still covers the first wobble.
+ */
+const EDGE_HOLD_METERS = 0.35;
+
+/**
  * Offset that is left as the player placed it. Past this, the heading eases
  * back toward the road so a bend does not walk into the boundary.
  */
@@ -207,10 +213,19 @@ export function headingForFreeStep(
   network: RoadNetwork,
 ): number {
   const edge = network.edgesById.get(state.edgeId);
-  if (!edge || !playOf(network, edge, state.position).inside) {
+  const play = edge ? playOf(network, edge, state.position, state.headingDegrees) : null;
+  if (!edge || !play) {
     return wrapDegrees(state.headingDegrees);
   }
-  const place = placementOnEdge(edge, state.position);
+  const steerAbs = Math.max(0, Math.min(1, Number.isFinite(steer) ? Math.abs(steer) : 0));
+  const againstEdge = play.placement.gapMeters >= play.limit - EDGE_HOLD_METERS;
+  if (!play.inside && (steerAbs > 0.35 || play.placement.gapMeters > play.limit + 6)) {
+    return wrapDegrees(state.headingDegrees);
+  }
+  if (play.inside && steerAbs > 0.35 && againstEdge) {
+    return wrapDegrees(state.headingDegrees);
+  }
+  const place = play.placement;
   const ahead = headingAhead(network, edge, place.distanceMeters, steer);
   const offset = signedOffsetMeters(edge, state.position, place.distanceMeters);
   const room = clearanceOf(edge, 0).centerLimit;
@@ -241,21 +256,36 @@ export function guideFreePose(
     gapOutside(network, active, allowed, point, moved.headingDegrees),
   );
   const chosen = chooseEdge(network, allowed, accepted, moved.headingDegrees, active);
-  const placement = chosen ? placementOnEdge(chosen, accepted) : null;
-  const play = chosen ? playOf(network, chosen, accepted, moved.headingDegrees) : null;
-  const ribbon = Boolean(play?.ribbon && play.holdsCar);
-  const blocked = distanceMeters(accepted, moved.position) > 0.2;
-  const speedMps = blocked ? slowed(state.position, accepted, moved.speedMps, dtSeconds) : moved.speedMps;
   const offRoad = !chosen && gapToNearest(network, accepted) > FREE_ROAD_ASSOCIATION_METERS;
+  const rejected = distanceMeters(accepted, moved.position) > 0.05;
+  const besideRoad = !chosen && !offRoad;
+  const linked = chosen ?? (besideRoad ? active : null);
+  let pose = accepted;
+  let play = linked ? playOf(network, linked, pose, moved.headingDegrees) : null;
+  const pushingOut = active
+    ? placementOnEdge(active, moved.position).gapMeters > placementOnEdge(active, state.position).gapMeters + 0.002
+    : false;
+  const nearLimit = Boolean(play && play.placement.gapMeters >= play.limit - EDGE_HOLD_METERS);
+  const holdingEdge = isBoundaryMessage(state.message) && pushingOut && (nearLimit || besideRoad) && !rejected;
+  const walkingOut = besideRoad && pushingOut;
+  if (holdingEdge || walkingOut) {
+    pose = state.position;
+    play = linked ? playOf(network, linked, pose, moved.headingDegrees) : null;
+  }
+  // A network refresh calls this with the same point. That must not count as leaving.
+  const blocked = rejected || holdingEdge || walkingOut;
+  const placement = linked ? placementOnEdge(linked, pose) : null;
+  const ribbon = Boolean(chosen && play?.ribbon && play.holdsCar);
+  const speedMps = blocked ? slowed(state.position, pose, moved.speedMps, dtSeconds) : moved.speedMps;
   return {
     ...state,
-    position: accepted,
+    position: pose,
     headingDegrees: moved.headingDegrees,
     speedMps,
     offsetMeters: 0,
-    edgeId: chosen?.id ?? "",
+    edgeId: linked?.id ?? "",
     distanceMeters: placement?.distanceMeters ?? 0,
-    roadName: chosen?.name ?? null,
+    roadName: linked?.name ?? null,
     mode: "driving",
     choices: [],
     message: messageFor(state.message, offRoad, blocked, speedMps, boundaryMessage(active)),
