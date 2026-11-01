@@ -17,7 +17,7 @@ import {
   type DriveSample,
 } from "../training/approach";
 import { fetchDrivingRoads, roadRequestKey } from "../roads/fetchDrivingRoads";
-import type { RoadPoint, RoadSegment } from "../roads/drivingRoads";
+import { endpointNodeIds, type OmittedRoad, type RoadPoint, type RoadSegment } from "../roads/drivingRoads";
 import {
   EXTEND_EMPTY_MESSAGE,
   EXTEND_LOADING_MESSAGE,
@@ -32,11 +32,31 @@ import { SwedenPanel } from "../ui/SwedenPanel";
 
 const startCenter = STOCKHOLM_CANDIDATE.camera.center;
 
+function loadedNodeSets(areas: readonly { roads: RoadSegment[] }[]): {
+  linked: Set<string>;
+  endpoints: Set<string>;
+} {
+  const linked = new Set<string>();
+  const roads: RoadSegment[] = [];
+  for (const area of areas) {
+    for (const road of area.roads) {
+      roads.push(road);
+      for (const nodeId of road.nodeIds ?? []) {
+        if (nodeId) {
+          linked.add(nodeId);
+        }
+      }
+    }
+  }
+  return { linked, endpoints: endpointNodeIds(roads) };
+}
+
 type StoredArea = CoverageCircle & {
   key: string;
   roads: RoadSegment[];
   truncated: boolean;
   matched: number;
+  omitted: OmittedRoad[];
 };
 
 export function SwedenSession({ apiKey }: { apiKey: string | null }) {
@@ -52,6 +72,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
   const [vehicle, setVehicle] = useState<VehicleStatus>(IDLE_VEHICLE);
   const [matched, setMatched] = useState(0);
   const [truncated, setTruncated] = useState(false);
+  const [omittedRoads, setOmittedRoads] = useState<OmittedRoad[]>([]);
   const [radiusMeters, setRadiusMeters] = useState<number | null>(null);
   const [areaLabel, setAreaLabel] = useState("Stockholm, startposition");
   const [roadError, setRoadError] = useState<string | null>(null);
@@ -132,6 +153,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
     setAreas(kept.map((area) => ({ center: area.center, radiusMeters: area.radiusMeters })));
     setRoads(mergeRoadSegments(kept.flatMap((area) => area.roads)));
     setTruncated(kept.some((area) => area.truncated));
+    setOmittedRoads(kept.flatMap((area) => area.omitted));
     setMatched(kept.reduce((sum, area) => sum + area.matched, 0));
     setRadiusMeters(kept[0]?.radiusMeters ?? null);
   }
@@ -148,6 +170,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
     setAnchor(center);
     setMatched(0);
     setTruncated(false);
+    setOmittedRoads([]);
     coverageRef.current = [];
     loadedKeys.current = new Set();
     failureKeys.current = new Set();
@@ -163,6 +186,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
       setAnchor(null);
       setMatched(0);
       setTruncated(false);
+      setOmittedRoads([]);
       setRadiusMeters(null);
       setRoadError(result.message);
       return;
@@ -177,6 +201,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
           roads: result.area.roads,
           truncated: result.area.truncated,
           matched: result.area.matched,
+          omitted: result.area.omitted,
         },
       ],
       center,
@@ -194,7 +219,11 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
     }
     pendingKeys.current.add(key);
     setExtendNote(EXTEND_LOADING_MESSAGE);
-    const result = await fetchDrivingRoads(center);
+    const nodes = loadedNodeSets(coverageRef.current);
+    const result = await fetchDrivingRoads(center, {
+      linkedNodeIds: nodes.linked,
+      endpointNodeIds: nodes.endpoints,
+    });
     pendingKeys.current.delete(key);
     if (requestId !== requestRef.current || !isNearCoverage(center, coverageRef.current)) {
       if (requestId === requestRef.current) {
@@ -223,6 +252,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
           roads: result.area.roads,
           truncated: result.area.truncated,
           matched: result.area.matched,
+          omitted: result.area.omitted,
         },
       ],
       center,
@@ -320,6 +350,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
           ref={mapRef}
           apiKey={apiKey}
           roads={roads}
+          omittedRoads={omittedRoads}
           areas={areas}
           anchor={anchor}
           focus={focus}

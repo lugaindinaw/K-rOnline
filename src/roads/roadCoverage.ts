@@ -6,7 +6,7 @@ import {
   type RoadSegment,
 } from "./drivingRoads";
 
-export const PREFETCH_MARGIN_METERS = 200;
+export const PREFETCH_MARGIN_METERS = 320;
 export const PREFETCH_AHEAD_METERS = 400;
 export const MAX_COVERAGE_AREAS = 8;
 export const EXTEND_LOADING_MESSAGE = "Hämtar nästa vägavsnitt…";

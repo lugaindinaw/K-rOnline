@@ -15,7 +15,7 @@ import { advanceFreeVehicle, describeFreeVehicle } from "../drive/freeDrive";
 import { formatGeographicPosition, readGeographicPosition, type GeographicPosition } from "../geo/coordinates";
 import { readGroundElevation } from "../geo/groundElevation";
 import { STOCKHOLM_CANDIDATE } from "../geo/stockholmCandidate";
-import type { RoadPoint, RoadSegment } from "../roads/drivingRoads";
+import type { OmittedRoad, RoadPoint, RoadSegment } from "../roads/drivingRoads";
 import {
   prefetchCenter,
   shouldPrefetch,
@@ -25,6 +25,7 @@ import {
   explainRoads,
   nearestPlacement,
   placementWithRunway,
+  recordOmittedLinks,
   START_SNAP_METERS,
   type RoadNetwork,
 } from "../roads/roadNetwork";
@@ -63,10 +64,13 @@ export type SwedenMapHandle = {
   setCameraView: (view: CameraView) => void;
 };
 
+const NO_OMITTED_ROADS: readonly OmittedRoad[] = [];
+
 type CityMapProps = {
   apiKey: string;
   onRetry: () => void;
   roads: RoadSegment[];
+  omittedRoads?: readonly OmittedRoad[];
   areas: CoverageCircle[];
   anchor: RoadPoint | null;
   focus: MapFocus | null;
@@ -110,6 +114,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     apiKey,
     onRetry,
     roads,
+    omittedRoads = NO_OMITTED_ROADS,
     areas,
     anchor,
     focus,
@@ -611,6 +616,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     }
 
     const explained = explainRoads(roads, anchor);
+    recordOmittedLinks(explained.network, omittedRoads);
     networkRef.current = explained.network;
     if (carried) {
       const kept = describeFreeVehicle(carried, explained.network);
@@ -663,7 +669,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       vehicleViewRef.current = null;
       vehicleRef.current = null;
     };
-  }, [roads, anchor, phase, mapVersion]);
+  }, [roads, omittedRoads, anchor, phase, mapVersion]);
 
   useEffect(() => {
     if (phase !== "ready") {

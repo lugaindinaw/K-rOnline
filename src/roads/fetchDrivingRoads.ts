@@ -35,11 +35,29 @@ export type RoadLoadResult =
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
+function linkKey(ids?: ReadonlySet<string>): string {
+  if (!ids || ids.size === 0) {
+    return "";
+  }
+  let hash = 0;
+  for (const id of ids) {
+    let item = 2166136261;
+    for (let index = 0; index < id.length; index += 1) {
+      item ^= id.charCodeAt(index);
+      item = Math.imul(item, 16777619);
+    }
+    hash ^= item;
+  }
+  return `|${ids.size}:${hash >>> 0}`;
+}
+
 async function requestRoads(
   center: RoadPoint,
   radiusMeters: number,
   fetchImpl: FetchLike,
   endpoints: readonly string[],
+  linkedNodeIds?: ReadonlySet<string>,
+  endpointNodeIds?: ReadonlySet<string>,
 ): Promise<RoadLoadResult> {
   if (!isInSweden(center.lat, center.lng)) {
     return { ok: false, message: "Punkten ligger utanför Sverige." };
@@ -75,7 +93,17 @@ async function requestRoads(
       }
       const nearby = sliceRoadsNear(parsed, center, radiusMeters);
       const inSweden = roadsInside(nearby, (point) => isInSweden(point.lat, point.lng));
-      const capped = capRoads(inSweden);
+      const capped = capRoads(inSweden, undefined, linkedNodeIds, endpointNodeIds);
+      const connecting = capped.omitted.filter((road) => road.reason === "sömgräns");
+      if (connecting.length > 0) {
+        const sample = connecting
+          .slice(0, 8)
+          .map((road) => `${road.id} ${road.name ?? "utan namn"} noder ${road.nodeIds.slice(0, 4).join(",")}`)
+          .join("; ");
+        console.info(
+          `[koronline] ${connecting.length} anslutande vägsträckor valdes bort av sömgränsen: ${sample}`,
+        );
+      }
       return {
         ok: true,
         area: {
@@ -84,6 +112,7 @@ async function requestRoads(
           roads: capped.roads,
           matched: inSweden.length,
           truncated: capped.truncated,
+          omitted: capped.omitted,
           source: "openstreetmap",
         },
       };
@@ -101,12 +130,16 @@ export function fetchDrivingRoads(
     fetchImpl?: FetchLike;
     radiusMeters?: number;
     endpoints?: readonly string[];
+    /** Nodes already on the map. A dropped way that meets one of them stays. */
+    linkedNodeIds?: ReadonlySet<string>;
+    /** Loose ends already on the map. A way that continues one of them is kept first. */
+    endpointNodeIds?: ReadonlySet<string>;
   },
 ): Promise<RoadLoadResult> {
   const radiusMeters = options?.radiusMeters ?? ROAD_AREA_RADIUS_METERS;
   const fetchImpl = options?.fetchImpl ?? fetch;
   const endpoints = options?.endpoints ?? OVERPASS_ENDPOINTS;
-  const key = `${roadRequestKey(center, radiusMeters)}|${endpoints.join("|")}`;
+  const key = `${roadRequestKey(center, radiusMeters)}|${endpoints.join("|")}${linkKey(options?.linkedNodeIds)}${linkKey(options?.endpointNodeIds)}`;
   const cached = completed.get(key);
   if (cached?.ok) {
     return Promise.resolve(cached);
@@ -115,7 +148,14 @@ export function fetchDrivingRoads(
   if (existing) {
     return existing;
   }
-  const promise = requestRoads(center, radiusMeters, fetchImpl, endpoints)
+  const promise = requestRoads(
+    center,
+    radiusMeters,
+    fetchImpl,
+    endpoints,
+    options?.linkedNodeIds,
+    options?.endpointNodeIds,
+  )
     .then((result) => {
       if (result.ok) {
         completed.set(key, result);
