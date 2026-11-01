@@ -43,8 +43,24 @@ export const ESTIMATED_CARRIAGEWAY_METERS = ESTIMATED_CARRIAGEWAY_BY_CLASS.resid
 /** How far the play area may flare around a node that joins two OSM ways. Not an intersection survey. */
 export const JUNCTION_DISK_METERS = 16;
 
-/** Distance from a junction node where connected ways become available to steering. */
+/** Distance from a junction node where the play area may flare. Not a wider street. */
 export const JUNCTION_APPROACH_METERS = 24;
+
+/** How early a shared node’s exits may affect heading and road choice. */
+export const JUNCTION_CHOICE_METERS = 32;
+
+/**
+ * Drawn car, matching the model in the map: about 1.96 m wide and 4.17 m long.
+ * The corridor check uses the body, not only the center point.
+ */
+export const CAR_BODY_WIDTH_METERS = 1.96;
+export const CAR_BODY_LENGTH_METERS = 4.17;
+
+/**
+ * Room for a small projection or heading wobble. This is not extra carriageway
+ * and must stay well under a meter so the car cannot drift through a building.
+ */
+export const TRACK_SLACK_METERS = 0.45;
 
 /**
  * Distance to a shared node where the heading may ease onto a gentle continuation.
@@ -57,6 +73,12 @@ export const CURVE_LOOKAHEAD_METERS = 16;
 export const CURVE_ASSIST_DEGREES_PER_SECOND = 50;
 
 /**
+ * Once a leave has been shown and the center is this close to the limit,
+ * another outward step is refused. The slack above still covers the first wobble.
+ */
+const EDGE_HOLD_METERS = 0.35;
+
+/**
  * Offset that is left as the player placed it. Past this, the heading eases
  * back toward the road so a bend does not walk into the boundary.
  */
@@ -66,6 +88,13 @@ const OFFSET_BIAS_MAX_DEGREES = 7;
 const METERS_PER_DEGREE = 111320;
 
 export const BOUNDARY_MESSAGE = "Preliminär körgräns. Exakt vägkant och byggnader saknas.";
+
+/** The tagged width is known and the body has left that carriageway. Buildings are still unknown. */
+export const MEASURED_LEAVE_MESSAGE = "Bilen lämnar den uppmätta körbanan. Byggnader känns inte av.";
+
+/** The tagged width is narrower than the car, so the edge cannot be treated as exact. */
+export const UNCERTAIN_WIDTH_MESSAGE =
+  "Körgränsen är osäker. Den uppmätta bredden rymmer inte hela bilen.";
 
 export type CorridorBasis = "width" | "lanes" | "estimate";
 
@@ -93,7 +122,7 @@ export function corridorOf(edge: {
   highway?: string | null;
 }): Corridor {
   const width = edge.widthMeters;
-  if (typeof width === "number" && width >= 2 && width <= 40) {
+  if (typeof width === "number" && width >= 1 && width <= 40) {
     return { halfMeters: width / 2, basis: "width" };
   }
   const fallback = estimatedCarriagewayMeters(edge.highway);
@@ -105,6 +134,58 @@ export function corridorOf(edge: {
     }
   }
   return { halfMeters: fallback / 2, basis: "estimate" };
+}
+
+/**
+ * How far the body reaches from the center when the car is yawed relative to the road.
+ * A few degrees of tracking lag still uses the car's width. The length only sticks
+ * out once the car is clearly angled across the carriageway.
+ */
+export function bodyExtentMeters(yawDegrees: number): number {
+  let yaw = Math.abs(signedDelta(0, yawDegrees));
+  if (yaw > 90) {
+    yaw = 180 - yaw;
+  }
+  const halfWidth = CAR_BODY_WIDTH_METERS / 2;
+  if (yaw <= 8) {
+    return halfWidth;
+  }
+  const radians = (yaw * Math.PI) / 180;
+  const angled = halfWidth * Math.cos(radians) + (CAR_BODY_LENGTH_METERS / 2) * Math.sin(radians);
+  const blend = Math.min(1, (yaw - 8) / 16);
+  return halfWidth + (angled - halfWidth) * blend;
+}
+
+export type Clearance = {
+  centerLimit: number;
+  roadHalf: number;
+  roadHoldsCar: boolean;
+  basis: CorridorBasis;
+};
+
+/**
+ * How far the center may sit from the centerline before the body leaves the
+ * carriageway. A measured width is never replaced by a wider guess. When the
+ * tagged width is narrower than the car, the center stays inside that width
+ * and the edge is marked uncertain.
+ */
+export function clearanceOf(
+  edge: { widthMeters?: number | null; lanes?: number | null; highway?: string | null },
+  yawDegrees = 0,
+): Clearance {
+  const corridor = corridorOf(edge);
+  const roadHalf = corridor.halfMeters;
+  const roadHoldsCar = roadHalf + 0.05 >= CAR_BODY_WIDTH_METERS / 2;
+  const extent = bodyExtentMeters(yawDegrees);
+  const centerLimit = roadHoldsCar
+    ? roadHalf - extent + TRACK_SLACK_METERS
+    : roadHalf + TRACK_SLACK_METERS * 0.5;
+  return {
+    centerLimit: Math.min(roadHalf + TRACK_SLACK_METERS, Math.max(0.35, centerLimit)),
+    roadHalf,
+    roadHoldsCar,
+    basis: corridor.basis,
+  };
 }
 
 /**
@@ -142,13 +223,28 @@ export function headingForFreeStep(
   network: RoadNetwork,
 ): number {
   const edge = network.edgesById.get(state.edgeId);
-  if (!edge || !playOf(network, edge, state.position).inside) {
+  const play = edge ? playOf(network, edge, state.position, state.headingDegrees) : null;
+  if (!edge || !play) {
     return wrapDegrees(state.headingDegrees);
   }
-  const place = placementOnEdge(edge, state.position);
+  const steerAbs = Math.max(0, Math.min(1, Number.isFinite(steer) ? Math.abs(steer) : 0));
+  const againstEdge = play.placement.gapMeters >= play.limit - EDGE_HOLD_METERS;
+  if (!play.inside && (steerAbs > 0.35 || play.placement.gapMeters > play.limit + 6)) {
+    return wrapDegrees(state.headingDegrees);
+  }
+  if (play.inside && steerAbs > 0.35 && againstEdge) {
+    return wrapDegrees(state.headingDegrees);
+  }
+  const place = play.placement;
   const ahead = headingAhead(network, edge, place.distanceMeters, steer);
   const offset = signedOffsetMeters(edge, state.position, place.distanceMeters);
-  return followRoadCurve(state.headingDegrees, headingWithOffset(ahead, offset, steer), steer, dtSeconds);
+  const room = clearanceOf(edge, 0).centerLimit;
+  return followRoadCurve(
+    state.headingDegrees,
+    headingWithOffset(ahead, offset, steer, room),
+    steer,
+    dtSeconds,
+  );
 }
 
 /**
@@ -164,28 +260,45 @@ export function guideFreePose(
 ): VehicleState {
   const active = network.edgesById.get(state.edgeId) ?? null;
   const allowed = allowedEdges(network, active, state.position, moved.headingDegrees);
-  const inside = (point: RoadPoint) => allowed.some((edge) => playOf(network, edge, point).inside);
+  const inside = (point: RoadPoint) =>
+    allowed.some((edge) => playOf(network, edge, point, moved.headingDegrees).inside);
   const accepted = acceptPosition(state.position, moved.position, inside, (point) =>
-    gapOutside(network, active, allowed, point),
+    gapOutside(network, active, allowed, point, moved.headingDegrees),
   );
   const chosen = chooseEdge(network, allowed, accepted, moved.headingDegrees, active);
-  const placement = chosen ? placementOnEdge(chosen, accepted) : null;
-  const ribbon = chosen ? playOf(network, chosen, accepted).ribbon : false;
-  const blocked = distanceMeters(accepted, moved.position) > 0.2;
-  const speedMps = blocked ? slowed(state.position, accepted, moved.speedMps, dtSeconds) : moved.speedMps;
   const offRoad = !chosen && gapToNearest(network, accepted) > FREE_ROAD_ASSOCIATION_METERS;
+  const rejected = distanceMeters(accepted, moved.position) > 0.05;
+  const besideRoad = !chosen && !offRoad;
+  const linked = chosen ?? (besideRoad ? active : null);
+  let pose = accepted;
+  let play = linked ? playOf(network, linked, pose, moved.headingDegrees) : null;
+  const pushingOut = active
+    ? placementOnEdge(active, moved.position).gapMeters > placementOnEdge(active, state.position).gapMeters + 0.002
+    : false;
+  const nearLimit = Boolean(play && play.placement.gapMeters >= play.limit - EDGE_HOLD_METERS);
+  const holdingEdge = isBoundaryMessage(state.message) && pushingOut && (nearLimit || besideRoad) && !rejected;
+  const walkingOut = besideRoad && pushingOut;
+  if (holdingEdge || walkingOut) {
+    pose = state.position;
+    play = linked ? playOf(network, linked, pose, moved.headingDegrees) : null;
+  }
+  // A network refresh calls this with the same point. That must not count as leaving.
+  const blocked = rejected || holdingEdge || walkingOut;
+  const placement = linked ? placementOnEdge(linked, pose) : null;
+  const ribbon = Boolean(chosen && play?.ribbon && play.holdsCar);
+  const speedMps = blocked ? slowed(state.position, pose, moved.speedMps, dtSeconds) : moved.speedMps;
   return {
     ...state,
-    position: accepted,
+    position: pose,
     headingDegrees: moved.headingDegrees,
     speedMps,
     offsetMeters: 0,
-    edgeId: chosen?.id ?? "",
+    edgeId: linked?.id ?? "",
     distanceMeters: placement?.distanceMeters ?? 0,
-    roadName: chosen?.name ?? null,
+    roadName: linked?.name ?? null,
     mode: "driving",
     choices: [],
-    message: messageFor(state.message, offRoad, blocked, speedMps),
+    message: messageFor(state.message, offRoad, blocked, speedMps, boundaryMessage(active)),
     measurementReliable: ribbon,
   };
 }
@@ -205,7 +318,7 @@ function allowedEdges(
     list.push(reverse);
   }
   for (const nodeId of [active.fromNode, active.toNode]) {
-    if (!nearNode(active, nodeId, position)) {
+    if (!nearNode(active, nodeId, position, JUNCTION_CHOICE_METERS)) {
       continue;
     }
     for (const edge of network.outgoing.get(nodeId) ?? []) {
@@ -232,12 +345,12 @@ function counterpart(network: RoadNetwork, edge: RoadEdge): RoadEdge | null {
   );
 }
 
-function nearNode(edge: RoadEdge, nodeId: string, position: RoadPoint): boolean {
+function nearNode(edge: RoadEdge, nodeId: string, position: RoadPoint, reach = JUNCTION_APPROACH_METERS): boolean {
   const point = nodeId === edge.fromNode ? edge.points[0] : nodeId === edge.toNode ? edge.points[edge.points.length - 1] : null;
   if (!point) {
     return false;
   }
-  return distanceMeters(position, point) <= JUNCTION_APPROACH_METERS;
+  return distanceMeters(position, point) <= reach;
 }
 
 function isJunctionNode(network: RoadNetwork, nodeId: string): boolean {
@@ -249,14 +362,19 @@ function playOf(
   network: RoadNetwork,
   edge: RoadEdge,
   point: RoadPoint,
-): { inside: boolean; ribbon: boolean; placement: RoadPlacement } {
+  headingDegrees?: number,
+): { inside: boolean; ribbon: boolean; placement: RoadPlacement; limit: number; holdsCar: boolean } {
   const placement = placementOnEdge(edge, point);
-  const half = corridorOf(edge).halfMeters;
-  const limit = lateralLimit(network, edge, placement.distanceMeters, half);
+  const roadHeading = pathHeading(null, edge, placement.distanceMeters);
+  const yaw = headingDegrees === undefined ? 0 : headingDelta(roadHeading, headingDegrees);
+  const clearance = clearanceOf(edge, yaw);
+  const limit = lateralLimit(network, edge, placement.distanceMeters, clearance.centerLimit);
   return {
     placement,
+    limit,
+    holdsCar: clearance.roadHoldsCar,
     inside: placement.gapMeters <= limit + 0.05,
-    ribbon: placement.gapMeters <= half + 0.25,
+    ribbon: placement.gapMeters <= clearance.roadHalf + 0.25,
   };
 }
 
@@ -284,7 +402,7 @@ function chooseEdge(
   active: RoadEdge | null,
 ): RoadEdge | null {
   const ranked = allowed
-    .filter((edge) => playOf(network, edge, position).inside)
+    .filter((edge) => playOf(network, edge, position, headingDegrees).inside)
     .map((edge) => {
       const place = placementOnEdge(edge, position);
       return {
@@ -354,15 +472,30 @@ function mixHeading(from: number, to: number, amount: number): number {
 function headingAhead(network: RoadNetwork, edge: RoadEdge, distance: number, steer: number): number {
   const remaining = edge.lengthMeters - distance;
   const local = pathHeading(null, edge, distance);
-  if (Math.abs(steer) > 0.35 || remaining > CURVE_LOOKAHEAD_METERS) {
+  if (remaining > JUNCTION_CHOICE_METERS) {
     return local;
   }
-  const next = gentleContinuation(network, edge, local);
+  const next = continuationForSteer(network, edge, local, steer);
   if (!next) {
     return local;
   }
-  const nextHeading = pathHeading(null, next, Math.min(next.lengthMeters, Math.max(4, CURVE_LOOKAHEAD_METERS - remaining)));
-  return mixHeading(local, nextHeading, 1 - remaining / CURVE_LOOKAHEAD_METERS);
+  const nextHeading = pathHeading(null, next, Math.min(next.lengthMeters, 12));
+  const preview = previewMeters(signedDelta(local, nextHeading));
+  if (remaining > preview) {
+    return local;
+  }
+  const approach = 1 - remaining / preview;
+  const steerBlend = Math.abs(steer) <= 0.35 ? 1 : Math.min(1, Math.abs(steer));
+  return mixHeading(local, nextHeading, approach * steerBlend);
+}
+
+/** A mild bend is followed near the node. A sharp steered exit may begin earlier. */
+function previewMeters(turnDegrees: number): number {
+  const turn = Math.abs(turnDegrees);
+  if (turn <= 15) {
+    return 8;
+  }
+  return Math.min(JUNCTION_CHOICE_METERS, 8 + (turn - 15) * 0.4);
 }
 
 /** Positive when the car sits to the right of the road direction. */
@@ -380,19 +513,25 @@ function signedOffsetMeters(edge: RoadEdge, point: RoadPoint, distance: number):
  * A few degrees back toward the road once the car is well off the middle.
  * Full steering removes the bias. The position is not moved.
  */
-function headingWithOffset(roadDegrees: number, offsetMeters: number, steer: number): number {
+function headingWithOffset(
+  roadDegrees: number,
+  offsetMeters: number,
+  steer: number,
+  centerLimit: number,
+): number {
   const steerAbs = Math.max(0, Math.min(1, Number.isFinite(steer) ? Math.abs(steer) : 0));
-  const excess = Math.max(0, Math.abs(offsetMeters) - OFFSET_COMFORT_METERS);
-  const bias =
-    Math.min(OFFSET_BIAS_MAX_DEGREES, excess * OFFSET_BIAS_DEGREES_PER_METER) *
-    Math.sign(offsetMeters) *
-    (1 - steerAbs);
+  const comfort = Math.min(OFFSET_COMFORT_METERS, Math.max(0.35, centerLimit * 0.5));
+  const excess = Math.max(0, Math.abs(offsetMeters) - comfort);
+  const room = Math.max(0.45, centerLimit - comfort);
+  const urgency = Math.max(0, Math.min(1, excess / room));
+  const maxBias = OFFSET_BIAS_MAX_DEGREES + 6 * urgency;
+  const gain = OFFSET_BIAS_DEGREES_PER_METER + 3 * urgency;
+  const bias = Math.min(maxBias, excess * gain) * Math.sign(offsetMeters) * (1 - steerAbs);
   return wrapDegrees(roadDegrees - bias);
 }
 
-function gentleContinuation(network: RoadNetwork, edge: RoadEdge, fromHeading: number): RoadEdge | null {
-  let best: RoadEdge | null = null;
-  let bestDelta = 45;
+function exitsFrom(network: RoadNetwork, edge: RoadEdge): RoadEdge[] {
+  const exits: RoadEdge[] = [];
   for (const out of network.outgoing.get(edge.toNode) ?? []) {
     if (out.id === edge.id) {
       continue;
@@ -400,10 +539,58 @@ function gentleContinuation(network: RoadNetwork, edge: RoadEdge, fromHeading: n
     if (out.toNode === edge.fromNode && out.osmWayId === edge.osmWayId) {
       continue;
     }
-    const delta = headingDelta(fromHeading, pathHeading(null, out, Math.min(12, out.lengthMeters)));
+    exits.push(out);
+  }
+  return exits;
+}
+
+function exitHeading(edge: RoadEdge): number {
+  return pathHeading(null, edge, Math.min(12, edge.lengthMeters));
+}
+
+/** Straight or gentle shared-node continuation. A side street beyond 45° is left for steering. */
+function gentleContinuation(exits: readonly RoadEdge[], fromHeading: number): RoadEdge | null {
+  let best: RoadEdge | null = null;
+  let bestDelta = 45;
+  for (const out of exits) {
+    const delta = headingDelta(fromHeading, exitHeading(out));
     if (delta < bestDelta) {
       best = out;
       bestDelta = delta;
+    }
+  }
+  return best;
+}
+
+/**
+ * With little steering, follow a gentle continuation. With a real steer,
+ * aim at a shared-node exit on that side even when the turn is past 45°.
+ * The heading blend stays gradual. The position is not moved here.
+ */
+function continuationForSteer(
+  network: RoadNetwork,
+  edge: RoadEdge,
+  fromHeading: number,
+  steer: number,
+): RoadEdge | null {
+  const exits = exitsFrom(network, edge);
+  const command = Math.max(-1, Math.min(1, Number.isFinite(steer) ? steer : 0));
+  if (Math.abs(command) <= 0.35) {
+    return gentleContinuation(exits, fromHeading);
+  }
+  const side = Math.sign(command);
+  const target = side * (30 + 70 * Math.abs(command));
+  let best: RoadEdge | null = null;
+  let bestScore = 55;
+  for (const out of exits) {
+    const turn = signedDelta(fromHeading, exitHeading(out));
+    if (Math.sign(turn) !== side || Math.abs(turn) < 12 || Math.abs(turn) > 150) {
+      continue;
+    }
+    const score = Math.abs(turn - target);
+    if (score < bestScore) {
+      best = out;
+      bestScore = score;
     }
   }
   return best;
@@ -414,12 +601,13 @@ function gapOutside(
   active: RoadEdge | null,
   allowed: readonly RoadEdge[],
   point: RoadPoint,
+  headingDegrees?: number,
 ): number {
   let best = Number.POSITIVE_INFINITY;
   const edges = allowed.length > 0 ? allowed : active ? [active] : [];
   for (const edge of edges) {
-    const play = playOf(network, edge, point);
-    best = Math.min(best, Math.max(0, play.placement.gapMeters - lateralLimit(network, edge, play.placement.distanceMeters, corridorOf(edge).halfMeters)));
+    const play = playOf(network, edge, point, headingDegrees);
+    best = Math.min(best, Math.max(0, play.placement.gapMeters - play.limit));
   }
   if (Number.isFinite(best)) {
     return best;
@@ -487,17 +675,45 @@ function slowed(previous: RoadPoint, accepted: RoadPoint, speedMps: number, dtSe
   return Math.max(0, Math.min(speedMps, traveled / dtSeconds));
 }
 
-function messageFor(previous: string | null, offRoad: boolean, blocked: boolean, speedMps: number): string | null {
+function boundaryMessage(edge: RoadEdge | null): string {
+  if (!edge) {
+    return BOUNDARY_MESSAGE;
+  }
+  const clearance = clearanceOf(edge, 0);
+  if (!clearance.roadHoldsCar) {
+    return UNCERTAIN_WIDTH_MESSAGE;
+  }
+  if (clearance.basis === "width") {
+    return MEASURED_LEAVE_MESSAGE;
+  }
+  return BOUNDARY_MESSAGE;
+}
+
+function isBoundaryMessage(message: string | null): boolean {
+  return (
+    message === BOUNDARY_MESSAGE ||
+    message === MEASURED_LEAVE_MESSAGE ||
+    message === UNCERTAIN_WIDTH_MESSAGE
+  );
+}
+
+function messageFor(
+  previous: string | null,
+  offRoad: boolean,
+  blocked: boolean,
+  speedMps: number,
+  boundary: string,
+): string | null {
   if (offRoad) {
     return OFF_ROAD_MESSAGE;
   }
   if (blocked) {
-    return BOUNDARY_MESSAGE;
+    return boundary;
   }
   if (speedMps > 0) {
     return null;
   }
-  if (previous === OFF_ROAD_MESSAGE || previous === BOUNDARY_MESSAGE) {
+  if (previous === OFF_ROAD_MESSAGE || isBoundaryMessage(previous)) {
     return null;
   }
   return previous;

@@ -180,10 +180,12 @@ export function SwedenPanel({
           Broms ligger kvar tills du byter. Håll A, pil vänster eller Vänster för att svänga
           vänster, och D, pil höger eller Höger för att svänga höger. Bilen flyttas inte tillbaka
           till mittlinjen. Utan styrning följer den vägens kurva. En preliminär körgräns håller
-          bilen vid vägen. Bredden är uppmätt bara när OpenStreetMap har en bredd i meter. Annars
-          beror uppskattningen på vägklass, och ett körfält är inte en vägkant. Byggnader känns
+          bilen vid vägen när bredden är uppskattad. Bredden är uppmätt bara när OpenStreetMap har
+          en bredd i meter, och då jämförs hela bilen med den, inte bara mittpunkten. Annars
+          beror uppskattningen på vägklass, och ett körfält är inte en vägkant. Rymmer den
+          uppmätta bredden inte bilen är gränsen osäker. Byggnader känns
           inte av. I en korsning följer bilen den anslutna väg som styrningen
-          pekar mot, och den stannar inte av sig själv. Vägval med 1–9 används inte. C eller knappen
+          pekar mot, även en tvär sväng, och den stannar inte av sig själv. Vägval med 1–9 används inte. C eller knappen
           växlar kameran. Förarvyn sitter strax framför hytten, ungefär i förarens ögonhöjd, och
           tittar framåt i 3D-kartan. Några andra bilar märkta Trafik följer samma vägar, saktar in
           där vägen delar sig och håller avstånd.
@@ -414,8 +416,9 @@ export function SwedenPanel({
           beskriver registrerad hastighet, om farten minskade, om bilen stannade före korsningen och
           om korsningen nåddes. Tipsen är råd. Väjningsplikt och stopplikt bedöms inte, och försöket
           får inget godkänt- eller underkäntresultat. Den synliga bilen svänger i kartans plan och
-          flyttas inte tillbaka till mittlinjen. Körgränsen är preliminär: OpenStreetMap-bredd
-          används när taggen finns, annars en uppskattning. Den visas inte som en verklig vägkant,
+          flyttas inte tillbaka till mittlinjen. Körgränsen är preliminär när bredden är
+          uppskattad. OpenStreetMap-bredd används när taggen finns, och hela bilen jämförs med den.
+          En tagg som är smalare än bilen ger en osäker gräns. Den visas inte som en verklig vägkant,
           och byggnader känns inte av. Avstånd i övningen registreras bara när bilen är kvar i
           körbanan på vägen mot korsningen. Annars förblir värdet Inte uppmätt. Nästa vägavsnitt
           hämtas automatiskt nära kanten av området.

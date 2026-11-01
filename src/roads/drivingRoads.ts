@@ -327,6 +327,57 @@ export function sliceRoadsNear(
   return sliced;
 }
 
+function namedNodeIds(road: RoadSegment): string[] {
+  if (!road.name) {
+    return [];
+  }
+  return (road.nodeIds ?? []).filter((nodeId) => nodeId.length > 0);
+}
+
+/**
+ * A dense area keeps the higher road classes. A later piece of a street that is
+ * already kept stays too, so a short OSM way is not a hole in the same road.
+ */
+function restoreNamedLinks(kept: RoadSegment[], dropped: RoadSegment[]): RoadSegment[] {
+  const nodesByName = new Map<string, Set<string>>();
+  for (const road of kept) {
+    const name = road.name;
+    if (!name) {
+      continue;
+    }
+    const nodes = nodesByName.get(name) ?? new Set<string>();
+    for (const nodeId of namedNodeIds(road)) {
+      nodes.add(nodeId);
+    }
+    nodesByName.set(name, nodes);
+  }
+  const restored: RoadSegment[] = [];
+  const pending = [...dropped];
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (let index = pending.length - 1; index >= 0; index -= 1) {
+      const road = pending[index];
+      const name = road?.name;
+      if (!road || !name) {
+        continue;
+      }
+      const nodes = nodesByName.get(name);
+      const own = namedNodeIds(road);
+      if (!nodes || !own.some((nodeId) => nodes.has(nodeId))) {
+        continue;
+      }
+      for (const nodeId of own) {
+        nodes.add(nodeId);
+      }
+      restored.push(road);
+      pending.splice(index, 1);
+      grew = true;
+    }
+  }
+  return restored;
+}
+
 export function capRoads(
   roads: RoadSegment[],
   maxRoads = MAX_ROADS_PER_AREA,
@@ -337,7 +388,9 @@ export function capRoads(
   const ranked = [...roads].sort(
     (left, right) => highwayRank(left.highway) - highwayRank(right.highway) || left.id.localeCompare(right.id),
   );
-  return { roads: ranked.slice(0, maxRoads), truncated: true };
+  const kept = ranked.slice(0, maxRoads);
+  const restored = restoreNamedLinks(kept, ranked.slice(maxRoads));
+  return { roads: restored.length > 0 ? [...kept, ...restored] : kept, truncated: true };
 }
 
 export function roadsInside(
