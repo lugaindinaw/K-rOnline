@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildRoadNetwork } from "./roadNetwork";
 import {
   EXTEND_EMPTY_MESSAGE,
+  PREFETCH_MARGIN_METERS,
   coverageMargin,
   extendFailureMessage,
   isNearCoverage,
@@ -47,6 +48,8 @@ describe("road coverage", () => {
       const nearEdge = northOf(place.point, 450);
       expect(coverageMargin(nearEdge, areas)).toBeLessThan(200);
       expect(shouldPrefetch(nearEdge, areas)).toBe(true);
+      expect(PREFETCH_MARGIN_METERS).toBeGreaterThanOrEqual(300);
+      expect(shouldPrefetch(northOf(place.point, 300), areas)).toBe(true);
       const next = prefetchCenter(nearEdge, 0);
       expect(distanceMeters(nearEdge, next)).toBeGreaterThan(300);
       expect(next.lat).toBeGreaterThan(nearEdge.lat);

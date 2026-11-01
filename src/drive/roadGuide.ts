@@ -89,6 +89,16 @@ const METERS_PER_DEGREE = 111320;
 
 export const BOUNDARY_MESSAGE = "Preliminär körgräns. Exakt vägkant och byggnader saknas.";
 
+/** The fetched graph has no other way on the node the car has reached. */
+export const ROAD_END_MESSAGE = "Gatan tar slut i det hämtade vägnätet. Ingen annan väg delar slutnoden.";
+
+/** Several exits exist, and none is a gentle continuation. Steering can still choose one. */
+export const SHARP_EXIT_MESSAGE =
+  "Anslutningen är skarpare än vad gas utan styrning följer. Sväng för att välja väg.";
+
+/** The next way shares the end node, but the road cap left it out of the graph. */
+export const DROPPED_LINK_MESSAGE = "Fortsättningen valdes bort av gränsen för antal vägsträckor.";
+
 /** The tagged width is known and the body has left that carriageway. Buildings are still unknown. */
 export const MEASURED_LEAVE_MESSAGE = "Bilen lämnar den uppmätta körbanan. Byggnader känns inte av.";
 
@@ -287,6 +297,19 @@ export function guideFreePose(
   const placement = linked ? placementOnEdge(linked, pose) : null;
   const ribbon = Boolean(chosen && play?.ribbon && play.holdsCar);
   const speedMps = blocked ? slowed(state.position, pose, moved.speedMps, dtSeconds) : moved.speedMps;
+  const endPoint = active?.points[active.points.length - 1];
+  const atEnd = Boolean(
+    active &&
+      placement &&
+      endPoint &&
+      active.lengthMeters - placement.distanceMeters < 12 &&
+      distanceMeters(pose, endPoint) < 18,
+  );
+  const endReport = blocked && atEnd && active ? explainContinuation(network, active, 0) : null;
+  if (endReport && !endReport.followed && !isBoundaryMessage(state.message)) {
+    console.info(`[koronline] ${endReport.detail}`);
+  }
+  const boundary = endReport && !endReport.followed ? endReport.message : boundaryMessage(active);
   return {
     ...state,
     position: pose,
@@ -298,7 +321,7 @@ export function guideFreePose(
     roadName: linked?.name ?? null,
     mode: "driving",
     choices: [],
-    message: messageFor(state.message, offRoad, blocked, speedMps, boundaryMessage(active)),
+    message: messageFor(state.message, offRoad, blocked, speedMps, boundary),
     measurementReliable: ribbon,
   };
 }
@@ -480,7 +503,13 @@ function headingAhead(network: RoadNetwork, edge: RoadEdge, distance: number, st
     return local;
   }
   const nextHeading = pathHeading(null, next, Math.min(next.lengthMeters, 12));
-  const preview = previewMeters(signedDelta(local, nextHeading));
+  const turn = Math.abs(signedDelta(local, nextHeading));
+  // A sharp sole exit is followed near the node. Starting it early cuts the inside of the street the car is still on.
+  let preview = previewMeters(signedDelta(local, nextHeading));
+  if (Math.abs(steer) <= 0.35 && turn > 45) {
+    preview = 8;
+  }
+  preview = Math.min(preview, Math.max(8, edge.lengthMeters));
   if (remaining > preview) {
     return local;
   }
@@ -548,7 +577,13 @@ function exitHeading(edge: RoadEdge): number {
   return pathHeading(null, edge, Math.min(12, edge.lengthMeters));
 }
 
-/** Straight or gentle shared-node continuation. A side street beyond 45° is left for steering. */
+/** A single continuation may be sharper than a chosen side street. A U-turn is still left alone. */
+const SOLE_CONTINUATION_DEGREES = 120;
+
+/**
+ * Straight or gentle shared-node continuation. A side street beyond 45° is left
+ * for steering when another exit exists. The only exit is the street itself.
+ */
 function gentleContinuation(exits: readonly RoadEdge[], fromHeading: number): RoadEdge | null {
   let best: RoadEdge | null = null;
   let bestDelta = 45;
@@ -559,7 +594,14 @@ function gentleContinuation(exits: readonly RoadEdge[], fromHeading: number): Ro
       bestDelta = delta;
     }
   }
-  return best;
+  if (best || exits.length !== 1) {
+    return best;
+  }
+  const only = exits[0];
+  if (!only || headingDelta(fromHeading, exitHeading(only)) > SOLE_CONTINUATION_DEGREES) {
+    return null;
+  }
+  return only;
 }
 
 /**
@@ -594,6 +636,54 @@ function continuationForSteer(
     }
   }
   return best;
+}
+
+export type ContinuationReport = {
+  osmWayId: string;
+  name: string | null;
+  toNode: string;
+  followed: boolean;
+  message: string;
+  /** Current way, end node, and each shared-node exit with its turn. */
+  detail: string;
+};
+
+/** Why gas without steering can or cannot leave this edge onto a shared node. */
+export function explainContinuation(network: RoadNetwork, edge: RoadEdge, steer = 0): ContinuationReport {
+  const heading = pathHeading(null, edge, Math.max(0, edge.lengthMeters - 1));
+  const exits = exitsFrom(network, edge).map((out) => ({
+    osmWayId: out.osmWayId,
+    name: out.name,
+    toNode: out.toNode,
+    turnDegrees: Math.round(signedDelta(heading, exitHeading(out))),
+  }));
+  const dropped = network.omittedAtNode.get(edge.toNode) ?? [];
+  const followed = continuationForSteer(network, edge, heading, steer) !== null;
+  const droppedHere = exits.length === 0 && dropped.length > 0;
+  const exitText = droppedHere
+    ? `Bortvalda vid noden: ${dropped
+        .map((road) => `${road.id} ${road.name ?? "utan namn"} noder ${road.nodeIds.slice(0, 4).join(",")} (${road.reason})`)
+        .join("; ")}.`
+    : exits.length === 0
+      ? "Inga andra vägar delar noden."
+      : `Anslutningar: ${exits
+          .map((out) => `${out.osmWayId} ${out.name ?? "utan namn"} noder ${edge.toNode}→${out.toNode} ${out.turnDegrees}°`)
+          .join(", ")}.`;
+  const decision = followed
+    ? "Följs."
+    : droppedHere
+      ? "Valdes bort av gränsen."
+      : exits.length === 0
+        ? "Vägen tar slut."
+        : "Följs inte utan styrning.";
+  return {
+    osmWayId: edge.osmWayId,
+    name: edge.name,
+    toNode: edge.toNode,
+    followed,
+    message: droppedHere ? DROPPED_LINK_MESSAGE : exits.length === 0 ? ROAD_END_MESSAGE : SHARP_EXIT_MESSAGE,
+    detail: `OSM ${edge.osmWayId} ${edge.name ?? "utan namn"} slutar vid nod ${edge.toNode}. ${exitText} ${decision}`,
+  };
 }
 
 function gapOutside(
@@ -693,7 +783,10 @@ function isBoundaryMessage(message: string | null): boolean {
   return (
     message === BOUNDARY_MESSAGE ||
     message === MEASURED_LEAVE_MESSAGE ||
-    message === UNCERTAIN_WIDTH_MESSAGE
+    message === UNCERTAIN_WIDTH_MESSAGE ||
+    message === ROAD_END_MESSAGE ||
+    message === SHARP_EXIT_MESSAGE ||
+    message === DROPPED_LINK_MESSAGE
   );
 }
 

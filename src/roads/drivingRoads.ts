@@ -64,12 +64,23 @@ export type RoadSegment = {
   lanes?: number | null;
 };
 
+export type OmittedRoad = {
+  id: string;
+  name: string | null;
+  highway: string;
+  nodeIds: string[];
+  /** `sömgräns` means the way meets the kept network but the extra-road limit was full. */
+  reason: "klassgräns" | "sömgräns";
+};
+
 export type RoadArea = {
   center: RoadPoint;
   radiusMeters: number;
   roads: RoadSegment[];
   matched: number;
   truncated: boolean;
+  /** Ways left out of this area. Connecting ones explain a stop at a shared node. */
+  omitted: OmittedRoad[];
   source: "openstreetmap";
 };
 
@@ -286,6 +297,9 @@ export function parseOverpassRoads(payload: unknown): RoadSegment[] {
   return roads;
 }
 
+/** One node just outside the circle stays, so a street is not cut between two close nodes. */
+const NEXT_NODE_METERS = 80;
+
 export function sliceRoadsNear(
   roads: RoadSegment[],
   center: RoadPoint,
@@ -313,12 +327,17 @@ export function sliceRoadsNear(
       currentNodes = [];
     };
     road.coordinates.forEach((point, index) => {
-      if (distanceMeters(center, point) <= radius) {
+      const previous = current[current.length - 1];
+      const inside = distanceMeters(center, point) <= radius;
+      const bridges =
+        !inside && previous !== undefined && distanceMeters(previous, point) <= NEXT_NODE_METERS;
+      if (inside || bridges) {
         current.push(point);
         if (linked && road.nodeIds) {
           currentNodes.push(road.nodeIds[index] ?? "");
         }
-      } else {
+      }
+      if (!inside) {
         flush();
       }
     });
@@ -378,19 +397,109 @@ function restoreNamedLinks(kept: RoadSegment[], dropped: RoadSegment[]): RoadSeg
   return restored;
 }
 
+const SEAM_ROAD_LIMIT = 60;
+
+function sharesNode(road: RoadSegment, nodes: ReadonlySet<string>): boolean {
+  return (road.nodeIds ?? []).some((nodeId) => nodeId.length > 0 && nodes.has(nodeId));
+}
+
+function nodeList(road: RoadSegment): string[] {
+  return (road.nodeIds ?? []).filter((nodeId) => nodeId.length > 0);
+}
+
+/** First and last nodes that no other road in the set uses. */
+export function endpointNodeIds(roads: readonly RoadSegment[]): Set<string> {
+  const counts = new Map<string, number>();
+  const tips: string[] = [];
+  for (const road of roads) {
+    const ids = nodeList(road);
+    const first = ids[0];
+    const last = ids[ids.length - 1];
+    if (first) {
+      tips.push(first);
+    }
+    if (last && last !== first) {
+      tips.push(last);
+    }
+    for (const nodeId of new Set(ids)) {
+      counts.set(nodeId, (counts.get(nodeId) ?? 0) + 1);
+    }
+  }
+  const ends = new Set<string>();
+  for (const nodeId of tips) {
+    if ((counts.get(nodeId) ?? 0) === 1) {
+      ends.add(nodeId);
+    }
+  }
+  return ends;
+}
+
+/**
+ * Roads the class cap removed, but that meet a street already on the map.
+ * A road at a loose end is kept ahead of a road that only crosses the middle.
+ */
+function restoreSeam(
+  dropped: readonly RoadSegment[],
+  linkedNodeIds: ReadonlySet<string>,
+  endpointIds: ReadonlySet<string>,
+): RoadSegment[] {
+  const ranked = [...dropped].sort((left, right) => {
+    const leftEnd = sharesNode(left, endpointIds) ? 0 : 1;
+    const rightEnd = sharesNode(right, endpointIds) ? 0 : 1;
+    return leftEnd - rightEnd || highwayRank(left.highway) - highwayRank(right.highway) || left.id.localeCompare(right.id);
+  });
+  const restored: RoadSegment[] = [];
+  for (const road of ranked) {
+    if (restored.length >= SEAM_ROAD_LIMIT) {
+      break;
+    }
+    if (sharesNode(road, linkedNodeIds)) {
+      restored.push(road);
+    }
+  }
+  return restored;
+}
+
 export function capRoads(
   roads: RoadSegment[],
   maxRoads = MAX_ROADS_PER_AREA,
-): { roads: RoadSegment[]; truncated: boolean } {
-  if (roads.length <= maxRoads) {
-    return { roads, truncated: false };
+  linkedNodeIds?: ReadonlySet<string>,
+  endpointIds?: ReadonlySet<string>,
+): { roads: RoadSegment[]; truncated: boolean; omitted: OmittedRoad[] } {
+  if (roads.length <= maxRoads && (!linkedNodeIds || linkedNodeIds.size === 0)) {
+    return { roads, truncated: false, omitted: [] };
   }
   const ranked = [...roads].sort(
     (left, right) => highwayRank(left.highway) - highwayRank(right.highway) || left.id.localeCompare(right.id),
   );
   const kept = ranked.slice(0, maxRoads);
-  const restored = restoreNamedLinks(kept, ranked.slice(maxRoads));
-  return { roads: restored.length > 0 ? [...kept, ...restored] : kept, truncated: true };
+  const dropped = ranked.slice(maxRoads);
+  const localEnds = endpointNodeIds(kept);
+  const seamNodes = new Set([...(linkedNodeIds ?? []), ...localEnds]);
+  const priorityEnds = new Set([...(endpointIds ?? []), ...localEnds]);
+  const seam = seamNodes.size > 0 ? restoreSeam(dropped, seamNodes, priorityEnds) : [];
+  const seamIds = new Set(seam.map((road) => road.id));
+  const restored = restoreNamedLinks(
+    [...kept, ...seam],
+    dropped.filter((road) => !seamIds.has(road.id)),
+  );
+  const selected = [...kept, ...seam, ...restored];
+  const selectedIds = new Set(selected.map((road) => road.id));
+  const omitted: OmittedRoad[] = [];
+  for (const road of ranked) {
+    if (selectedIds.has(road.id)) {
+      continue;
+    }
+    const connecting = sharesNode(road, seamNodes);
+    omitted.push({
+      id: road.id,
+      name: road.name,
+      highway: road.highway,
+      nodeIds: nodeList(road),
+      reason: connecting ? "sömgräns" : "klassgräns",
+    });
+  }
+  return { roads: selected, truncated: omitted.length > 0, omitted };
 }
 
 export function roadsInside(

@@ -1,4 +1,4 @@
-import { distanceMeters, type RoadPoint, type RoadSegment } from "./drivingRoads";
+import { distanceMeters, type OmittedRoad, type RoadPoint, type RoadSegment } from "./drivingRoads";
 
 export const START_SNAP_METERS = 100;
 
@@ -23,6 +23,8 @@ export type RoadNetwork = {
   edgesById: Map<string, RoadEdge>;
   outgoing: Map<string, RoadEdge[]>;
   unlinked: number;
+  /** Ways the cap removed, keyed by a node they still touch. */
+  omittedAtNode: Map<string, OmittedRoad[]>;
   /** Edges whose geometry may lie within radiusMeters of the point. Not a full scan. */
   edgesNear: (point: RoadPoint, radiusMeters: number) => RoadEdge[];
 };
@@ -152,7 +154,24 @@ export function buildRoadNetwork(roads: RoadSegment[]): RoadNetwork {
     outgoing.set(edge.fromNode, list);
   }
   const edgesNear = edgesInCells(edges);
-  return { edges, edgesById, outgoing, unlinked, edgesNear };
+  return { edges, edgesById, outgoing, unlinked, omittedAtNode: new Map(), edgesNear };
+}
+
+/** Remember ways the cap removed so a stop can name the missing connection. */
+export function recordOmittedLinks(network: RoadNetwork, omitted: readonly OmittedRoad[]): void {
+  network.omittedAtNode.clear();
+  for (const road of omitted) {
+    const seen = new Set<string>();
+    for (const nodeId of road.nodeIds) {
+      if (!nodeId || seen.has(nodeId)) {
+        continue;
+      }
+      seen.add(nodeId);
+      const list = network.omittedAtNode.get(nodeId) ?? [];
+      list.push(road);
+      network.omittedAtNode.set(nodeId, list);
+    }
+  }
 }
 
 const CELL_METERS = 40;

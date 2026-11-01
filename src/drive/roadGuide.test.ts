@@ -3,6 +3,8 @@ import { vehicleFromPlacement } from "./drive";
 import { advanceFreeVehicle } from "./freeDrive";
 import {
   BOUNDARY_MESSAGE,
+  DROPPED_LINK_MESSAGE,
+  ROAD_END_MESSAGE,
   CAR_BODY_WIDTH_METERS,
   ESTIMATED_CARRIAGEWAY_METERS,
   ESTIMATED_LANE_METERS,
@@ -13,10 +15,11 @@ import {
   clearanceOf,
   corridorOf,
   estimatedCarriagewayMeters,
+  explainContinuation,
   followRoadCurve,
   guideFreePose,
 } from "./roadGuide";
-import { buildRoadNetwork, placementOnEdge, pointAlong } from "../roads/roadNetwork";
+import { buildRoadNetwork, placementOnEdge, pointAlong, recordOmittedLinks } from "../roads/roadNetwork";
 import { distanceMeters, type OneWay, type RoadPoint, type RoadSegment } from "../roads/drivingRoads";
 
 const origin: RoadPoint = { lat: 59.33, lng: 18.07 };
@@ -512,6 +515,79 @@ describe("junction steering", () => {
     const linked = network.edgesById.get(state.edgeId);
     expect(linked).toBeTruthy();
     expect(state.position).not.toEqual(pointAlong(linked!, state.distanceMeters));
+  });
+
+  it("follows the only continuation when the street itself bends past 45 degrees", () => {
+    const bend = northOf(origin, 50);
+    const heading = (60 * Math.PI) / 180;
+    const next = {
+      lat: bend.lat + (80 * Math.cos(heading)) / 111320,
+      lng: bend.lng + (80 * Math.sin(heading)) / (111320 * Math.cos((bend.lat * Math.PI) / 180)),
+    };
+    const network = buildRoadNetwork([
+      segment("kort", ["a", "b"], [origin, bend], { name: "Runebergsgatan", highway: "residential", oneway: "forward" }),
+      segment("lång", ["b", "c"], [bend, next], { name: "Runebergsgatan", highway: "residential", oneway: "forward" }),
+    ]);
+    const edge = edgeNamed(network, "kort", "forward");
+    const report = explainContinuation(network, edge, 0);
+    expect(report.followed).toBe(true);
+    expect(report.detail).toContain(edge.osmWayId);
+    expect(report.detail).toContain(edge.toNode);
+    let state = vehicleFromPlacement({ edge, distanceMeters: 8, gapMeters: 0 });
+    for (let step = 0; step < 160; step += 1) {
+      state = advanceFreeVehicle(state, { accelerate: true, brake: false, steer: 0 }, 0.05, network);
+    }
+    expect(network.edgesById.get(state.edgeId)?.osmWayId).toBe("lång");
+    expect(state.speedMps).toBeGreaterThan(6);
+    expect(state.message).toBeNull();
+    expect(state.position).not.toEqual(pointAlong(network.edgesById.get(state.edgeId)!, state.distanceMeters));
+  });
+
+  it("says when a street ends because no other way shares the node", () => {
+    const network = buildRoadNetwork([
+      segment("slut", ["a", "b"], [origin, northOf(origin, 40)], { name: "Slutgatan", oneway: "forward" }),
+    ]);
+    const edge = edgeNamed(network, "slut", "forward");
+    const report = explainContinuation(network, edge, 0);
+    expect(report.followed).toBe(false);
+    expect(report.message).toBe(ROAD_END_MESSAGE);
+    expect(report.detail).toContain("slut");
+    expect(report.detail).toContain(edge.toNode);
+    let state = vehicleFromPlacement({ edge, distanceMeters: 30, gapMeters: 0 });
+    state = { ...state, speedMps: 10 };
+    for (let step = 0; step < 80; step += 1) {
+      state = advanceFreeVehicle(state, { accelerate: true, brake: false, steer: 0 }, 0.05, network);
+    }
+    expect(state.speedMps).toBeLessThan(2);
+    expect(state.message).toBe(ROAD_END_MESSAGE);
+  });
+
+  it("says when the next street was removed by the road cap", () => {
+    const network = buildRoadNetwork([
+      segment("slut", ["a", "b"], [origin, northOf(origin, 40)], { name: "Slutgatan", oneway: "forward" }),
+    ]);
+    const edge = edgeNamed(network, "slut", "forward");
+    recordOmittedLinks(network, [
+      {
+        id: "borta",
+        name: "Nästa gata",
+        highway: "residential",
+        nodeIds: [edge.toNode, "c"],
+        reason: "klassgräns",
+      },
+    ]);
+    const report = explainContinuation(network, edge, 0);
+    expect(report.followed).toBe(false);
+    expect(report.message).toBe(DROPPED_LINK_MESSAGE);
+    expect(report.detail).toContain("borta");
+    expect(report.detail).toContain(edge.toNode);
+    let state = vehicleFromPlacement({ edge, distanceMeters: 30, gapMeters: 0 });
+    state = { ...state, speedMps: 10 };
+    for (let step = 0; step < 80; step += 1) {
+      state = advanceFreeVehicle(state, { accelerate: true, brake: false, steer: 0 }, 0.05, network);
+    }
+    expect(state.speedMps).toBeLessThan(2);
+    expect(state.message).toBe(DROPPED_LINK_MESSAGE);
   });
 
   it("turns left onto a shared-node street past 45 degrees", () => {

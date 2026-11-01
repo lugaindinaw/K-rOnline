@@ -197,6 +197,27 @@ describe("sliceRoadsNear", () => {
     expect(sliced[0]?.nodeIds).toEqual(["10", "11"]);
     expect(sliced[0]?.osmWayId).toBe("1");
   });
+
+  it("keeps the next node when it is only a short step outside the area", () => {
+    const sliced = sliceRoadsNear(
+      [
+        road({
+          id: "gata",
+          name: "Gatan",
+          highway: "residential",
+          nodeIds: ["a", "b"],
+          coordinates: [
+            { lat: center.lat + 190 / 111320, lng: center.lng },
+            { lat: center.lat + 230 / 111320, lng: center.lng },
+          ],
+        }),
+      ],
+      center,
+      200,
+    );
+    expect(sliced[0]?.nodeIds).toEqual(["a", "b"]);
+    expect(sliced[0]?.coordinates).toHaveLength(2);
+  });
 });
 
 describe("capRoads", () => {
@@ -222,6 +243,45 @@ describe("capRoads", () => {
     const capped = capRoads(roads, 2);
     expect(capped.truncated).toBe(true);
     expect(capped.roads.map((item) => item.id).sort()).toEqual(["1", "9", "motor"]);
+  });
+
+  it("keeps a dropped way that shares a node with a road already on the map", () => {
+    const roads = [
+      road({ id: "motor", name: "E4", highway: "motorway", nodeIds: ["m1", "m2"] }),
+      road({ id: "borta", name: "Sidogata", highway: "residential", nodeIds: ["kvar", "ny"] }),
+      road({ id: "lös", name: "Ensam", highway: "residential", nodeIds: ["x", "y"] }),
+    ];
+    const capped = capRoads(roads, 1, new Set(["kvar"]));
+    expect(capped.roads.map((item) => item.id).sort()).toEqual(["borta", "motor"]);
+    expect(capped.truncated).toBe(true);
+    expect(capped.omitted.map((item) => item.id)).toEqual(["lös"]);
+    expect(capped.omitted[0]?.reason).toBe("klassgräns");
+  });
+
+  it("keeps a loose-end continuation ahead of other roads that only cross the network", () => {
+    const sideStreets = Array.from({ length: 60 }, (_, index) =>
+      road({
+        id: `a${String(index).padStart(2, "0")}`,
+        name: `Sidogata ${index}`,
+        highway: "residential",
+        nodeIds: ["mitt", `s${index}`],
+      }),
+    );
+    const roads = [
+      road({ id: "motor", name: "E4", highway: "motorway", nodeIds: ["ände", "mitt", "slut"] }),
+      road({ id: "zzz", name: "Fortsättningen", highway: "residential", nodeIds: ["ände", "vidare"] }),
+      road({ id: "lös", name: "Ensam", highway: "residential", nodeIds: ["x", "y"] }),
+      ...sideStreets,
+    ];
+    const capped = capRoads(roads, 1, new Set(["ände", "mitt"]), new Set(["ände"]));
+    const ids = capped.roads.map((item) => item.id);
+    expect(ids).toContain("motor");
+    expect(ids).toContain("zzz");
+    expect(ids).not.toContain("lös");
+    const droppedSide = capped.omitted.find((item) => item.id.startsWith("a"));
+    expect(droppedSide?.reason).toBe("sömgräns");
+    expect(capped.omitted.find((item) => item.id === "lös")?.reason).toBe("klassgräns");
+    expect(capped.omitted.some((item) => item.id === "zzz")).toBe(false);
   });
 });
 
