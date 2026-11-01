@@ -211,6 +211,18 @@ describe("capRoads", () => {
     expect(capped.roads.map((road) => road.highway)).toEqual(["motorway", "tertiary"]);
     expect(MAX_ROADS_PER_AREA).toBeGreaterThan(2);
   });
+
+  it("keeps a later piece of a street that shares a node with the kept piece", () => {
+    const roads = [
+      road({ id: "motor", name: "E4", highway: "motorway", nodeIds: ["m1", "m2"] }),
+      road({ id: "1", name: "Regeringsgatan", highway: "residential", nodeIds: ["a", "b"] }),
+      road({ id: "9", name: "Regeringsgatan", highway: "residential", nodeIds: ["b", "c"] }),
+      road({ id: "2", name: "Annan", highway: "residential", nodeIds: ["x", "y"] }),
+    ];
+    const capped = capRoads(roads, 2);
+    expect(capped.truncated).toBe(true);
+    expect(capped.roads.map((item) => item.id).sort()).toEqual(["1", "9", "motor"]);
+  });
 });
 
 describe("roadSummary", () => {
