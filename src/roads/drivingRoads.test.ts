@@ -4,7 +4,9 @@ import {
   MAX_ROADS_PER_AREA,
   buildDrivingRoadQuery,
   capRoads,
+  describeSignalCoverage,
   parseOverpassRoads,
+  parseOverpassSignals,
   readTrafficControls,
   roadSummary,
   sliceRoadsNear,
@@ -27,6 +29,7 @@ describe("buildDrivingRoadQuery", () => {
   it("asks Overpass for one local area instead of the whole country", () => {
     const query = buildDrivingRoadQuery(center, 600);
     expect(query).toContain("around:600,65.258000,19.654000");
+    expect(query).toContain('node["highway"="traffic_signals"]');
     expect(query).toContain("residential");
     expect(query).not.toContain("55,10,69,24");
     expect(query).not.toContain("out body");
@@ -170,6 +173,68 @@ describe("parseOverpassRoads", () => {
       signal: "unknown",
     });
     expect(readTrafficControls({ oneway: "maybe" }).oneway).toBe("unknown");
+  });
+
+  it("reads traffic-signal nodes and ignores a pedestrian crossing", () => {
+    const signals = parseOverpassSignals({
+      elements: [
+        {
+          type: "node",
+          id: 50,
+          lat: 59.33,
+          lon: 18.06,
+          tags: { highway: "traffic_signals", "traffic_signals:direction": "forward" },
+        },
+        {
+          type: "node",
+          id: 51,
+          lat: 59.331,
+          lon: 18.061,
+          tags: { highway: "traffic_signals", traffic_signals: "blinker" },
+        },
+        {
+          type: "node",
+          id: 52,
+          lat: 59.332,
+          lon: 18.062,
+          tags: { highway: "crossing", crossing: "traffic_signals" },
+        },
+        {
+          type: "way",
+          id: 53,
+          tags: { highway: "traffic_signals" },
+        },
+      ],
+    });
+    expect(signals).toEqual([
+      {
+        nodeId: "50",
+        position: { lat: 59.33, lng: 18.06 },
+        direction: "forward",
+        kind: "signal",
+      },
+      {
+        nodeId: "51",
+        position: { lat: 59.331, lng: 18.061 },
+        direction: null,
+        kind: "other",
+      },
+    ]);
+    const roads = [
+      road({
+        id: "gata",
+        name: "Gatan",
+        highway: "residential",
+        nodeIds: ["50", "9"],
+      }),
+    ];
+    expect(describeSignalCoverage(signals, roads)).toContain("1 trafiksignal sitter på en vägnod");
+    expect(describeSignalCoverage(signals, roads)).toContain("OpenStreetMap inte har rött");
+    expect(describeSignalCoverage(signals, roads)).toContain("saknar röd-gul-grön-fas");
+    expect(describeSignalCoverage([], roads)).toBe("Inga trafiksignaler fanns i det hämtade området.");
+    expect(describeSignalCoverage([{ ...signals[0]!, nodeId: "99" }], roads)).toContain(
+      "delar ingen vägnod",
+    );
   });
 });
 

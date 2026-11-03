@@ -1,9 +1,10 @@
 import { listChoices, turnToward } from "../drive/drive";
-import { distanceMeters, type RoadPoint } from "../roads/drivingRoads";
+import { distanceMeters, highwayRank, type RoadPoint } from "../roads/drivingRoads";
 import {
   bearingDegrees,
   nearestPlacement,
   sampleEdge,
+  type EdgeSignal,
   type RoadEdge,
   type RoadNetwork,
 } from "../roads/roadNetwork";
@@ -21,6 +22,13 @@ const MIN_EDGE_METERS = 30;
 const SPAWN_CLEARANCE_METERS = 40;
 const REJOIN_METERS = 25;
 const MAX_TRANSFERS = 8;
+const EQUAL_TURN_DEGREES = 8;
+const SHARP_TURN_DEGREES = 150;
+const CONNECTED_METERS = 3;
+export const SIGNAL_STOP_METERS = 8;
+export const SIGNAL_CYCLE_SECONDS = 48;
+export const SIGNAL_GREEN_SECONDS = 20;
+export const SIGNAL_YELLOW_SECONDS = 4;
 
 export type RoadEndKind = "continuation" | "branch" | "crossing" | "dead-end";
 
@@ -92,25 +100,131 @@ function exitHeading(edge: RoadEdge): number {
   return sampleEdge(edge, 0).headingDegrees;
 }
 
-/** Prefer the shared-node exit that continues the current heading. A tie keeps a stable id. */
+function signedTurn(from: number, to: number): number {
+  let delta = ((to - from) % 360 + 360) % 360;
+  if (delta > 180) {
+    delta -= 360;
+  }
+  return delta;
+}
+
+function connectsCleanly(current: RoadEdge, next: RoadEdge): boolean {
+  const end = current.points[current.points.length - 1];
+  const start = next.points[0];
+  return Boolean(end && start && distanceMeters(end, start) <= CONNECTED_METERS);
+}
+
+/**
+ * Follow the exit closest to the current heading.
+ * Equally sharp exits prefer the same street, then the higher road class, then a right turn.
+ * The OSM id is not used.
+ */
 function nextEdge(network: RoadNetwork, edge: RoadEdge): RoadEdge | null {
   const heading = sampleEdge(edge, edge.lengthMeters).headingDegrees;
-  const forward = [...forwardChoices(network, edge)].sort((left, right) => {
-    const turn =
-      headingDelta(exitHeading(left), heading) - headingDelta(exitHeading(right), heading);
-    if (Math.abs(turn) > 0.5) {
-      return turn;
+  const ranked = forwardChoices(network, edge)
+    .map((exit) => ({ exit, turn: headingDelta(exitHeading(exit), heading) }))
+    .sort((left, right) => left.turn - right.turn);
+  const best = ranked[0];
+  if (best) {
+    const band = ranked.filter((item) => item.turn <= best.turn + EQUAL_TURN_DEGREES);
+    band.sort((left, right) => {
+      const leftName = edge.name && left.exit.name === edge.name ? 0 : 1;
+      const rightName = edge.name && right.exit.name === edge.name ? 0 : 1;
+      if (leftName !== rightName) {
+        return leftName - rightName;
+      }
+      const leftWay = left.exit.osmWayId === edge.osmWayId ? 0 : 1;
+      const rightWay = right.exit.osmWayId === edge.osmWayId ? 0 : 1;
+      if (leftWay !== rightWay) {
+        return leftWay - rightWay;
+      }
+      const rank = highwayRank(left.exit.highway) - highwayRank(right.exit.highway);
+      if (rank !== 0) {
+        return rank;
+      }
+      const length = right.exit.lengthMeters - left.exit.lengthMeters;
+      if (Math.abs(length) > 1) {
+        return length;
+      }
+      return signedTurn(heading, exitHeading(right.exit)) - signedTurn(heading, exitHeading(left.exit));
+    });
+    const rest = ranked.filter((item) => item.turn > best.turn + EQUAL_TURN_DEGREES);
+    const choice = [...band, ...rest].find(
+      (item) => item.turn <= SHARP_TURN_DEGREES && connectsCleanly(edge, item.exit),
+    );
+    if (choice) {
+      return choice.exit;
     }
-    return left.id.localeCompare(right.id);
-  });
-  const choice = forward[0];
-  if (choice) {
-    return choice;
   }
   const listed = listChoices(network, edge);
   const reverse = listed.choices.find((item) => item.reverse);
   const turned = reverse ? network.edgesById.get(reverse.edgeId) : undefined;
-  return turned && turned.fromNode === edge.toNode ? turned : null;
+  return turned && turned.fromNode === edge.toNode && connectsCleanly(edge, turned) ? turned : null;
+}
+
+export function signalColor(headingDegrees: number, timeSeconds: number): "red" | "yellow" | "green" {
+  const heading = ((headingDegrees % 360) + 360) % 360;
+  const toNorthSouth = Math.min(heading, Math.abs(180 - heading), 360 - heading);
+  const axis = toNorthSouth < 45 ? 0 : 1;
+  const period = SIGNAL_CYCLE_SECONDS;
+  const elapsed = ((timeSeconds % period) + period) % period;
+  const local = axis === 0 ? elapsed : (elapsed + period / 2) % period;
+  if (local < SIGNAL_GREEN_SECONDS) {
+    return "green";
+  }
+  if (local < SIGNAL_GREEN_SECONDS + SIGNAL_YELLOW_SECONDS) {
+    return "yellow";
+  }
+  return "red";
+}
+
+function nextSignalAhead(network: RoadNetwork, edge: RoadEdge, distance: number): EdgeSignal | null {
+  const list = network.signalsByEdge.get(edge.id);
+  if (!list) {
+    return null;
+  }
+  return list.find((item) => item.distanceMeters > distance + 0.3) ?? null;
+}
+
+function vehicleBlocksExit(
+  edge: RoadEdge,
+  past: number,
+  next: RoadEdge | null,
+  edgeId: string,
+  distance: number,
+): boolean {
+  if (edgeId === edge.id && distance > past + 0.5 && distance < past + TRAFFIC_GAP_METERS) {
+    return true;
+  }
+  const tail = edge.lengthMeters - past;
+  return Boolean(next && tail <= TRAFFIC_GAP_METERS && edgeId === next.id && distance >= 0 && distance < TRAFFIC_GAP_METERS - tail);
+}
+
+function exitOccupied(
+  network: RoadNetwork,
+  edge: RoadEdge,
+  past: number,
+  car: TrafficCar,
+  cars: readonly TrafficCar[],
+  player: TrafficLead | null,
+): boolean {
+  const next = edge.lengthMeters - past <= TRAFFIC_GAP_METERS ? nextEdge(network, edge) : null;
+  const blocks = (edgeId: string, distance: number) => vehicleBlocksExit(edge, past, next, edgeId, distance);
+  if (player && blocks(player.edgeId, player.distanceMeters)) {
+    return true;
+  }
+  return cars.some((other) => other.id !== car.id && blocks(other.edgeId, other.distanceMeters));
+}
+
+function speedForLine(room: number, speed: number): number {
+  if (room <= 0.4) {
+    return 0;
+  }
+  const braking = TRAFFIC_ACCEL_MPS2 * 0.85;
+  if (speed * speed > 2 * braking * room) {
+    return 0;
+  }
+  return Math.min(TRAFFIC_SPEED_MPS, Math.sqrt(2 * TRAFFIC_ACCEL_MPS2 * room));
 }
 
 function moveAlong(
@@ -275,6 +389,7 @@ function stepOne(
   cars: readonly TrafficCar[],
   player: TrafficLead | null,
   dt: number,
+  timeSeconds: number,
 ): TrafficCar {
   const edge = network.edgesById.get(car.edgeId);
   if (!edge) {
@@ -290,15 +405,49 @@ function stepOne(
   const kind = roadEndKind(network, edge);
   const remaining = edge.lengthMeters - car.distanceMeters;
   const blocked = junctionBlocked(network, edge, car, cars, player);
-  const desired = Math.min(
+  const signal = nextSignalAhead(network, edge, car.distanceMeters);
+  const stopAt = signal ? Math.max(0, signal.distanceMeters - SIGNAL_STOP_METERS) : null;
+  const beforeLine = stopAt !== null && car.distanceMeters <= stopAt + 0.3;
+  const lineRoom = stopAt === null ? null : stopAt - car.distanceMeters;
+  const occupied =
+    signal !== null && beforeLine
+      ? exitOccupied(network, edge, signal.distanceMeters, car, cars, player)
+      : false;
+  let holdAt: number | null = null;
+  let easeYellow = false;
+  if (signal && beforeLine && lineRoom !== null) {
+    if (signal.kind === "continuous_green") {
+      holdAt = occupied ? stopAt : null;
+    } else {
+      const color = signalColor(sampleEdge(edge, signal.distanceMeters).headingDegrees, timeSeconds);
+      const canStop = car.speedMps * car.speedMps <= 2 * TRAFFIC_ACCEL_MPS2 * Math.max(0, lineRoom);
+      if (color === "red" || occupied) {
+        holdAt = stopAt;
+      } else if (color === "yellow" && canStop) {
+        holdAt = stopAt;
+      } else if (color === "yellow") {
+        easeYellow = true;
+      }
+    }
+  }
+  let desired = Math.min(
     targetSpeed(ahead, car.speedMps),
     targetSpeed(playerNotice(car, player), car.speedMps, PLAYER_NOTICE_METERS),
     junctionSpeed(remaining, blocked, kind, car.speedMps),
   );
+  if (holdAt !== null && lineRoom !== null) {
+    desired = Math.min(desired, speedForLine(lineRoom, car.speedMps));
+  }
+  if (easeYellow) {
+    desired = Math.min(desired, Math.max(JUNCTION_CREEP_MPS, 5));
+  }
   const delta = Math.max(-TRAFFIC_ACCEL_MPS2 * dt, Math.min(TRAFFIC_ACCEL_MPS2 * dt, desired - car.speedMps));
   const speed = Math.max(0, Math.min(TRAFFIC_SPEED_MPS, car.speedMps + delta));
   const travel = car.distanceMeters + speed * dt;
-  const capped = blocked ? Math.min(travel, edge.lengthMeters) : travel;
+  let capped = blocked ? Math.min(travel, edge.lengthMeters) : travel;
+  if (holdAt !== null) {
+    capped = Math.min(capped, holdAt);
+  }
   const moved = moveAlong(network, edge, capped, isDecision(kind) ? 1 : MAX_TRANSFERS);
   const sample = sampleEdge(moved.edge, moved.distance);
   return {
@@ -316,12 +465,13 @@ export function stepTraffic(
   cars: readonly TrafficCar[],
   player: TrafficLead | null,
   dtSeconds: number,
+  timeSeconds = 0,
 ): TrafficCar[] {
   const dt = clampFrame(dtSeconds);
   if (dt === 0 || cars.length === 0) {
     return [...cars];
   }
-  return cars.map((car) => stepOne(network, car, cars, player, dt));
+  return cars.map((car) => stepOne(network, car, cars, player, dt, timeSeconds));
 }
 
 function carOnEdge(edge: RoadEdge, distance: number, id: string, speed: number): TrafficCar {

@@ -81,7 +81,19 @@ export type RoadArea = {
   truncated: boolean;
   /** Ways left out of this area. Connecting ones explain a stop at a shared node. */
   omitted: OmittedRoad[];
+  /** Signal nodes from the same Overpass answer. An empty list means the area had none. */
+  signals: TrafficSignal[];
   source: "openstreetmap";
+};
+
+export type SignalKind = "signal" | "continuous_green" | "other";
+
+export type TrafficSignal = {
+  nodeId: string;
+  position: RoadPoint;
+  /** Set only when OSM tags `traffic_signals:direction`. Otherwise every approach to the node is controlled. */
+  direction: "forward" | "backward" | null;
+  kind: SignalKind;
 };
 
 export function clampRoadRadius(radiusMeters: number): number {
@@ -101,7 +113,7 @@ export function buildDrivingRoadQuery(
   const radius = clampRoadRadius(radiusMeters);
   const lat = center.lat.toFixed(6);
   const lng = center.lng.toFixed(6);
-  return `[out:json][timeout:20];way["highway"~"^(${HIGHWAY_PATTERN})$"](around:${radius},${lat},${lng});out geom;`;
+  return `[out:json][timeout:20];(way["highway"~"^(${HIGHWAY_PATTERN})$"](around:${radius},${lat},${lng});node["highway"="traffic_signals"](around:${radius},${lat},${lng}););out geom;`;
 }
 
 function readMeterValue(value: unknown): number | null {
@@ -295,6 +307,156 @@ export function parseOverpassRoads(payload: unknown): RoadSegment[] {
     });
   }
   return roads;
+}
+
+function readSignalDirection(value: unknown): "forward" | "backward" | null {
+  if (value === "forward") {
+    return "forward";
+  }
+  if (value === "backward") {
+    return "backward";
+  }
+  return null;
+}
+
+function readSignalKind(value: unknown): SignalKind {
+  if (value === undefined || value === "signal") {
+    return "signal";
+  }
+  if (value === "continuous_green") {
+    return "continuous_green";
+  }
+  return "other";
+}
+
+/** Nodes tagged `highway=traffic_signals`. A pedestrian crossing without that tag is not a signal. */
+export function parseOverpassSignals(payload: unknown): TrafficSignal[] {
+  if (typeof payload !== "object" || payload === null || !("elements" in payload)) {
+    return [];
+  }
+  const elements = payload.elements;
+  if (!Array.isArray(elements)) {
+    return [];
+  }
+  const signals: TrafficSignal[] = [];
+  const seen = new Set<string>();
+  for (const element of elements) {
+    if (typeof element !== "object" || element === null) {
+      continue;
+    }
+    const record = element as {
+      type?: unknown;
+      id?: unknown;
+      lat?: unknown;
+      lon?: unknown;
+      tags?: unknown;
+    };
+    if (record.type !== "node" || (typeof record.id !== "number" && typeof record.id !== "string")) {
+      continue;
+    }
+    const tags = record.tags;
+    if (typeof tags !== "object" || tags === null) {
+      continue;
+    }
+    if ((tags as { highway?: unknown }).highway !== "traffic_signals") {
+      continue;
+    }
+    const lat = record.lat;
+    const lon = record.lon;
+    if (typeof lat !== "number" || typeof lon !== "number" || !Number.isFinite(lat) || !Number.isFinite(lon)) {
+      continue;
+    }
+    const nodeId = String(record.id);
+    if (seen.has(nodeId)) {
+      continue;
+    }
+    seen.add(nodeId);
+    const tagRecord = tags as { traffic_signals?: unknown; "traffic_signals:direction"?: unknown };
+    signals.push({
+      nodeId,
+      position: { lat, lng: lon },
+      direction: readSignalDirection(tagRecord["traffic_signals:direction"]),
+      kind: readSignalKind(tagRecord.traffic_signals),
+    });
+  }
+  return signals;
+}
+
+export function describeSignalCoverage(
+  signals: readonly TrafficSignal[],
+  roads: readonly RoadSegment[],
+): string {
+  const nodes = new Set<string>();
+  for (const road of roads) {
+    for (const nodeId of road.nodeIds ?? []) {
+      if (nodeId) {
+        nodes.add(nodeId);
+      }
+    }
+  }
+  const unique = new Map<string, TrafficSignal>();
+  for (const signal of signals) {
+    unique.set(signal.nodeId, signal);
+  }
+  let linked = 0;
+  let unlinked = 0;
+  let other = 0;
+  let alwaysGreen = 0;
+  let example: TrafficSignal | null = null;
+  for (const signal of unique.values()) {
+    if (signal.kind === "other") {
+      other += 1;
+      continue;
+    }
+    if (!nodes.has(signal.nodeId)) {
+      unlinked += 1;
+      continue;
+    }
+    if (signal.kind === "continuous_green") {
+      alwaysGreen += 1;
+    } else {
+      linked += 1;
+      example ??= signal;
+    }
+  }
+  if (linked === 0 && alwaysGreen === 0 && unlinked === 0 && other === 0) {
+    return "Inga trafiksignaler fanns i det hämtade området.";
+  }
+  const parts: string[] = [];
+  if (linked === 0 && alwaysGreen === 0) {
+    parts.push("Inga trafiksignaler med röd-gul-grön-fas sitter på en vägnod.");
+  }
+  if (linked > 0) {
+    const lights = linked === 1 ? "1 trafiksignal sitter på en vägnod" : `${linked} trafiksignaler sitter på vägnoder`;
+    const where = example
+      ? ` Exempel: nod ${example.nodeId} vid ${example.position.lat.toFixed(5)}, ${example.position.lng.toFixed(5)}.`
+      : "";
+    parts.push(
+      `${lights}. Färgen simuleras i en fast cykel eftersom OpenStreetMap inte har rött, gult eller grönt.${where}`,
+    );
+  }
+  if (alwaysGreen > 0) {
+    parts.push(
+      alwaysGreen === 1
+        ? "1 signal är märkt som ständigt grön."
+        : `${alwaysGreen} signaler är märkta som ständigt gröna.`,
+    );
+  }
+  if (unlinked > 0) {
+    parts.push(
+      unlinked === 1
+        ? "1 signalnod delar ingen vägnod och styr inte trafiken."
+        : `${unlinked} signalnoder delar ingen vägnod och styr inte trafiken.`,
+    );
+  }
+  if (other > 0) {
+    parts.push(
+      other === 1
+        ? "1 signal är blinkande eller saknar röd-gul-grön-fas och används inte."
+        : `${other} signaler är blinkande eller saknar röd-gul-grön-fas och används inte.`,
+    );
+  }
+  return parts.join(" ");
 }
 
 /** One node just outside the circle stays, so a street is not cut between two close nodes. */

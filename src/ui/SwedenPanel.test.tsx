@@ -59,6 +59,9 @@ describe("SwedenPanel", () => {
     expect(html).toContain("preliminär körgräns");
     expect(html).not.toContain("fri styrning");
     expect(html).toContain("Förarvy");
+    expect(markup({ signalNote: "Inga trafiksignaler fanns i det hämtade området." })).toContain(
+      "Inga trafiksignaler fanns i det hämtade området.",
+    );
     expect(html).toContain("förarens ögonhöjd");
     expect(html).toContain("Stockholm är startposition");
     expect(html).toContain("OpenStreetMap");

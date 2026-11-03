@@ -55,6 +55,7 @@ type SwedenPanelProps = {
   loadingRoads: boolean;
   roadError: string | null;
   extendNote: string | null;
+  signalNote?: string | null;
   vehicle: VehicleStatus;
   onChooseBranch: (index: number) => void;
   onPedal: (pedal: "accelerate" | "brake", pressed: boolean) => void;
@@ -89,6 +90,7 @@ export function SwedenPanel({
   loadingRoads,
   roadError,
   extendNote,
+  signalNote = null,
   vehicle = IDLE_VEHICLE,
   onChooseBranch,
   onPedal,
@@ -383,6 +385,7 @@ export function SwedenPanel({
             Källa: OpenStreetMap.
           </p>
         ) : null}
+        {signalNote ? <p>{signalNote}</p> : null}
         {visibleNames.length > 0 ? (
           <ul className="road-names">
             {visibleNames.map((name) => {

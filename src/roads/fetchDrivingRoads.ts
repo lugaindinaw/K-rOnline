@@ -5,6 +5,7 @@ import {
   capRoads,
   clampRoadRadius,
   parseOverpassRoads,
+  parseOverpassSignals,
   roadsInside,
   sliceRoadsNear,
   type RoadArea,
@@ -88,6 +89,7 @@ async function requestRoads(
           ? String((payload as { remark?: unknown }).remark ?? "")
           : "";
       const parsed = parseOverpassRoads(payload);
+      const signals = parseOverpassSignals(payload);
       if (remark.toLowerCase().includes("error") && parsed.length === 0) {
         continue;
       }
@@ -113,6 +115,7 @@ async function requestRoads(
           matched: inSweden.length,
           truncated: capped.truncated,
           omitted: capped.omitted,
+          signals,
           source: "openstreetmap",
         },
       };
