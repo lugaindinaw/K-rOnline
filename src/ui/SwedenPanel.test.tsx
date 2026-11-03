@@ -62,6 +62,9 @@ describe("SwedenPanel", () => {
     expect(markup({ signalNote: "Inga trafiksignaler fanns i det hämtade området." })).toContain(
       "Inga trafiksignaler fanns i det hämtade området.",
     );
+    expect(markup({ signNote: "Inga stopp-, väjnings-, hastighets- eller enkelriktningsskyltar fanns i det hämtade området." })).toContain(
+      "Inga stopp-",
+    );
     expect(html).toContain("förarens ögonhöjd");
     expect(html).toContain("Stockholm är startposition");
     expect(html).toContain("OpenStreetMap");

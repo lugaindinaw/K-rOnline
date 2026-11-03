@@ -4,6 +4,7 @@ import {
   buildDrivingRoadQuery,
   capRoads,
   clampRoadRadius,
+  distanceMeters,
   parseOverpassRoads,
   parseOverpassSignals,
   roadsInside,
@@ -11,6 +12,7 @@ import {
   type RoadArea,
   type RoadPoint,
 } from "./drivingRoads";
+import { parseOverpassSigns } from "./roadSigns";
 
 export const OVERPASS_ENDPOINTS = [
   "/osm/overpass",
@@ -90,6 +92,9 @@ async function requestRoads(
           : "";
       const parsed = parseOverpassRoads(payload);
       const signals = parseOverpassSignals(payload);
+      const signs = parseOverpassSigns(payload).filter(
+        (sign) => distanceMeters(sign.position, center) <= radiusMeters + 80,
+      );
       if (remark.toLowerCase().includes("error") && parsed.length === 0) {
         continue;
       }
@@ -116,6 +121,7 @@ async function requestRoads(
           truncated: capped.truncated,
           omitted: capped.omitted,
           signals,
+          signs,
           source: "openstreetmap",
         },
       };

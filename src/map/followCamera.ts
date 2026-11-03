@@ -19,8 +19,11 @@ export const DRIVER_LOOKAHEAD_METERS = 22;
 export const DRIVER_FORWARD_METERS = 1.4;
 export const DRIVER_LEFT_METERS = 0.32;
 export const CAMERA_YAW_DEGREES_PER_SECOND = 110;
+/** Driver aim turns slower than the chase camera so the view does not twitch with the car. */
+export const DRIVER_YAW_DEGREES_PER_SECOND = 62;
 const CHASE_RESPONSE_PER_SECOND = 8;
-const DRIVER_RESPONSE_PER_SECOND = 12;
+const DRIVER_RESPONSE_PER_SECOND = 4.5;
+const DRIVER_MAX_METERS_PER_SECOND = 16;
 const NEAR_CAMERA_METERS = 48;
 const MAX_NEAR_METERS_PER_SECOND = 30;
 
@@ -125,24 +128,23 @@ export function followCameraStep(
   view: CameraView = "chase",
 ): FollowCamera {
   const profile = cameraProfile(view);
-  const target = viewTarget(car, profile);
+  const yawCap = view === "driver" ? DRIVER_YAW_DEGREES_PER_SECOND : CAMERA_YAW_DEGREES_PER_SECOND;
+  const headingDegrees = turnToward(previous.headingDegrees, car.headingDegrees, dtSeconds, yawCap);
+  const aim = view === "driver" ? { ...car, headingDegrees } : car;
+  const target = viewTarget(aim, profile);
   const blended = {
     lat: blend(previous.lat, target.lat, dtSeconds, profile.responsePerSecond),
     lng: blend(previous.lng, target.lng, dtSeconds, profile.responsePerSecond),
   };
+  const speedCap = view === "driver" ? DRIVER_MAX_METERS_PER_SECOND : MAX_NEAR_METERS_PER_SECOND;
   const center =
     distanceMeters(previous, car) < NEAR_CAMERA_METERS
-      ? moveToward(previous, blended, MAX_NEAR_METERS_PER_SECOND * Math.max(0, dtSeconds))
+      ? moveToward(previous, blended, speedCap * Math.max(0, dtSeconds))
       : blended;
   return {
     lat: center.lat,
     lng: center.lng,
-    headingDegrees: turnToward(
-      previous.headingDegrees,
-      car.headingDegrees,
-      dtSeconds,
-      CAMERA_YAW_DEGREES_PER_SECOND,
-    ),
+    headingDegrees,
     rangeMeters: blend(previous.rangeMeters, profile.rangeMeters, dtSeconds, profile.responsePerSecond),
     tiltDegrees: blend(previous.tiltDegrees, profile.tiltDegrees, dtSeconds, profile.responsePerSecond),
   };

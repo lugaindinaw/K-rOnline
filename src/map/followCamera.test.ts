@@ -6,6 +6,7 @@ import {
   DRIVER_EYE_HEIGHT_METERS,
   DRIVER_FORWARD_METERS,
   DRIVER_LOOKAHEAD_METERS,
+  DRIVER_YAW_DEGREES_PER_SECOND,
   FOLLOW_RANGE_METERS,
   cameraProfile,
   claimCameraJob,
@@ -113,5 +114,25 @@ describe("followCameraStep", () => {
       expect(distanceMeters(camera, car)).toBeLessThan(DRIVER_LOOKAHEAD_METERS + 4);
       expect(camera.tiltDegrees).toBeGreaterThan(80);
     }
+  });
+
+  it("turns the driver view more slowly than the chase camera", () => {
+    const place = places[0]!;
+    const car = { ...place, headingDegrees: 0 };
+    let camera = followCameraFromView({ center: place, heading: 0, range: 20, tilt: 86 }, car);
+    for (let step = 0; step < 40; step += 1) {
+      camera = followCameraStep(camera, car, 0.05, "driver");
+    }
+    const settled = camera.tiltDegrees;
+    const turned = followCameraStep(camera, { ...car, headingDegrees: 25 }, 0.05, "driver");
+    expect(headingDelta(turned.headingDegrees, camera.headingDegrees)).toBeLessThanOrEqual(
+      DRIVER_YAW_DEGREES_PER_SECOND * 0.05 + 0.001,
+    );
+    expect(headingDelta(turned.headingDegrees, camera.headingDegrees)).toBeLessThan(
+      CAMERA_YAW_DEGREES_PER_SECOND * 0.05,
+    );
+    expect(distanceMeters(turned, camera)).toBeLessThan(1.2);
+    expect(Math.abs(turned.tiltDegrees - settled)).toBeLessThan(0.5);
+    expect(turned.tiltDegrees).toBeGreaterThan(80);
   });
 });
