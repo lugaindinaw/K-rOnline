@@ -15,13 +15,14 @@ import { advanceFreeVehicle, describeFreeVehicle } from "../drive/freeDrive";
 import { formatGeographicPosition, readGeographicPosition, type GeographicPosition } from "../geo/coordinates";
 import { readGroundElevation } from "../geo/groundElevation";
 import { STOCKHOLM_CANDIDATE } from "../geo/stockholmCandidate";
-import type { OmittedRoad, RoadPoint, RoadSegment } from "../roads/drivingRoads";
+import type { OmittedRoad, RoadPoint, RoadSegment, TrafficSignal } from "../roads/drivingRoads";
 import {
   prefetchCenter,
   shouldPrefetch,
   type CoverageCircle,
 } from "../roads/roadCoverage";
 import {
+  attachTrafficSignals,
   explainRoads,
   nearestPlacement,
   placementWithRunway,
@@ -65,12 +66,14 @@ export type SwedenMapHandle = {
 };
 
 const NO_OMITTED_ROADS: readonly OmittedRoad[] = [];
+const NO_SIGNALS: readonly TrafficSignal[] = [];
 
 type CityMapProps = {
   apiKey: string;
   onRetry: () => void;
   roads: RoadSegment[];
   omittedRoads?: readonly OmittedRoad[];
+  signals?: readonly TrafficSignal[];
   areas: CoverageCircle[];
   anchor: RoadPoint | null;
   focus: MapFocus | null;
@@ -115,6 +118,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     onRetry,
     roads,
     omittedRoads = NO_OMITTED_ROADS,
+    signals = NO_SIGNALS,
     areas,
     anchor,
     focus,
@@ -617,6 +621,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
 
     const explained = explainRoads(roads, anchor);
     recordOmittedLinks(explained.network, omittedRoads);
+    attachTrafficSignals(explained.network, signals);
     networkRef.current = explained.network;
     if (carried) {
       const kept = describeFreeVehicle(carried, explained.network);
@@ -669,7 +674,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       vehicleViewRef.current = null;
       vehicleRef.current = null;
     };
-  }, [roads, omittedRoads, anchor, phase, mapVersion]);
+  }, [roads, omittedRoads, signals, anchor, phase, mapVersion]);
 
   useEffect(() => {
     if (phase !== "ready") {
@@ -677,9 +682,11 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     }
     let frame = 0;
     let last = performance.now();
+    const signalTime = { seconds: performance.now() / 1000 };
     const tick = (now: number) => {
       const dt = (now - last) / 1000;
       last = now;
+      signalTime.seconds += dt;
       const network = networkRef.current;
       const vehicle = vehicleRef.current;
       if (network && vehicle) {
@@ -750,6 +757,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
             position: current.position,
           },
           dt,
+          signalTime.seconds,
         );
         syncTrafficViews();
         onSampleRef.current?.({

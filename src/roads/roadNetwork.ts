@@ -1,4 +1,10 @@
-import { distanceMeters, type OmittedRoad, type RoadPoint, type RoadSegment } from "./drivingRoads";
+import {
+  distanceMeters,
+  type OmittedRoad,
+  type RoadPoint,
+  type RoadSegment,
+  type TrafficSignal,
+} from "./drivingRoads";
 
 export const START_SNAP_METERS = 100;
 
@@ -16,6 +22,15 @@ export type RoadEdge = {
   widthMeters: number | null;
   /** OSM `lanes` count, or null when the tag is missing. */
   lanes: number | null;
+  nodeIds: string[];
+  /** True when the edge follows the way's node order. */
+  followsWay: boolean;
+};
+
+export type EdgeSignal = {
+  nodeId: string;
+  distanceMeters: number;
+  kind: "signal" | "continuous_green";
 };
 
 export type RoadNetwork = {
@@ -27,6 +42,8 @@ export type RoadNetwork = {
   omittedAtNode: Map<string, OmittedRoad[]>;
   /** Edges whose geometry may lie within radiusMeters of the point. Not a full scan. */
   edgesNear: (point: RoadPoint, radiusMeters: number) => RoadEdge[];
+  /** Signals whose OSM node lies on an edge, ordered by distance along that edge. */
+  signalsByEdge: Map<string, EdgeSignal[]>;
 };
 
 export type RoadPlacement = {
@@ -111,6 +128,8 @@ function pushEdge(
     cumulativeMeters: measured.cumulativeMeters,
     widthMeters: road.widthMeters ?? null,
     lanes: road.lanes ?? null,
+    nodeIds: directedNodes,
+    followsWay: forward,
   });
 }
 
@@ -154,7 +173,54 @@ export function buildRoadNetwork(roads: RoadSegment[]): RoadNetwork {
     outgoing.set(edge.fromNode, list);
   }
   const edgesNear = edgesInCells(edges);
-  return { edges, edgesById, outgoing, unlinked, omittedAtNode: new Map(), edgesNear };
+  return {
+    edges,
+    edgesById,
+    outgoing,
+    unlinked,
+    omittedAtNode: new Map(),
+    edgesNear,
+    signalsByEdge: new Map(),
+  };
+}
+
+/** Keep a signal only when its node id is already on a road. Nearby nodes are not snapped into place. */
+export function attachTrafficSignals(network: RoadNetwork, signals: readonly TrafficSignal[]): void {
+  network.signalsByEdge = new Map();
+  const onRoad = new Set<string>();
+  for (const edge of network.edges) {
+    for (const nodeId of edge.nodeIds) {
+      if (nodeId) {
+        onRoad.add(nodeId);
+      }
+    }
+  }
+  const seen = new Set<string>();
+  for (const signal of signals) {
+    if (seen.has(signal.nodeId) || signal.kind === "other" || !onRoad.has(signal.nodeId)) {
+      continue;
+    }
+    seen.add(signal.nodeId);
+    for (const edge of network.edges) {
+      if (signal.direction === "forward" && !edge.followsWay) {
+        continue;
+      }
+      if (signal.direction === "backward" && edge.followsWay) {
+        continue;
+      }
+      const index = edge.nodeIds.lastIndexOf(signal.nodeId);
+      if (index <= 0) {
+        continue;
+      }
+      const distance = edge.cumulativeMeters[index] ?? edge.lengthMeters;
+      const list = network.signalsByEdge.get(edge.id) ?? [];
+      list.push({ nodeId: signal.nodeId, distanceMeters: distance, kind: signal.kind });
+      network.signalsByEdge.set(edge.id, list);
+    }
+  }
+  for (const list of network.signalsByEdge.values()) {
+    list.sort((left, right) => left.distanceMeters - right.distanceMeters);
+  }
 }
 
 /** Remember ways the cap removed so a stop can name the missing connection. */

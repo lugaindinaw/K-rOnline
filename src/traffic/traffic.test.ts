@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRoadNetwork, sampleEdge } from "../roads/roadNetwork";
+import { attachTrafficSignals, buildRoadNetwork, sampleEdge } from "../roads/roadNetwork";
 import { distanceMeters, type OneWay, type RoadPoint, type RoadSegment } from "../roads/drivingRoads";
 import {
   TRAFFIC_GAP_METERS,
@@ -11,6 +11,9 @@ import {
   refreshTraffic,
   rejoinTraffic,
   roadEndKind,
+  SIGNAL_GREEN_SECONDS,
+  SIGNAL_STOP_METERS,
+  signalColor,
   stepTraffic,
   trafficCount,
   type TrafficCar,
@@ -488,5 +491,195 @@ describe("junctions", () => {
     expect(edge.osmWayId).not.toBe("fjar");
     expect(distanceMeters(car.position, sampleEdge(approach, approach.lengthMeters).position)).toBeGreaterThan(1);
     expect(distanceMeters(car.position, sampleEdge(approach, approach.lengthMeters).position)).toBeLessThan(25);
+  });
+});
+
+function headingPoint(origin: RoadPoint, degrees: number, meters: number): RoadPoint {
+  const radians = (degrees * Math.PI) / 180;
+  return eastOf(northOf(origin, Math.cos(radians) * meters), Math.sin(radians) * meters);
+}
+
+describe("signalColor", () => {
+  it("gives north-south green while east-west is red, then swaps", () => {
+    expect(signalColor(0, 0)).toBe("green");
+    expect(signalColor(180, 0)).toBe("green");
+    expect(signalColor(90, 0)).toBe("red");
+    expect(signalColor(0, SIGNAL_GREEN_SECONDS)).toBe("yellow");
+    expect(signalColor(0, SIGNAL_GREEN_SECONDS + 4)).toBe("red");
+    expect(signalColor(90, SIGNAL_GREEN_SECONDS + 4)).toBe("green");
+  });
+});
+
+describe("traffic signals", () => {
+  function signaledApproach() {
+    const start = { lat: places[0]!.lat, lng: places[0]!.lng };
+    const node = northOf(start, 90);
+    const network = buildRoadNetwork([
+      segment("in", ["a", "n"], [start, node], "forward"),
+      segment("ut", ["n", "b"], [node, northOf(node, 80)], "forward"),
+    ]);
+    return { network, node };
+  }
+
+  it("stops before the junction on red and goes through on green", () => {
+    const red = signaledApproach();
+    attachTrafficSignals(red.network, [
+      { nodeId: "n", position: red.node, direction: null, kind: "signal" },
+    ]);
+    const approach = red.network.edges.find((edge) => edge.osmWayId === "in")!;
+    const stopAt = approach.lengthMeters - SIGNAL_STOP_METERS;
+    let waiting = [carAt(red.network, approach.id, approach.lengthMeters - 30, "trafik-1")];
+    for (let step = 0; step < 40; step += 1) {
+      waiting = stepTraffic(red.network, waiting, null, 0.1, 24);
+    }
+    expect(waiting[0]!.edgeId).toBe(approach.id);
+    expect(waiting[0]!.distanceMeters).toBeLessThanOrEqual(stopAt + 0.5);
+    expect(waiting[0]!.speedMps).toBeLessThan(1);
+
+    const moving = signaledApproach();
+    attachTrafficSignals(moving.network, [
+      { nodeId: "n", position: moving.node, direction: null, kind: "signal" },
+    ]);
+    const open = moving.network.edges.find((edge) => edge.osmWayId === "in")!;
+    let cars = [carAt(moving.network, open.id, open.lengthMeters - 16, "trafik-1")];
+    for (let step = 0; step < 12; step += 1) {
+      cars = stepTraffic(moving.network, cars, null, 0.25, 0);
+    }
+    expect(cars[0]!.edgeId).toContain("ut");
+  });
+
+  it("stops on yellow when there is room and continues when the stop would not be safe", () => {
+    const far = signaledApproach();
+    attachTrafficSignals(far.network, [
+      { nodeId: "n", position: far.node, direction: null, kind: "signal" },
+    ]);
+    const farEdge = far.network.edges.find((edge) => edge.osmWayId === "in")!;
+    let held = [carAt(far.network, farEdge.id, farEdge.lengthMeters - 40, "trafik-1")];
+    for (let step = 0; step < 40; step += 1) {
+      held = stepTraffic(far.network, held, null, 0.1, SIGNAL_GREEN_SECONDS);
+    }
+    expect(held[0]!.edgeId).toBe(farEdge.id);
+    expect(held[0]!.distanceMeters).toBeLessThanOrEqual(farEdge.lengthMeters - SIGNAL_STOP_METERS + 0.5);
+
+    const close = signaledApproach();
+    attachTrafficSignals(close.network, [
+      { nodeId: "n", position: close.node, direction: null, kind: "signal" },
+    ]);
+    const closeEdge = close.network.edges.find((edge) => edge.osmWayId === "in")!;
+    let going = [
+      carAt(close.network, closeEdge.id, closeEdge.lengthMeters - SIGNAL_STOP_METERS - 2, "trafik-1"),
+    ];
+    for (let step = 0; step < 12; step += 1) {
+      going = stepTraffic(close.network, going, null, 0.25, SIGNAL_GREEN_SECONDS);
+    }
+    expect(going[0]!.edgeId).toContain("ut");
+  });
+
+  it("waits on green while the exit is occupied", () => {
+    const start = { lat: places[1]!.lat, lng: places[1]!.lng };
+    const node = northOf(start, 80);
+    const network = buildRoadNetwork([
+      segment("in", ["a", "n"], [start, node], "forward"),
+      segment("ut", ["n", "b"], [node, northOf(node, 12)], "forward"),
+    ]);
+    attachTrafficSignals(network, [
+      { nodeId: "n", position: node, direction: null, kind: "signal" },
+    ]);
+    const approach = network.edges.find((edge) => edge.osmWayId === "in")!;
+    const exit = network.edges.find((edge) => edge.osmWayId === "ut")!;
+    let cars = [
+      carAt(network, approach.id, approach.lengthMeters - 24, "trafik-2"),
+      { ...carAt(network, exit.id, exit.lengthMeters, "trafik-1"), speedMps: 0 },
+    ];
+    for (let step = 0; step < 30; step += 1) {
+      cars = stepTraffic(network, cars, null, 0.1, 0);
+    }
+    const waiting = cars.find((car) => car.id === "trafik-2")!;
+    expect(waiting.edgeId).toBe(approach.id);
+    expect(waiting.distanceMeters).toBeLessThanOrEqual(approach.lengthMeters - SIGNAL_STOP_METERS + 0.5);
+  });
+
+  it("ignores a signal that is not on a road node and a backward-only signal for forward traffic", () => {
+    const plain = signaledApproach();
+    attachTrafficSignals(plain.network, [
+      { nodeId: "saknas", position: plain.node, direction: null, kind: "signal" },
+      { nodeId: "n", position: plain.node, direction: "backward", kind: "signal" },
+    ]);
+    const approach = plain.network.edges.find((edge) => edge.osmWayId === "in")!;
+    let cars = [carAt(plain.network, approach.id, approach.lengthMeters - 16, "trafik-1")];
+    for (let step = 0; step < 12; step += 1) {
+      cars = stepTraffic(plain.network, cars, null, 0.25, 24);
+    }
+    expect(cars[0]!.edgeId).toContain("ut");
+    expect(plain.network.signalsByEdge.get(approach.id) ?? []).toEqual([]);
+  });
+});
+
+describe("junction choice", () => {
+  it("turns right when the two exits are equally sharp instead of using the smaller id", () => {
+    const start = { lat: places[2]!.lat, lng: places[2]!.lng };
+    const node = northOf(start, 70);
+    const network = buildRoadNetwork([
+      segment("in", ["a", "n"], [start, node], "forward"),
+      segment("aaa", ["n", "c"], [node, eastOf(node, -70)], "forward"),
+      segment("zzz", ["n", "b"], [node, eastOf(node, 70)], "forward"),
+    ]);
+    const approach = network.edges.find((edge) => edge.osmWayId === "in")!;
+    let cars = [carAt(network, approach.id, approach.lengthMeters - 6, "trafik-1")];
+    for (let step = 0; step < 12; step += 1) {
+      cars = stepTraffic(network, cars, null, 0.25);
+    }
+    expect(cars[0]!.edgeId).toContain("zzz");
+    expect(cars[0]!.edgeId).not.toContain("aaa");
+  });
+
+  it("keeps the same street when the side street is only slightly straighter", () => {
+    const start = { lat: places[0]!.lat, lng: places[0]!.lng };
+    const node = northOf(start, 70);
+    const network = buildRoadNetwork([
+      { ...segment("in", ["a", "n"], [start, node], "forward"), name: "Storgatan" },
+      { ...segment("aaa", ["n", "c"], [node, headingPoint(node, 2, 70)], "forward"), name: "Sidan" },
+      { ...segment("mmm", ["n", "b"], [node, headingPoint(node, 8, 70)], "forward"), name: "Storgatan" },
+    ]);
+    const approach = network.edges.find((edge) => edge.osmWayId === "in")!;
+    let cars = [carAt(network, approach.id, approach.lengthMeters - 6, "trafik-1")];
+    for (let step = 0; step < 12; step += 1) {
+      cars = stepTraffic(network, cars, null, 0.25);
+    }
+    expect(cars[0]!.edgeId).toContain("mmm");
+  });
+
+  it("prefers the higher road class when the turns match", () => {
+    const start = { lat: places[1]!.lat, lng: places[1]!.lng };
+    const node = northOf(start, 70);
+    const network = buildRoadNetwork([
+      segment("in", ["a", "n"], [start, node], "forward"),
+      segment("aaa", ["n", "c"], [node, headingPoint(node, 88, 70)], "forward"),
+      { ...segment("zzz", ["n", "b"], [node, headingPoint(node, 92, 70)], "forward"), highway: "primary" },
+    ]);
+    const approach = network.edges.find((edge) => edge.osmWayId === "in")!;
+    let cars = [carAt(network, approach.id, approach.lengthMeters - 6, "trafik-1")];
+    for (let step = 0; step < 12; step += 1) {
+      cars = stepTraffic(network, cars, null, 0.25);
+    }
+    expect(cars[0]!.edgeId).toContain("zzz");
+  });
+
+  it("does not jump onto an exit whose geometry misses the shared node", () => {
+    const start = { lat: places[2]!.lat, lng: places[2]!.lng };
+    const node = northOf(start, 70);
+    const stray = northOf(node, 30);
+    const network = buildRoadNetwork([
+      segment("in", ["a", "n"], [start, node], "forward"),
+      segment("aaa", ["n", "c"], [stray, northOf(stray, 40)], "forward"),
+      segment("zzz", ["n", "b"], [node, eastOf(node, 60)], "forward"),
+    ]);
+    const approach = network.edges.find((edge) => edge.osmWayId === "in")!;
+    let cars = [carAt(network, approach.id, approach.lengthMeters - 6, "trafik-1")];
+    for (let step = 0; step < 12; step += 1) {
+      cars = stepTraffic(network, cars, null, 0.25);
+    }
+    expect(cars[0]!.edgeId).toContain("zzz");
+    expect(distanceMeters(cars[0]!.position, node)).toBeLessThan(25);
   });
 });
