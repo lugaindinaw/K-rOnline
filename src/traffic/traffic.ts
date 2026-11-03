@@ -88,8 +88,21 @@ function isDecision(kind: RoadEndKind): boolean {
   return kind === "branch" || kind === "crossing";
 }
 
+function exitHeading(edge: RoadEdge): number {
+  return sampleEdge(edge, 0).headingDegrees;
+}
+
+/** Prefer the shared-node exit that continues the current heading. A tie keeps a stable id. */
 function nextEdge(network: RoadNetwork, edge: RoadEdge): RoadEdge | null {
-  const forward = [...forwardChoices(network, edge)].sort((left, right) => left.id.localeCompare(right.id));
+  const heading = sampleEdge(edge, edge.lengthMeters).headingDegrees;
+  const forward = [...forwardChoices(network, edge)].sort((left, right) => {
+    const turn =
+      headingDelta(exitHeading(left), heading) - headingDelta(exitHeading(right), heading);
+    if (Math.abs(turn) > 0.5) {
+      return turn;
+    }
+    return left.id.localeCompare(right.id);
+  });
   const choice = forward[0];
   if (choice) {
     return choice;
@@ -225,15 +238,19 @@ function closestAhead(network: RoadNetwork, car: TrafficCar, leads: readonly Tra
 }
 
 function targetSpeed(ahead: number | null, speed: number, noticeMeters = TRAFFIC_GAP_METERS): number {
-  const needed = (Math.max(0, speed) * Math.max(0, speed)) / (2 * TRAFFIC_ACCEL_MPS2) + TRAFFIC_STOP_METERS;
-  if (ahead !== null && ahead <= needed) {
-    return 0;
-  }
   if (ahead === null || ahead >= noticeMeters) {
     return TRAFFIC_SPEED_MPS;
   }
-  const span = Math.max(0.5, noticeMeters - TRAFFIC_STOP_METERS);
-  return TRAFFIC_SPEED_MPS * ((ahead - TRAFFIC_STOP_METERS) / span);
+  if (ahead <= TRAFFIC_STOP_METERS) {
+    return 0;
+  }
+  const room = ahead - TRAFFIC_STOP_METERS;
+  // Brake a little earlier than the acceleration limit, so a discrete step still stops short of the car ahead.
+  const braking = TRAFFIC_ACCEL_MPS2 * 0.85;
+  if (speed * speed > 2 * braking * room) {
+    return 0;
+  }
+  return Math.min(TRAFFIC_SPEED_MPS, Math.sqrt(2 * TRAFFIC_ACCEL_MPS2 * room));
 }
 
 /** Distance to the player when they are in front of this car, on any street. */

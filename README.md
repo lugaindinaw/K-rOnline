@@ -36,10 +36,10 @@ Den synliga bilen steg tas av `advanceFreeVehicle`. `stepFreeVehicle` räknar n�
 
 Övningens `observeApproach` är oförändrad. Ett prov registreras bara när bilen är inne i körbanan på den följda vägen. Ligger den bara i korsningens utvidgning, eller utanför, registreras inget avstånd.
 
-Trafikbilarna följer fortfarande mittlinjen. De ser spelarens fria position.
+Trafikbilarna följer mittlinjen i körriktningen. I en korsning tar de den fortsättning som ligger närmast den egna kursen, och de bromsar tills de står stilla bakom en bil framför. De ser spelarens fria position.
 
 ## Avgränsning
 
-Det här är inte körträning. Den synliga bilen gasar, bromsar och svänger i kartans plan. En preliminär körgräns ersätter byggnadskollision. Trafikbilarna följer mittlinjen, saktar in vid en förgrening eller korsning och håller avstånd. Hämtade vägdata har enkelriktning när taggen finns. Stopplikt, väjningsplikt och trafiksignaler ingår inte, så de används inte. Vägarna är mittlinjer från OpenStreetMap, inte NVDB. Bara vägar som delar en OSM-nod kopplas ihop. Fotorealistisk 3D varierar över landet och är inte ett krav för att vägdata ska visas. Startvyn över centrala Stockholm ritade fotorealistisk 3D-yta 2026-10-25.
+Det här är inte körträning. Den synliga bilen gasar, bromsar och svänger i kartans plan. En preliminär körgräns ersätter byggnadskollision. Trafikbilarna följer mittlinjen, tar den rakaste fortsättningen i en korsning och håller avstånd genom att bromsa in bakom bilen framför. Hämtade vägdata har enkelriktning när taggen finns. Stopplikt, väjningsplikt och trafiksignaler ingår inte, så de används inte. Vägarna är mittlinjer från OpenStreetMap, inte NVDB. Bara vägar som delar en OSM-nod kopplas ihop. Fotorealistisk 3D varierar över landet och är inte ett krav för att vägdata ska visas. Startvyn över centrala Stockholm ritade fotorealistisk 3D-yta 2026-10-25.
 
 En offentlig Overpass-server kan vara upptagen. Prototypen provar då en andra server. Sverige avgränsas med en förenklad kustlinje och en buffert på 8 km, så enstaka gränsorter kan hamna fel.
