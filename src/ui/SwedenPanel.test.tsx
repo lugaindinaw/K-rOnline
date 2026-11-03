@@ -66,6 +66,8 @@ describe("SwedenPanel", () => {
       "Inga stopp-",
     );
     expect(html).toContain("förarens ögonhöjd");
+    expect(html).toContain("ratt");
+    expect(html).toContain("backspegel");
     expect(html).toContain("Stockholm är startposition");
     expect(html).toContain("OpenStreetMap");
     expect(html).not.toContain("Närma dig en korsning");

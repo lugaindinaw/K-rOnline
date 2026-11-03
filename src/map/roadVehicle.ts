@@ -24,6 +24,7 @@ export type VehiclePose = {
 export type RoadVehicle = {
   kind: "model" | "marker";
   update: (pose: VehiclePose) => void;
+  setVisible: (visible: boolean) => void;
   remove: () => void;
 };
 
@@ -47,6 +48,9 @@ function mountModel(
         tilt: CAR_TILT_DEGREES,
         roll: 0,
       };
+    },
+    setVisible(visible) {
+      model.hidden = !visible;
     },
     remove() {
       model.remove();
@@ -75,6 +79,9 @@ function mountMarker(
     kind: "marker",
     update(pose) {
       marker.position = { lat: pose.lat, lng: pose.lng, altitude: 0 };
+    },
+    setVisible(visible) {
+      marker.hidden = !visible;
     },
     remove() {
       marker.remove();
@@ -112,6 +119,11 @@ function mountVehicle(
     update(pose) {
       for (const part of parts) {
         part.update(pose);
+      }
+    },
+    setVisible(visible) {
+      for (const part of parts) {
+        part.setVisible(visible);
       }
     },
     remove() {

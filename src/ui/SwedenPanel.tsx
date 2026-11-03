@@ -190,8 +190,8 @@ export function SwedenPanel({
           uppmätta bredden inte bilen är gränsen osäker. Byggnader känns
           inte av. I en korsning följer bilen den anslutna väg som styrningen
           pekar mot, även en tvär sväng, och den stannar inte av sig själv. Vägval med 1–9 används inte. C eller knappen
-          växlar kameran. Förarvyn sitter strax framför hytten, ungefär i förarens ögonhöjd, och
-          tittar framåt i 3D-kartan. Några andra bilar märkta Trafik följer samma vägar, saktar in
+          växlar kameran. Förarvyn sitter i bilen, med ratt, instrumentpanel och backspegel, ungefär
+          i förarens ögonhöjd. Vy bakifrån visar bilen utifrån. Några andra bilar märkta Trafik följer samma vägar, saktar in
           där vägen delar sig och håller avstånd.
         </p>
         <div className="drive-pedals">

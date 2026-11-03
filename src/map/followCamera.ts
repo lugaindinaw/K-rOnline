@@ -13,7 +13,7 @@ export const CHASE_LOOKAHEAD_METERS = 8;
 export const FOLLOW_RANGE_METERS = CHASE_RANGE_METERS;
 export const FOLLOW_TILT_DEGREES = CHASE_TILT_DEGREES;
 export const CAMERA_LOOKAHEAD_METERS = CHASE_LOOKAHEAD_METERS;
-/** Eye point just above the hood, ahead of the solid cabin. The model has no interior. */
+/** Eye height stays here. The cabin is drawn over the view, and the car mesh is hidden in that view. */
 export const DRIVER_EYE_HEIGHT_METERS = 1.35;
 export const DRIVER_LOOKAHEAD_METERS = 22;
 export const DRIVER_FORWARD_METERS = 1.4;
