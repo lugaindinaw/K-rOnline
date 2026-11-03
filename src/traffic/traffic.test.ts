@@ -3,6 +3,8 @@ import { buildRoadNetwork, sampleEdge } from "../roads/roadNetwork";
 import { distanceMeters, type OneWay, type RoadPoint, type RoadSegment } from "../roads/drivingRoads";
 import {
   TRAFFIC_GAP_METERS,
+  MAX_TRAFFIC,
+  PLAYER_NOTICE_METERS,
   TRAFFIC_SPEED_MPS,
   TRAFFIC_STOP_METERS,
   createTraffic,
@@ -63,7 +65,7 @@ describe("trafficCount", () => {
     expect(trafficCount(Number.NaN)).toBe(0);
     expect(trafficCount(4)).toBe(1);
     expect(trafficCount(25)).toBe(2);
-    expect(trafficCount(80)).toBe(5);
+    expect(trafficCount(80)).toBe(MAX_TRAFFIC);
   });
 });
 
@@ -216,6 +218,34 @@ describe("stepTraffic", () => {
     onRoad(car, network);
     expect(car.distanceMeters).toBeLessThan(80);
     expect(80 - car.distanceMeters).toBeGreaterThan(TRAFFIC_STOP_METERS - 0.5);
+  });
+
+  it("slows for the player close in front on another street", () => {
+    const start = { lat: places[1]!.lat, lng: places[1]!.lng };
+    const network = buildRoadNetwork([segment("gata", ["1", "2"], [start, northOf(start, 200)])]);
+    const edge = network.edges.find((item) => item.id.endsWith(":forward"))!;
+    const here = sampleEdge(edge, 40);
+    let cars: TrafficCar[] = [
+      {
+        id: "trafik-1",
+        edgeId: edge.id,
+        distanceMeters: 40,
+        speedMps: TRAFFIC_SPEED_MPS,
+        position: here.position,
+        headingDegrees: here.headingDegrees,
+      },
+    ];
+    const player = eastOf(northOf(here.position, 12), 3);
+    expect(distanceMeters(here.position, player)).toBeLessThan(PLAYER_NOTICE_METERS);
+    for (let step = 0; step < 20; step += 1) {
+      cars = stepTraffic(
+        network,
+        cars,
+        { edgeId: "annan-gata", distanceMeters: 0, position: player },
+        0.05,
+      );
+    }
+    expect(cars[0]!.speedMps).toBeLessThan(TRAFFIC_SPEED_MPS - 1);
   });
 
   it("ignores a missing edge and an empty network", () => {

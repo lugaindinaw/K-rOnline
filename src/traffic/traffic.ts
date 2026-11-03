@@ -11,7 +11,9 @@ import {
 export const TRAFFIC_SPEED_MPS = 8;
 export const TRAFFIC_GAP_METERS = 22;
 export const TRAFFIC_STOP_METERS = 8;
-export const MAX_TRAFFIC = 5;
+/** How far ahead a traffic car notices the player and starts to slow. */
+export const PLAYER_NOTICE_METERS = 28;
+export const MAX_TRAFFIC = 8;
 const TRAFFIC_ACCEL_MPS2 = 4;
 const JUNCTION_APPROACH_METERS = 30;
 const JUNCTION_CREEP_MPS = 3;
@@ -222,16 +224,32 @@ function closestAhead(network: RoadNetwork, car: TrafficCar, leads: readonly Tra
   return best;
 }
 
-function targetSpeed(ahead: number | null, speed: number): number {
+function targetSpeed(ahead: number | null, speed: number, noticeMeters = TRAFFIC_GAP_METERS): number {
   const needed = (Math.max(0, speed) * Math.max(0, speed)) / (2 * TRAFFIC_ACCEL_MPS2) + TRAFFIC_STOP_METERS;
   if (ahead !== null && ahead <= needed) {
     return 0;
   }
-  if (ahead === null || ahead >= TRAFFIC_GAP_METERS) {
+  if (ahead === null || ahead >= noticeMeters) {
     return TRAFFIC_SPEED_MPS;
   }
-  const span = TRAFFIC_GAP_METERS - TRAFFIC_STOP_METERS;
+  const span = Math.max(0.5, noticeMeters - TRAFFIC_STOP_METERS);
   return TRAFFIC_SPEED_MPS * ((ahead - TRAFFIC_STOP_METERS) / span);
+}
+
+/** Distance to the player when they are in front of this car, on any street. */
+function playerNotice(car: TrafficCar, player: TrafficLead | null): number | null {
+  if (!player) {
+    return null;
+  }
+  const gap = distanceMeters(car.position, player.position);
+  if (!Number.isFinite(gap) || gap < 0.8 || gap > PLAYER_NOTICE_METERS) {
+    return null;
+  }
+  const bearing = bearingDegrees(car.position, player.position);
+  if (headingDelta(bearing, car.headingDegrees) > 75) {
+    return null;
+  }
+  return gap;
 }
 
 function stepOne(
@@ -257,6 +275,7 @@ function stepOne(
   const blocked = junctionBlocked(network, edge, car, cars, player);
   const desired = Math.min(
     targetSpeed(ahead, car.speedMps),
+    targetSpeed(playerNotice(car, player), car.speedMps, PLAYER_NOTICE_METERS),
     junctionSpeed(remaining, blocked, kind, car.speedMps),
   );
   const delta = Math.max(-TRAFFIC_ACCEL_MPS2 * dt, Math.min(TRAFFIC_ACCEL_MPS2 * dt, desired - car.speedMps));
@@ -339,14 +358,19 @@ function slotsAround(
       return slot ? [slot] : [];
     });
   }
-  return slots
+  const around = slots
     .map((slot, index) => ({
       slot,
       index,
       gap: distanceMeters(sampleEdge(slot.edge, slot.distance).position, player),
     }))
-    .sort((left, right) => left.gap - right.gap || left.index - right.index)
-    .map((item) => item.slot);
+    .filter((item) => item.gap >= SPAWN_CLEARANCE_METERS && item.gap <= 220);
+  const pool = around.length > 0 ? around : slots.map((slot, index) => ({
+    slot,
+    index,
+    gap: distanceMeters(sampleEdge(slot.edge, slot.distance).position, player),
+  }));
+  return pool.sort((left, right) => left.gap - right.gap || left.index - right.index).map((item) => item.slot);
 }
 
 export function createTraffic(network: RoadNetwork, player: RoadPoint | null): TrafficCar[] {
