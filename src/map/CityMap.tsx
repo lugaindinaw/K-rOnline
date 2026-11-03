@@ -16,6 +16,7 @@ import { formatGeographicPosition, readGeographicPosition, type GeographicPositi
 import { readGroundElevation } from "../geo/groundElevation";
 import { STOCKHOLM_CANDIDATE } from "../geo/stockholmCandidate";
 import type { OmittedRoad, RoadPoint, RoadSegment, TrafficSignal } from "../roads/drivingRoads";
+import type { RoadSign } from "../roads/roadSigns";
 import {
   prefetchCenter,
   shouldPrefetch,
@@ -31,6 +32,8 @@ import {
   type RoadNetwork,
 } from "../roads/roadNetwork";
 import { refreshTraffic, stepTraffic, type TrafficCar } from "../traffic/traffic";
+import { placeSignalHeads, signalLampColor } from "./signalPosts";
+import { mountSignBoard, mountSignalLamp, syncById, type SignalLamp } from "./streetFurniture";
 import type { DriveSample } from "../training/approach";
 import {
   installGoogleMapFailureHook,
@@ -67,6 +70,7 @@ export type SwedenMapHandle = {
 
 const NO_OMITTED_ROADS: readonly OmittedRoad[] = [];
 const NO_SIGNALS: readonly TrafficSignal[] = [];
+const NO_SIGNS: readonly RoadSign[] = [];
 
 type CityMapProps = {
   apiKey: string;
@@ -74,6 +78,7 @@ type CityMapProps = {
   roads: RoadSegment[];
   omittedRoads?: readonly OmittedRoad[];
   signals?: readonly TrafficSignal[];
+  signs?: readonly RoadSign[];
   areas: CoverageCircle[];
   anchor: RoadPoint | null;
   focus: MapFocus | null;
@@ -119,6 +124,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     roads,
     omittedRoads = NO_OMITTED_ROADS,
     signals = NO_SIGNALS,
+    signs = NO_SIGNS,
     areas,
     anchor,
     focus,
@@ -147,6 +153,8 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
   const vehicleViewRef = useRef<RoadVehicle | null>(null);
   const trafficRef = useRef<TrafficCar[]>([]);
   const trafficViewsRef = useRef<Map<string, RoadVehicle>>(new Map());
+  const lampsRef = useRef<Map<string, SignalLamp>>(new Map());
+  const signViewsRef = useRef<Map<string, { remove: () => void }>>(new Map());
   const keysRef = useRef(new Set<string>());
   const pedalsRef = useRef({ accelerate: false, brake: false });
   const steerHoldRef = useRef({ left: false, right: false });
@@ -175,6 +183,17 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
   onExtendRef.current = onExtendRoads;
   onSampleRef.current = onDriveSample;
   areasRef.current = areas;
+
+  const clearFurniture = () => {
+    for (const lamp of lampsRef.current.values()) {
+      lamp.remove();
+    }
+    lampsRef.current.clear();
+    for (const sign of signViewsRef.current.values()) {
+      sign.remove();
+    }
+    signViewsRef.current.clear();
+  };
 
   const clearTraffic = () => {
     for (const view of trafficViewsRef.current.values()) {
@@ -566,6 +585,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       vehicleViewRef.current = null;
       vehicleRef.current = null;
       clearTraffic();
+      clearFurniture();
       mapElement?.remove();
       mapRef.current = null;
       libraryRef.current = null;
@@ -677,6 +697,16 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
   }, [roads, omittedRoads, signals, anchor, phase, mapVersion]);
 
   useEffect(() => {
+    const map = mapRef.current;
+    const library = libraryRef.current;
+    if (!map || !library || phase !== "ready") {
+      return;
+    }
+    syncById(lampsRef.current, placeSignalHeads(signals, roads), (head) => mountSignalLamp(map, library, head));
+    syncById(signViewsRef.current, signs, (sign) => mountSignBoard(map, library, sign));
+  }, [signals, signs, roads, phase, mapVersion]);
+
+  useEffect(() => {
     if (phase !== "ready") {
       return;
     }
@@ -687,6 +717,9 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       const dt = (now - last) / 1000;
       last = now;
       signalTime.seconds += dt;
+      for (const lamp of lampsRef.current.values()) {
+        lamp.setColor(signalLampColor(lamp.facingDegrees, signalTime.seconds, lamp.kind));
+      }
       const network = networkRef.current;
       const vehicle = vehicleRef.current;
       if (network && vehicle) {

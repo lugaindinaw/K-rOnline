@@ -30,6 +30,8 @@ describe("buildDrivingRoadQuery", () => {
     const query = buildDrivingRoadQuery(center, 600);
     expect(query).toContain("around:600,65.258000,19.654000");
     expect(query).toContain('node["highway"="traffic_signals"]');
+    expect(query).toContain('node["highway"="stop"]');
+    expect(query).toContain('node["highway"="give_way"]');
     expect(query).toContain("residential");
     expect(query).not.toContain("55,10,69,24");
     expect(query).not.toContain("out body");

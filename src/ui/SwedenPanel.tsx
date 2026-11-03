@@ -56,6 +56,7 @@ type SwedenPanelProps = {
   roadError: string | null;
   extendNote: string | null;
   signalNote?: string | null;
+  signNote?: string | null;
   vehicle: VehicleStatus;
   onChooseBranch: (index: number) => void;
   onPedal: (pedal: "accelerate" | "brake", pressed: boolean) => void;
@@ -91,6 +92,7 @@ export function SwedenPanel({
   roadError,
   extendNote,
   signalNote = null,
+  signNote = null,
   vehicle = IDLE_VEHICLE,
   onChooseBranch,
   onPedal,
@@ -386,6 +388,7 @@ export function SwedenPanel({
           </p>
         ) : null}
         {signalNote ? <p>{signalNote}</p> : null}
+        {signNote ? <p>{signNote}</p> : null}
         {visibleNames.length > 0 ? (
           <ul className="road-names">
             {visibleNames.map((name) => {

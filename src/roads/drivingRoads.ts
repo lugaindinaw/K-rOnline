@@ -1,3 +1,5 @@
+import type { RoadSign } from "./roadSigns";
+
 export const ROAD_AREA_RADIUS_METERS = 600;
 export const MIN_ROAD_RADIUS_METERS = 200;
 export const MAX_ROAD_RADIUS_METERS = 1500;
@@ -83,6 +85,8 @@ export type RoadArea = {
   omitted: OmittedRoad[];
   /** Signal nodes from the same Overpass answer. An empty list means the area had none. */
   signals: TrafficSignal[];
+  /** Posted signs from the same answer. An empty list means none were tagged. */
+  signs: RoadSign[];
   source: "openstreetmap";
 };
 
@@ -113,7 +117,7 @@ export function buildDrivingRoadQuery(
   const radius = clampRoadRadius(radiusMeters);
   const lat = center.lat.toFixed(6);
   const lng = center.lng.toFixed(6);
-  return `[out:json][timeout:20];(way["highway"~"^(${HIGHWAY_PATTERN})$"](around:${radius},${lat},${lng});node["highway"="traffic_signals"](around:${radius},${lat},${lng}););out geom;`;
+  return `[out:json][timeout:20];(way["highway"~"^(${HIGHWAY_PATTERN})$"](around:${radius},${lat},${lng});node["highway"="traffic_signals"](around:${radius},${lat},${lng});node["highway"="stop"](around:${radius},${lat},${lng});node["highway"="give_way"](around:${radius},${lat},${lng}););out geom;`;
 }
 
 function readMeterValue(value: unknown): number | null {

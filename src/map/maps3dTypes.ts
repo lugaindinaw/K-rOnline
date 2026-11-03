@@ -46,7 +46,7 @@ export type Model3DView = HTMLElement & Model3DOptions;
 export type Marker3DOptions = {
   position?: { lat: number; lng: number; altitude?: number };
   label?: string;
-  altitudeMode?: "CLAMP_TO_GROUND";
+  altitudeMode?: "CLAMP_TO_GROUND" | "RELATIVE_TO_GROUND";
   extruded?: boolean;
   sizePreserved?: boolean;
 };

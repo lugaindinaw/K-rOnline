@@ -25,6 +25,7 @@ import {
   type RoadSegment,
   type TrafficSignal,
 } from "../roads/drivingRoads";
+import { describeSignCoverage, type RoadSign } from "../roads/roadSigns";
 import {
   EXTEND_EMPTY_MESSAGE,
   EXTEND_LOADING_MESSAGE,
@@ -65,6 +66,7 @@ type StoredArea = CoverageCircle & {
   matched: number;
   omitted: OmittedRoad[];
   signals: TrafficSignal[];
+  signs: RoadSign[];
 };
 
 export function SwedenSession({ apiKey }: { apiKey: string | null }) {
@@ -82,6 +84,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
   const [truncated, setTruncated] = useState(false);
   const [omittedRoads, setOmittedRoads] = useState<OmittedRoad[]>([]);
   const [signals, setSignals] = useState<TrafficSignal[]>([]);
+  const [signs, setSigns] = useState<RoadSign[]>([]);
   const [radiusMeters, setRadiusMeters] = useState<number | null>(null);
   const [areaLabel, setAreaLabel] = useState("Stockholm, startposition");
   const [roadError, setRoadError] = useState<string | null>(null);
@@ -170,6 +173,13 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
       }
     }
     setSignals([...mergedSignals.values()]);
+    const mergedSigns = new Map<string, RoadSign>();
+    for (const area of kept) {
+      for (const sign of area.signs) {
+        mergedSigns.set(sign.id, sign);
+      }
+    }
+    setSigns([...mergedSigns.values()]);
     setMatched(kept.reduce((sum, area) => sum + area.matched, 0));
     setRadiusMeters(kept[0]?.radiusMeters ?? null);
   }
@@ -188,6 +198,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
     setTruncated(false);
     setOmittedRoads([]);
     setSignals([]);
+    setSigns([]);
     coverageRef.current = [];
     loadedKeys.current = new Set();
     failureKeys.current = new Set();
@@ -205,6 +216,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
       setTruncated(false);
       setOmittedRoads([]);
       setSignals([]);
+      setSigns([]);
       setRadiusMeters(null);
       setRoadError(result.message);
       return;
@@ -221,6 +233,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
           matched: result.area.matched,
           omitted: result.area.omitted,
           signals: result.area.signals,
+          signs: result.area.signs,
         },
       ],
       center,
@@ -273,6 +286,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
           matched: result.area.matched,
           omitted: result.area.omitted,
           signals: result.area.signals,
+          signs: result.area.signs,
         },
       ],
       center,
@@ -335,6 +349,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
         signalNote={
           !loadingRoads && !roadError && matched > 0 ? describeSignalCoverage(signals, roads) : null
         }
+        signNote={!loadingRoads && !roadError && matched > 0 ? describeSignCoverage(signs) : null}
         vehicle={vehicle}
         onChooseBranch={(index) => {
           mapRef.current?.chooseBranch(index);
@@ -375,6 +390,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
           roads={roads}
           omittedRoads={omittedRoads}
           signals={signals}
+          signs={signs}
           areas={areas}
           anchor={anchor}
           focus={focus}
