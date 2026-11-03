@@ -507,6 +507,28 @@ describe("junction steering", () => {
     expect(placementOnEdge(linked!, state.position).gapMeters).toBeGreaterThan(0.3);
   });
 
+  it("follows the clearly straighter street when a sharper side street also exists", () => {
+    const bend = northOf(origin, 50);
+    const heading = (55 * Math.PI) / 180;
+    const ahead = {
+      lat: bend.lat + (80 * Math.cos(heading)) / 111320,
+      lng: bend.lng + (80 * Math.sin(heading)) / (111320 * Math.cos((bend.lat * Math.PI) / 180)),
+    };
+    const network = buildRoadNetwork([
+      segment("in", ["a", "b"], [origin, bend], { name: "Storgatan", highway: "residential", oneway: "forward" }),
+      segment("vidare", ["b", "c"], [bend, ahead], { name: "Storgatan", highway: "residential", oneway: "forward" }),
+      segment("sida", ["b", "d"], [bend, eastOf(bend, 80)], { name: "Sidogatan", highway: "residential", oneway: "forward" }),
+    ]);
+    const edge = edgeNamed(network, "in", "forward");
+    let state = vehicleFromPlacement({ edge, distanceMeters: 8, gapMeters: 0 });
+    for (let step = 0; step < 160; step += 1) {
+      state = advanceFreeVehicle(state, { accelerate: true, brake: false, steer: 0 }, 0.05, network);
+    }
+    expect(network.edgesById.get(state.edgeId)?.osmWayId).toBe("vidare");
+    expect(state.speedMps).toBeGreaterThan(6);
+    expect(state.message).toBeNull();
+  });
+
   it("turns right onto a shared-node street past 45 degrees", () => {
     const state = drive(1);
     expect(state.roadName).toBe("Östergatan");

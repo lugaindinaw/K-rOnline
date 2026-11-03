@@ -3,6 +3,8 @@ import { buildRoadNetwork, sampleEdge } from "../roads/roadNetwork";
 import { distanceMeters, type OneWay, type RoadPoint, type RoadSegment } from "../roads/drivingRoads";
 import {
   TRAFFIC_GAP_METERS,
+  MAX_TRAFFIC,
+  PLAYER_NOTICE_METERS,
   TRAFFIC_SPEED_MPS,
   TRAFFIC_STOP_METERS,
   createTraffic,
@@ -63,7 +65,7 @@ describe("trafficCount", () => {
     expect(trafficCount(Number.NaN)).toBe(0);
     expect(trafficCount(4)).toBe(1);
     expect(trafficCount(25)).toBe(2);
-    expect(trafficCount(80)).toBe(5);
+    expect(trafficCount(80)).toBe(MAX_TRAFFIC);
   });
 });
 
@@ -216,6 +218,34 @@ describe("stepTraffic", () => {
     onRoad(car, network);
     expect(car.distanceMeters).toBeLessThan(80);
     expect(80 - car.distanceMeters).toBeGreaterThan(TRAFFIC_STOP_METERS - 0.5);
+  });
+
+  it("slows for the player close in front on another street", () => {
+    const start = { lat: places[1]!.lat, lng: places[1]!.lng };
+    const network = buildRoadNetwork([segment("gata", ["1", "2"], [start, northOf(start, 200)])]);
+    const edge = network.edges.find((item) => item.id.endsWith(":forward"))!;
+    const here = sampleEdge(edge, 40);
+    let cars: TrafficCar[] = [
+      {
+        id: "trafik-1",
+        edgeId: edge.id,
+        distanceMeters: 40,
+        speedMps: TRAFFIC_SPEED_MPS,
+        position: here.position,
+        headingDegrees: here.headingDegrees,
+      },
+    ];
+    const player = eastOf(northOf(here.position, 12), 3);
+    expect(distanceMeters(here.position, player)).toBeLessThan(PLAYER_NOTICE_METERS);
+    for (let step = 0; step < 20; step += 1) {
+      cars = stepTraffic(
+        network,
+        cars,
+        { edgeId: "annan-gata", distanceMeters: 0, position: player },
+        0.05,
+      );
+    }
+    expect(cars[0]!.speedMps).toBeLessThan(TRAFFIC_SPEED_MPS - 1);
   });
 
   it("ignores a missing edge and an empty network", () => {
@@ -384,6 +414,63 @@ describe("junctions", () => {
     expect(distanceMeters(waiting.position, sampleEdge(approach, approach.lengthMeters).position)).toBeLessThan(20);
     expect(Number.isFinite(waiting.position.lat)).toBe(true);
     expect(Number.isFinite(waiting.position.lng)).toBe(true);
+  });
+
+  it("follows the straight street through a junction instead of an earlier side street", () => {
+    const start = { lat: places[0]!.lat, lng: places[0]!.lng };
+    const node = northOf(start, 80);
+    const network = buildRoadNetwork([
+      segment("in", ["a", "n"], [start, node], "forward"),
+      segment("aaa", ["n", "c"], [node, eastOf(node, 80)], "forward"),
+      segment("zzz", ["n", "b"], [node, northOf(node, 80)], "forward"),
+    ]);
+    const approach = network.edges.find((edge) => edge.osmWayId === "in")!;
+    let cars = [carAt(network, approach.id, approach.lengthMeters - 6, "trafik-1")];
+    for (let step = 0; step < 12; step += 1) {
+      cars = stepTraffic(network, cars, null, 0.25);
+    }
+    const car = cars[0]!;
+    onRoad(car, network);
+    expect(car.edgeId).toContain("zzz");
+    expect(car.edgeId).not.toContain("aaa");
+  });
+
+  it("takes the gentler turn when no exit continues straight", () => {
+    const start = { lat: places[1]!.lat, lng: places[1]!.lng };
+    const node = northOf(start, 70);
+    const gentle = eastOf(northOf(node, Math.cos((25 * Math.PI) / 180) * 80), Math.sin((25 * Math.PI) / 180) * 80);
+    const sharp = eastOf(node, 80);
+    const network = buildRoadNetwork([
+      segment("in", ["a", "n"], [start, node], "forward"),
+      segment("aaa", ["n", "c"], [node, sharp], "forward"),
+      segment("zzz", ["n", "b"], [node, gentle], "forward"),
+    ]);
+    const approach = network.edges.find((edge) => edge.osmWayId === "in")!;
+    let cars = [carAt(network, approach.id, approach.lengthMeters - 6, "trafik-1")];
+    for (let step = 0; step < 12; step += 1) {
+      cars = stepTraffic(network, cars, null, 0.25);
+    }
+    const car = cars[0]!;
+    onRoad(car, network);
+    expect(car.edgeId).toContain("zzz");
+  });
+
+  it("stops behind a car that is already standing still", () => {
+    const start = { lat: places[2]!.lat, lng: places[2]!.lng };
+    const network = buildRoadNetwork([segment("gata", ["1", "2"], [start, northOf(start, 120)])]);
+    const edge = network.edges.find((item) => item.id.endsWith(":forward"))!;
+    const leader = { ...carAt(network, edge.id, edge.lengthMeters, "ledare"), speedMps: 0 };
+    let cars = [leader, carAt(network, edge.id, edge.lengthMeters - 36, "foljare")];
+    for (let step = 0; step < 50; step += 1) {
+      cars = stepTraffic(network, cars, null, 0.1);
+    }
+    const waiting = cars.find((car) => car.id === "foljare")!;
+    const stopped = cars.find((car) => car.id === "ledare")!;
+    onRoad(waiting, network);
+    expect(stopped.distanceMeters).toBeCloseTo(edge.lengthMeters, 2);
+    expect(waiting.speedMps).toBeLessThan(1);
+    expect(waiting.distanceMeters).toBeLessThan(stopped.distanceMeters);
+    expect(stopped.distanceMeters - waiting.distanceMeters).toBeGreaterThan(TRAFFIC_STOP_METERS - 0.5);
   });
 
   it("continues onto a connected edge when the crossing is clear", () => {

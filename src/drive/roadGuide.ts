@@ -187,11 +187,14 @@ export function clearanceOf(
   const roadHalf = corridor.halfMeters;
   const roadHoldsCar = roadHalf + 0.05 >= CAR_BODY_WIDTH_METERS / 2;
   const extent = bodyExtentMeters(yawDegrees);
+  // A measured width stays exact. An estimate may be a little wide so a city
+  // drive is not stopped by a guessed curb.
+  const estimateRoom = corridor.basis === "width" ? 0 : 1.25;
   const centerLimit = roadHoldsCar
-    ? roadHalf - extent + TRACK_SLACK_METERS
-    : roadHalf + TRACK_SLACK_METERS * 0.5;
+    ? roadHalf - extent + TRACK_SLACK_METERS + estimateRoom
+    : roadHalf + TRACK_SLACK_METERS * 0.5 + estimateRoom;
   return {
-    centerLimit: Math.min(roadHalf + TRACK_SLACK_METERS, Math.max(0.35, centerLimit)),
+    centerLimit: Math.min(roadHalf + TRACK_SLACK_METERS + estimateRoom, Math.max(0.35, centerLimit)),
     roadHalf,
     roadHoldsCar,
     basis: corridor.basis,
@@ -579,29 +582,33 @@ function exitHeading(edge: RoadEdge): number {
 
 /** A single continuation may be sharper than a chosen side street. A U-turn is still left alone. */
 const SOLE_CONTINUATION_DEGREES = 120;
+/** A bend this small is still the street ahead when it is clearly straighter than the other exits. */
+const CLEAR_CONTINUATION_DEGREES = 70;
+const CLEARER_THAN_NEXT_DEGREES = 25;
 
 /**
- * Straight or gentle shared-node continuation. A side street beyond 45° is left
- * for steering when another exit exists. The only exit is the street itself.
+ * Straight or gentle shared-node continuation. A side street is left for
+ * steering when another exit is nearly as straight. The only exit is the street itself.
  */
 function gentleContinuation(exits: readonly RoadEdge[], fromHeading: number): RoadEdge | null {
-  let best: RoadEdge | null = null;
-  let bestDelta = 45;
-  for (const out of exits) {
-    const delta = headingDelta(fromHeading, exitHeading(out));
-    if (delta < bestDelta) {
-      best = out;
-      bestDelta = delta;
-    }
-  }
-  if (best || exits.length !== 1) {
-    return best;
-  }
-  const only = exits[0];
-  if (!only || headingDelta(fromHeading, exitHeading(only)) > SOLE_CONTINUATION_DEGREES) {
+  const ranked = exits
+    .map((out) => ({ out, delta: headingDelta(fromHeading, exitHeading(out)) }))
+    .sort((left, right) => left.delta - right.delta);
+  const best = ranked[0];
+  if (!best) {
     return null;
   }
-  return only;
+  if (best.delta < 45) {
+    return best.out;
+  }
+  const second = ranked[1];
+  if (best.delta <= CLEAR_CONTINUATION_DEGREES && (!second || second.delta >= best.delta + CLEARER_THAN_NEXT_DEGREES)) {
+    return best.out;
+  }
+  if (exits.length !== 1 || best.delta > SOLE_CONTINUATION_DEGREES) {
+    return null;
+  }
+  return best.out;
 }
 
 /**
