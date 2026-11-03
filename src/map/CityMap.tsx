@@ -52,6 +52,8 @@ import {
 } from "./followCamera";
 import { createRoadOverlays, type RoadLine } from "./roadOverlays";
 import { mountRoadVehicle, mountTrafficVehicle, type RoadVehicle } from "./roadVehicle";
+import { CarInterior } from "./CarInterior";
+import type { CockpitPose } from "./cockpit";
 
 export type MapFocus = {
   token: number;
@@ -176,6 +178,16 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
   const [lineNote, setLineNote] = useState<string | null>(null);
   const [snapNote, setSnapNote] = useState<string | null>(null);
   const [hud, setHud] = useState<VehicleStatus>(IDLE_VEHICLE);
+  const [mapsLibrary, setMapsLibrary] = useState<Maps3dLibrary | null>(null);
+  const cockpitRef = useRef<CockpitPose>({
+    lat: STOCKHOLM_CANDIDATE.camera.center.lat,
+    lng: STOCKHOLM_CANDIDATE.camera.center.lng,
+    headingDegrees: STOCKHOLM_CANDIDATE.camera.headingDegrees,
+    speedKmh: 0,
+    steer: 0,
+    altitude: STOCKHOLM_CANDIDATE.camera.center.altitudeMeters ?? 25,
+    placed: false,
+  });
   const screen = resolveMapScreen({ apiKey, phase, errorMessage });
 
   onReadyChangeRef.current = onReadyChange;
@@ -560,6 +572,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
         host.replaceChildren(mapElement);
         mapRef.current = mapElement;
         libraryRef.current = library;
+        setMapsLibrary(library);
         if (!cancelled && !failed) {
           setPhase("ready");
           setMapVersion((version) => version + 1);
@@ -589,6 +602,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       mapElement?.remove();
       mapRef.current = null;
       libraryRef.current = null;
+      setMapsLibrary(null);
       onReadyChangeRef.current(false);
     };
   }, [apiKey]);
@@ -733,6 +747,16 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
           followRef.current = true;
         }
         const next = advanceFreeVehicle(vehicle, input, dt, network);
+        cockpitRef.current = {
+          lat: next.position.lat,
+          lng: next.position.lng,
+          headingDegrees: next.headingDegrees,
+          speedKmh: next.speedMps * 3.6,
+          steer: input.steer ?? 0,
+          altitude: lookAltitudeRef.current,
+          placed: true,
+        };
+        vehicleViewRef.current?.setVisible(cameraViewRef.current !== "driver");
         if (shouldPrefetch(next.position, areasRef.current)) {
           onExtendRef.current(prefetchCenter(next.position, next.headingDegrees));
         }
@@ -853,7 +877,10 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
 
   return (
     <section className="map-stage" aria-label="3D-karta över Sverige">
-      <div ref={hostRef} className="map-host" />
+      <div className="map-view">
+        <div ref={hostRef} className="map-host" />
+        {cameraView === "driver" ? <CarInterior poseRef={cockpitRef} library={mapsLibrary} /> : null}
+      </div>
       {screen.kind === "loading" ? (
         <div className="map-overlay" role="status">
           Laddar 3D-kartan…
