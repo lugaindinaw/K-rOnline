@@ -418,3 +418,42 @@ export function savedCourseStart(roads: readonly RoadSegment[]): { edgeId: strin
   }
   return best ? { edgeId: best.edgeId, distanceMeters: best.distanceMeters } : null;
 }
+
+export type SavedTurnPlacement = {
+  kind: "left" | "right";
+  edgeId: string;
+  distanceMeters: number;
+  label: string;
+};
+
+/** Starts used to drive the saved copy through a real junction. Not a surveyed curb. */
+export function savedTurnPlacements(roads: readonly RoadSegment[]): SavedTurnPlacement[] {
+  const network = buildRoadNetwork([...roads]);
+  const placements: SavedTurnPlacement[] = [];
+  const left = network.edges.find(
+    (edge) => edge.name === "Regeringsgatan" && edge.followsWay && edge.lengthMeters > 40 && edge.toNode === "180925",
+  );
+  if (left) {
+    placements.push({
+      kind: "left",
+      edgeId: left.id,
+      distanceMeters: Math.max(3, left.lengthMeters - 22),
+      label: "Regeringsgatan, vänstersväng och rakt fram",
+    });
+  }
+  const right = network.edges.find((edge) => {
+    if (edge.name !== "Regeringsgatan" || !edge.followsWay || edge.lengthMeters > 30) {
+      return false;
+    }
+    return (network.outgoing.get(edge.toNode) ?? []).some((out) => out.name === "Jakobsgatan");
+  });
+  if (right) {
+    placements.push({
+      kind: "right",
+      edgeId: right.id,
+      distanceMeters: Math.max(3, right.lengthMeters - 16),
+      label: "Regeringsgatan, högersväng",
+    });
+  }
+  return placements;
+}

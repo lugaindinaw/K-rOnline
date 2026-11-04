@@ -38,6 +38,8 @@ export function CarInterior({ poseRef, library }: CarInteriorProps) {
   const rightMirrorHostRef = useRef<HTMLDivElement>(null);
   const leftMirrorFrameRef = useRef<HTMLDivElement>(null);
   const rightMirrorFrameRef = useRef<HTMLDivElement>(null);
+  const leftLampRef = useRef<HTMLDivElement>(null);
+  const rightLampRef = useRef<HTMLDivElement>(null);
   const mirrorRef = useRef<Map3DViewElement | null>(null);
   const leftMirrorRef = useRef<Map3DViewElement | null>(null);
   const rightMirrorRef = useRef<Map3DViewElement | null>(null);
@@ -165,6 +167,12 @@ export function CarInterior({ poseRef, library }: CarInteriorProps) {
         element.tilt = view.tiltDegrees;
         element.heading = view.headingDegrees;
       }
+      const indicator = pose.indicator ?? "off";
+      const lit = indicator !== "off" && Math.floor(now / 420) % 2 === 0;
+      leftLampRef.current?.classList.toggle("active", indicator === "left");
+      rightLampRef.current?.classList.toggle("active", indicator === "right");
+      leftLampRef.current?.classList.toggle("on", indicator === "left" && lit);
+      rightLampRef.current?.classList.toggle("on", indicator === "right" && lit);
       const overlay = overlayRef.current;
       if (overlay) {
         const anchors = overlay.render({
@@ -173,6 +181,8 @@ export function CarInterior({ poseRef, library }: CarInteriorProps) {
           needleDegrees: motion.needleDegrees,
           pitchDegrees: pitch,
           rollDegrees: roll,
+          indicator,
+          indicatorLit: lit,
         });
         placeAnchor(clusterRef.current, anchors.gauge, 112, 86);
         placeAnchor(rearMirrorRef.current, anchors.rearMirror, 120, 52);
@@ -187,6 +197,8 @@ export function CarInterior({ poseRef, library }: CarInteriorProps) {
 
   return (
     <div ref={rootRef} className={solidCabin ? "cockpit cockpit-world" : "cockpit"} aria-hidden="true">
+      <div ref={leftLampRef} className="cockpit-indicator cockpit-indicator-left" />
+      <div ref={rightLampRef} className="cockpit-indicator cockpit-indicator-right" />
       <div className="cockpit-glass">
         <div className="cockpit-header" />
         <div className="cockpit-pillar cockpit-pillar-left" />

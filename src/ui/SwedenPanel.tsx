@@ -63,6 +63,8 @@ type SwedenPanelProps = {
   onChooseBranch: (index: number) => void;
   onPedal: (pedal: "accelerate" | "brake", pressed: boolean) => void;
   onSteer: (side: "left" | "right", pressed: boolean) => void;
+  onIndicator?: (side: "left" | "right") => void;
+  onPlaceTurn?: (kind: "left" | "right") => void;
   onLoadAtCamera: () => void;
   cameraAvailable: boolean;
   trainingOpen: boolean;
@@ -100,6 +102,8 @@ export function SwedenPanel({
   onChooseBranch,
   onPedal,
   onSteer,
+  onIndicator,
+  onPlaceTurn,
   onLoadAtCamera,
   cameraAvailable,
   trainingOpen,
@@ -193,7 +197,10 @@ export function SwedenPanel({
           uppmätta bredden inte bilen är gränsen osäker. Byggnader känns
           inte av. I en korsning följer bilen den anslutna väg som styrningen
           pekar mot, även en tvär sväng, och den stannar inte av sig själv. Vägval med 1–9 används inte. C eller knappen
-          växlar kameran. Förarvyn sitter i förarens ögonhöjd inne i en tredimensionell bil, med ratt,
+          växlar kameran. Q eller Blinkers vänster, och E eller Blinkers höger, tänder blinkersen.
+          Den slocknar när ratten har vridits åt det hållet och sedan rätats. Väjningsplikt visas bara
+          där OpenStreetMap har en give_way-nod, och ett stopp där registreras som fakta, inte som ett
+          förarprov. Förarvyn sitter i förarens ögonhöjd inne i en tredimensionell bil, med ratt,
           instrumentpanel, vindrutetorkare, sidospeglar och backspegel, i samma perspektiv som kartan. Körbanan ritas som en yta när vägdata finns. Vy bakifrån visar bilen utifrån. Några andra bilar märkta Trafik följer samma vägar, saktar in
           där vägen delar sig och håller avstånd.
         </p>
@@ -243,6 +250,24 @@ export function SwedenPanel({
             Höger
           </button>
         </div>
+        {savedRoads && onPlaceTurn ? (
+          <div className="drive-steering">
+            <button type="button" onClick={() => onPlaceTurn("left")}>
+              Ställ för vänster och rakt
+            </button>
+            <button type="button" onClick={() => onPlaceTurn("right")}>
+              Ställ för höger
+            </button>
+          </div>
+        ) : null}
+        <div className="drive-steering">
+          <button type="button" aria-pressed={vehicle.indicator === "left"} onClick={() => onIndicator?.("left")}>
+            Blinkers vänster
+          </button>
+          <button type="button" aria-pressed={vehicle.indicator === "right"} onClick={() => onIndicator?.("right")}>
+            Blinkers höger
+          </button>
+        </div>
         <button type="button" className="camera-toggle" onClick={onToggleCamera} aria-pressed={cameraView === "driver"}>
           {cameraView === "driver" ? "Vy bakifrån" : "Förarvy"}
         </button>
@@ -254,6 +279,23 @@ export function SwedenPanel({
         ) : (
           <p>Bilen visas på kartan när en körbar väg har laddats.</p>
         )}
+        {vehicle.placed ? (
+          <p className="drive-indicator" role="status">
+            Blinkers: {vehicle.indicator === "left" ? "vänster" : vehicle.indicator === "right" ? "höger" : "av"}
+          </p>
+        ) : null}
+        {vehicle.yieldNote ? <p role="status">{vehicle.yieldNote}</p> : null}
+        {vehicle.driveFactLines && vehicle.driveFactLines.length > 0 ? (
+          <div className="drive-facts">
+            <h3>Registrerat</h3>
+            <p>Fakta för en senare bedömning. Inget förarprov.</p>
+            <ul>
+              {vehicle.driveFactLines.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         {extendNote ? <p role="status">{extendNote}</p> : null}
         {vehicle.message ? <p role="status">{vehicle.message}</p> : null}
         {vehicle.choices.length > 0 ? (

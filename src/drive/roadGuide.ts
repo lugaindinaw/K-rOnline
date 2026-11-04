@@ -40,8 +40,12 @@ export const ESTIMATED_CARRIAGEWAY_BY_CLASS: Record<string, number> = {
 
 export const ESTIMATED_CARRIAGEWAY_METERS = ESTIMATED_CARRIAGEWAY_BY_CLASS.residential ?? 8;
 
-/** How far the play area may flare around a node that joins two OSM ways. Not an intersection survey. */
-export const JUNCTION_DISK_METERS = 16;
+/**
+ * How far the play area may flare around a node that joins two OSM ways.
+ * Not an intersection survey. Kept near the turning room of a passenger car
+ * so a steered exit cannot sweep across the sidewalk.
+ */
+export const JUNCTION_DISK_METERS = 8.5;
 
 /** Distance from a junction node where the play area may flare. Not a wider street. */
 export const JUNCTION_APPROACH_METERS = 24;
@@ -211,6 +215,7 @@ export function followRoadCurve(
   roadAheadDegrees: number,
   steer: number,
   dtSeconds: number,
+  maxDegreesPerSecond = CURVE_ASSIST_DEGREES_PER_SECOND,
 ): number {
   const dt = !Number.isFinite(dtSeconds) || dtSeconds <= 0 ? 0 : Math.min(0.25, dtSeconds);
   const heading = wrapDegrees(headingDegrees);
@@ -223,7 +228,8 @@ export function followRoadCurve(
   }
   const steerAbs = Math.max(0, Math.min(1, Number.isFinite(steer) ? Math.abs(steer) : 0));
   const authority = 1 - 0.8 * steerAbs;
-  const maxStep = CURVE_ASSIST_DEGREES_PER_SECOND * dt * authority;
+  const rate = Number.isFinite(maxDegreesPerSecond) ? Math.max(0, maxDegreesPerSecond) : CURVE_ASSIST_DEGREES_PER_SECOND;
+  const maxStep = rate * dt * authority;
   const step = Math.max(-maxStep, Math.min(maxStep, error * 0.7));
   return wrapDegrees(heading + step);
 }
@@ -308,7 +314,7 @@ export function guideFreePose(
       active.lengthMeters - placement.distanceMeters < 12 &&
       distanceMeters(pose, endPoint) < 18,
   );
-  const endReport = blocked && atEnd && active ? explainContinuation(network, active, 0) : null;
+  const endReport = blocked && atEnd && active ? explainContinuation(network, active, state.steerApplied ?? 0) : null;
   if (endReport && !endReport.followed && !isBoundaryMessage(state.message)) {
     console.info(`[koronline] ${endReport.detail}`);
   }
@@ -318,7 +324,6 @@ export function guideFreePose(
     position: pose,
     headingDegrees: moved.headingDegrees,
     speedMps,
-    offsetMeters: 0,
     edgeId: linked?.id ?? "",
     distanceMeters: placement?.distanceMeters ?? 0,
     roadName: linked?.name ?? null,
@@ -326,7 +331,92 @@ export function guideFreePose(
     choices: [],
     message: messageFor(state.message, offRoad, blocked, speedMps, boundary),
     measurementReliable: ribbon,
+    offsetMeters: linked && placement ? -signedOffsetMeters(linked, pose, placement.distanceMeters) : 0,
   };
+}
+
+const COMMIT_METERS = 18;
+const COMMIT_PREVIEW_METERS = 7;
+const COMMIT_SLACK_FAR_DEGREES = 8;
+const COMMIT_SLACK_NEAR_DEGREES = 36;
+
+/**
+ * While a held steer has a shared-node exit, keep the nose on that road.
+ * Farther out, the incoming road still wins so the car does not cut the corner.
+ * A stopped car is left alone. This does not move the position.
+ */
+function committedTarget(
+  state: VehicleState,
+  steer: number,
+  network: RoadNetwork,
+): { target: number; remaining: number; slack: number } | null {
+  const edge = network.edgesById.get(state.edgeId);
+  if (!edge) {
+    return null;
+  }
+  const distance = placementOnEdge(edge, state.position).distanceMeters;
+  const remaining = edge.lengthMeters - distance;
+  if (remaining > COMMIT_METERS) {
+    return null;
+  }
+  const command = Math.max(-1, Math.min(1, Number.isFinite(steer) ? steer : 0));
+  if (Math.abs(command) <= 0.35) {
+    return null;
+  }
+  const local = pathHeading(null, edge, distance);
+  const next = continuationForSteer(network, edge, local, command);
+  if (!next) {
+    return null;
+  }
+  const nextHeading = pathHeading(null, next, Math.min(12, next.lengthMeters));
+  if (Math.abs(signedDelta(local, nextHeading)) < 18) {
+    return null;
+  }
+  const target =
+    remaining > COMMIT_PREVIEW_METERS
+      ? local
+      : mixHeading(local, nextHeading, 1 - remaining / COMMIT_PREVIEW_METERS);
+  return { target, remaining, slack: commitSlack(remaining) };
+}
+
+/** Far from the node the nose stays on the road the car is still on. */
+function commitSlack(remaining: number): number {
+  if (remaining >= 10) {
+    return COMMIT_SLACK_FAR_DEGREES;
+  }
+  if (remaining <= COMMIT_PREVIEW_METERS) {
+    return COMMIT_SLACK_NEAR_DEGREES;
+  }
+  const span = 10 - COMMIT_PREVIEW_METERS;
+  const blend = span <= 0 ? 1 : (10 - remaining) / span;
+  return COMMIT_SLACK_FAR_DEGREES + (COMMIT_SLACK_NEAR_DEGREES - COMMIT_SLACK_FAR_DEGREES) * blend;
+}
+
+/** A sharp steered exit is close. The car should be near walking pace before the node. */
+export function slowingForTurn(state: VehicleState, steer: number, network: RoadNetwork): boolean {
+  return committedTarget(state, steer, network) != null;
+}
+
+export function headingAfterCommittedTurn(
+  state: VehicleState,
+  movedHeading: number,
+  speedMps: number,
+  steer: number,
+  dtSeconds: number,
+  network: RoadNetwork,
+): number {
+  const heading = wrapDegrees(movedHeading);
+  const committed = committedTarget(state, steer, network);
+  if (!committed || !(speedMps > 0.25)) {
+    return heading;
+  }
+  const rate = Math.min(80, 24 + Math.max(0, speedMps) * 10);
+  const eased = followRoadCurve(heading, committed.target, 0, dtSeconds, rate);
+  const error = signedDelta(committed.target, eased);
+  if (Math.abs(error) <= committed.slack) {
+    return eased;
+  }
+  return wrapDegrees(committed.target + Math.sign(error) * committed.slack);
 }
 
 function allowedEdges(
@@ -509,6 +599,9 @@ function headingAhead(network: RoadNetwork, edge: RoadEdge, distance: number, st
   const turn = Math.abs(signedDelta(local, nextHeading));
   // A sharp sole exit is followed near the node. Starting it early cuts the inside of the street the car is still on.
   let preview = previewMeters(signedDelta(local, nextHeading));
+  if (turn > 20) {
+    preview = Math.min(preview, COMMIT_PREVIEW_METERS);
+  }
   if (Math.abs(steer) <= 0.35 && turn > 45) {
     preview = 8;
   }
@@ -521,13 +614,13 @@ function headingAhead(network: RoadNetwork, edge: RoadEdge, distance: number, st
   return mixHeading(local, nextHeading, approach * steerBlend);
 }
 
-/** A mild bend is followed near the node. A sharp steered exit may begin earlier. */
+/** A bend is followed near the node. Starting a sharp exit early cuts the road the car is still on. */
 function previewMeters(turnDegrees: number): number {
   const turn = Math.abs(turnDegrees);
-  if (turn <= 15) {
-    return 8;
+  if (turn <= 20) {
+    return 10;
   }
-  return Math.min(JUNCTION_CHOICE_METERS, 8 + (turn - 15) * 0.4);
+  return 13;
 }
 
 /** Positive when the car sits to the right of the road direction. */

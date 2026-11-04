@@ -17,7 +17,7 @@ export const MAX_FRAME_SECONDS = 0.25;
 export const YAW_DEGREES_PER_SECOND = 120;
 /** How far the car may sit to either side of the centerline it is already following. */
 export const MAX_LATERAL_METERS = 3.2;
-const STEER_DEGREES_SLOW = 26;
+const STEER_DEGREES_SLOW = 32;
 const STEER_DEGREES_FAST = 11;
 const MAX_TRANSFERS = 32;
 const STOP_SNAP_METERS = 2;
@@ -68,6 +68,12 @@ export type VehicleStatus = {
   message: string | null;
   choices: DriveChoice[];
   mode: VehicleMode | "idle";
+  /** Lit blinker. Absent until the car has been driven in this session. */
+  indicator?: "off" | "left" | "right";
+  /** A real give_way node still ahead. Absent when none is. */
+  yieldNote?: string | null;
+  /** Recorded driving facts. Empty until the car moves. Not a test result. */
+  driveFactLines?: readonly string[];
 };
 
 export const IDLE_VEHICLE: VehicleStatus = {

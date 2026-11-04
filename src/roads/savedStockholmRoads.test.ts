@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { savedCourseStart, savedStockholmRoads } from "./savedStockholmRoads";
+import { savedCourseStart, savedStockholmRoads, savedTurnPlacements } from "./savedStockholmRoads";
 
 describe("saved Stockholm roads", () => {
   it("keeps a real centerline copy near the square and does not invent a width", () => {
@@ -18,5 +18,7 @@ describe("saved Stockholm roads", () => {
     const start = savedCourseStart(area!.roads);
     expect(start).not.toBeNull();
     expect(start!.distanceMeters).toBeGreaterThan(5);
+    const turns = savedTurnPlacements(area!.roads);
+    expect(turns.map((turn) => turn.kind)).toEqual(["left", "right"]);
   });
 });
