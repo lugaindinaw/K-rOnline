@@ -9,6 +9,7 @@ import {
   steerAngleDegrees,
 } from "./drive";
 import { vehicleFromPlacement } from "./drive";
+import { gripLimitedSteerDegrees, MAX_LATERAL_ACCEL_MPS2 } from "./driveFeel";
 import {
   FREE_ROAD_ASSOCIATION_METERS,
   OFF_ROAD_MESSAGE,
@@ -112,7 +113,7 @@ describe("stepFreeVehicle", () => {
     const dt = 0.05;
     const turned = stepFreeVehicle(start, { accelerate: false, brake: false, steer: -1 }, dt);
     const speed = turned.speedMps;
-    const angle = steerAngleDegrees(speed, -1);
+    const angle = gripLimitedSteerDegrees(speed, steerAngleDegrees(speed, -1), FREE_WHEELBASE_METERS);
     const radiansPerSecond = (speed / FREE_WHEELBASE_METERS) * Math.tan((angle * Math.PI) / 180);
     const uncapped = radiansPerSecond * (180 / Math.PI) * dt;
     const cap = YAW_DEGREES_PER_SECOND * dt;
@@ -123,6 +124,21 @@ describe("stepFreeVehicle", () => {
     const traveled = distanceMeters(start.position, turned.position);
     expect(traveled).toBeCloseTo(speed * dt, 3);
     expect(traveled).toBeLessThan(0.5);
+  });
+
+  it("widens the turn at speed so the car stays within passenger-car grip", () => {
+    const dt = 0.05;
+    const slow = stepFreeVehicle(parked(0, 2), { accelerate: false, brake: false, steer: 1 }, dt);
+    const fast = stepFreeVehicle(parked(0, MAX_SPEED_MPS), { accelerate: true, brake: false, steer: 1 }, dt);
+    const slowYaw = Math.abs(signedDelta(0, slow.headingDegrees));
+    const fastYaw = Math.abs(signedDelta(0, fast.headingDegrees));
+    const slowDistance = distanceMeters(parked(0, 2).position, slow.position);
+    const fastDistance = distanceMeters(parked(0, MAX_SPEED_MPS).position, fast.position);
+    expect(slowYaw / slowDistance).toBeGreaterThan(fastYaw / fastDistance);
+    const lateral = (fast.speedMps * fastYaw * Math.PI) / 180 / dt;
+    expect(lateral).toBeLessThanOrEqual(MAX_LATERAL_ACCEL_MPS2 + 0.6);
+    const walking = gripLimitedSteerDegrees(0.4, 26, FREE_WHEELBASE_METERS);
+    expect(walking).toBeCloseTo(26, 5);
   });
 
   it("does not move the car onto a road centerline", () => {

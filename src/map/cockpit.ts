@@ -21,6 +21,8 @@ export type CockpitPose = {
   placed: boolean;
   pitchDegrees: number;
   rollDegrees: number;
+  /** Map tilt while the driver camera is active. 90 looks at the horizon. */
+  viewTiltDegrees: number;
 };
 
 export type CockpitMotion = {
@@ -92,6 +94,23 @@ export function mirrorCamera(car: RoadPoint & { headingDegrees: number }): Mirro
     headingDegrees,
     rangeMeters: MIRROR_RANGE_METERS,
     tiltDegrees: MIRROR_TILT_DEGREES,
+  };
+}
+
+/** A side mirror looks back along that side of the car. Left is the driver's side. */
+export function sideMirrorCamera(
+  car: RoadPoint & { headingDegrees: number },
+  side: "left" | "right",
+): MirrorCamera {
+  const sign = side === "left" ? -1 : 1;
+  const headingDegrees = (((car.headingDegrees + 180 + sign * 16) % 360) + 360) % 360;
+  const look = offset(car, headingDegrees, 16);
+  return {
+    lat: look.lat,
+    lng: look.lng,
+    headingDegrees,
+    rangeMeters: 14,
+    tiltDegrees: 78,
   };
 }
 

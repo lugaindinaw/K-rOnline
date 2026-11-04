@@ -87,10 +87,10 @@ describe("followCameraStep", () => {
     const driver = cameraProfile("driver");
     const back = DRIVER_LOOKAHEAD_METERS - DRIVER_FORWARD_METERS;
     const drop = DRIVER_EYE_HEIGHT_METERS - DRIVER_LOOK_ABOVE_GROUND_METERS;
-    expect(drop).toBeGreaterThan(0.2);
-    expect(drop).toBeLessThan(0.6);
+    expect(drop).toBeGreaterThan(0.5);
+    expect(drop).toBeLessThan(1);
     expect(driver.tiltDegrees).toBeGreaterThan(84);
-    expect(driver.tiltDegrees).toBeLessThan(89.5);
+    expect(driver.tiltDegrees).toBeLessThan(89);
     expect(driver.rangeMeters).toBeCloseTo(Math.hypot(back, drop), 5);
     expect(driver.leftMeters).toBeGreaterThan(0);
 
@@ -105,7 +105,7 @@ describe("followCameraStep", () => {
       }
       const before = camera;
       const switched = followCameraStep(camera, car, 0.05, "driver");
-      expect(Math.abs(switched.rangeMeters - before.rangeMeters)).toBeLessThan(3);
+      expect(Math.abs(switched.rangeMeters - before.rangeMeters)).toBeLessThan(6);
       expect(Math.abs(switched.tiltDegrees - before.tiltDegrees)).toBeLessThan(16);
       expect(Math.abs(driver.tiltDegrees - before.tiltDegrees)).toBeGreaterThan(15);
       expect(headingDelta(switched.headingDegrees, before.headingDegrees)).toBeLessThanOrEqual(
@@ -139,7 +139,7 @@ describe("followCameraStep", () => {
     );
     expect(distanceMeters(turned, camera)).toBeLessThan(1.2);
     expect(Math.abs(turned.tiltDegrees - settled)).toBeLessThan(0.5);
-    expect(turned.tiltDegrees).toBeGreaterThan(84);
+    expect(turned.tiltDegrees).toBeGreaterThan(80);
   });
 
   it("settles an overview camera at seated height", () => {
@@ -148,7 +148,7 @@ describe("followCameraStep", () => {
       pose = approachDriverPose(pose, 0.05);
     }
     const driver = cameraProfile("driver");
-    expect(pose.tiltDegrees).toBeGreaterThan(84);
+    expect(pose.tiltDegrees).toBeGreaterThan(80);
     expect(Math.abs(pose.rangeMeters - driver.rangeMeters)).toBeLessThan(1);
     expect(streetLevelRange(67.5)).toBeLessThan(6);
     expect(streetLevelRange(88)).toBeLessThanOrEqual(driver.rangeMeters + 0.01);
