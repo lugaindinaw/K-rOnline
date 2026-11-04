@@ -23,7 +23,7 @@ describe("cabin mesh", () => {
     }
     const [eyeX, , eyeZ] = CABIN_EYE_LOCAL;
     expect(windshieldOpen([eyeX, 1.2, eyeZ + 4])).toBe(true);
-    expect(windshieldOpen([eyeX, 0.92, 0.82])).toBe(false);
+    expect(windshieldOpen([eyeX, 0.78, 0.74])).toBe(false);
     const needle = cabinBoxesForPose(0, 40).find((part) => part.name === "needle");
     const neutral = cabinBoxes().find((part) => part.name === "needle");
     expect(needle?.center[0]).not.toBe(neutral?.center[0]);

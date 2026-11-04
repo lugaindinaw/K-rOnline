@@ -17,6 +17,7 @@ import {
   type DriveSample,
 } from "../training/approach";
 import { fetchDrivingRoads, roadRequestKey } from "../roads/fetchDrivingRoads";
+import { savedStockholmRoads } from "../roads/savedStockholmRoads";
 import {
   describeSignalCoverage,
   endpointNodeIds,
@@ -88,6 +89,9 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
   const [radiusMeters, setRadiusMeters] = useState<number | null>(null);
   const [areaLabel, setAreaLabel] = useState("Stockholm, startposition");
   const [roadError, setRoadError] = useState<string | null>(null);
+  const [savedRoads, setSavedRoads] = useState(false);
+  const savedRoadsRef = useRef(false);
+  savedRoadsRef.current = savedRoads;
   const [extendNote, setExtendNote] = useState<string | null>(null);
   const [loadingRoads, setLoadingRoads] = useState(true);
   const coverageRef = useRef<StoredArea[]>([]);
@@ -209,6 +213,29 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
     }
     setLoadingRoads(false);
     if (!result.ok) {
+      const saved = savedStockholmRoads(center);
+      if (saved) {
+        setSavedRoads(true);
+        const key = roadRequestKey(saved.center, saved.radiusMeters);
+        applyCoverage(
+          [
+            {
+              key,
+              center: saved.center,
+              radiusMeters: saved.radiusMeters,
+              roads: saved.roads,
+              truncated: saved.truncated,
+              matched: saved.matched,
+              omitted: saved.omitted,
+              signals: saved.signals,
+              signs: saved.signs,
+            },
+          ],
+          center,
+        );
+        return;
+      }
+      setSavedRoads(false);
       setRoads([]);
       setAreas([]);
       setAnchor(null);
@@ -222,6 +249,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
       return;
     }
     const key = roadRequestKey(result.area.center, result.area.radiusMeters);
+    setSavedRoads(result.area.source === "saved-openstreetmap");
     applyCoverage(
       [
         {
@@ -241,6 +269,9 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
   }
 
   async function extendRoads(center: RoadPoint) {
+    if (savedRoadsRef.current) {
+      return;
+    }
     const requestId = requestRef.current;
     if (!isNearCoverage(center, coverageRef.current)) {
       return;
@@ -322,6 +353,14 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
     void loadRoads(startCenter, "Stockholm, startposition");
   }, []);
 
+  useEffect(() => {
+    if (!mapReady || !savedRoads) {
+      return;
+    }
+    setCameraView("driver");
+    mapRef.current?.setCameraView("driver");
+  }, [mapReady, savedRoads]);
+
   return (
     <>
       <SwedenPanel
@@ -350,6 +389,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
           !loadingRoads && !roadError && matched > 0 ? describeSignalCoverage(signals, roads) : null
         }
         signNote={!loadingRoads && !roadError && matched > 0 ? describeSignCoverage(signs) : null}
+        savedRoads={savedRoads}
         vehicle={vehicle}
         onChooseBranch={(index) => {
           mapRef.current?.chooseBranch(index);

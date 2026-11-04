@@ -5,8 +5,8 @@
  */
 
 export const CABIN_EYE_LOCAL: [number, number, number] = [-0.38, 1.25, 0.2];
-export const WHEEL_CENTER_LOCAL: [number, number, number] = [-0.38, 0.98, 0.62];
-export const GAUGE_CENTER_LOCAL: [number, number, number] = [-0.38, 1.02, 0.86];
+export const WHEEL_CENTER_LOCAL: [number, number, number] = [-0.38, 0.96, 0.48];
+export const GAUGE_CENTER_LOCAL: [number, number, number] = [-0.38, 1.0, 0.64];
 export const WHEEL_DIAMETER_METERS = 0.37;
 
 const BODY: [number, number, number] = [0.62, 0.16, 0.08];
@@ -37,6 +37,11 @@ function box(
 function quatZ(degrees: number): [number, number, number, number] {
   const half = (degrees * Math.PI) / 360;
   return [0, 0, Math.sin(half), Math.cos(half)];
+}
+
+function quatX(degrees: number): [number, number, number, number] {
+  const half = (degrees * Math.PI) / 360;
+  return [Math.sin(half), 0, 0, Math.cos(half)];
 }
 
 function wheelRim(): CabinBox[] {
@@ -85,6 +90,55 @@ export function wheelBoxesLocal(): CabinBox[] {
   }));
 }
 
+/** A round rim around the wheel center. Steering rolls it in place. */
+export function wheelRingTriangles(wheelDegrees: number): Array<{
+  corners: [[number, number, number], [number, number, number], [number, number, number]];
+  normal: [number, number, number];
+}> {
+  const major = WHEEL_DIAMETER_METERS / 2 - 0.012;
+  const tube = 0.015;
+  const around = 28;
+  const sides = 8;
+  const [cx, cy, cz] = WHEEL_CENTER_LOCAL;
+  const spin = (wheelDegrees * Math.PI) / 180;
+  const ring: Array<{
+    corners: [[number, number, number], [number, number, number], [number, number, number]];
+    normal: [number, number, number];
+  }> = [];
+  const point = (i: number, j: number): [number, number, number] => {
+    const a = (i / around) * Math.PI * 2 + spin;
+    const b = (j / sides) * Math.PI * 2;
+    const radial: [number, number, number] = [Math.cos(a), Math.sin(a), 0];
+    const tubeDir: [number, number, number] = [
+      Math.cos(a) * Math.cos(b),
+      Math.sin(a) * Math.cos(b),
+      Math.sin(b),
+    ];
+    return [
+      cx + radial[0] * major + tubeDir[0] * tube,
+      cy + radial[1] * major + tubeDir[1] * tube,
+      cz + tubeDir[2] * tube,
+    ];
+  };
+  for (let i = 0; i < around; i += 1) {
+    for (let j = 0; j < sides; j += 1) {
+      const p00 = point(i, j);
+      const p10 = point(i + 1, j);
+      const p11 = point(i + 1, j + 1);
+      const p01 = point(i, j + 1);
+      const normal = point(i, j + 0.5);
+      const nx = normal[0] - cx;
+      const ny = normal[1] - cy;
+      const nz = normal[2] - cz;
+      const length = Math.hypot(nx, ny, nz) || 1;
+      const n: [number, number, number] = [nx / length, ny / length, nz / length];
+      ring.push({ corners: [p00, p10, p11], normal: n });
+      ring.push({ corners: [p00, p11, p01], normal: n });
+    }
+  }
+  return ring;
+}
+
 /** Needle with its origin at the gauge center. Roll turns it across the dial. */
 export function needleBoxLocal(): CabinBox {
   return box("needle", [0, 0.028, 0.02], [0.008, 0.055, 0.008], [0.9, 0.22, 0.16]);
@@ -126,20 +180,20 @@ export function cabinBoxes(wheelDegrees = 0): CabinBox[] {
     box("door-right", [0.9, 0.78, 0.65], [0.08, 0.72, 0.8], BODY),
     box("sill-left", [-0.86, 1.02, 0.7], [0.06, 0.05, 0.6], DASH),
     box("sill-right", [0.86, 1.02, 0.7], [0.06, 0.05, 0.6], DASH),
-    box("dash", [0, 0.92, 0.82], [1.5, 0.28, 0.28], DASH),
-    box("binnacle", [-0.38, 1.0, 0.84], [0.36, 0.1, 0.12], INTERIOR),
+    box("dash", [0, 0.78, 0.74], [1.46, 0.2, 0.28], DASH),
+    box("binnacle", [-0.38, 0.88, 0.68], [0.32, 0.08, 0.1], INTERIOR),
     box("gauge", GAUGE_CENTER_LOCAL, [0.16, 0.16, 0.02], [0.05, 0.12, 0.09]),
     box("console", [0.06, 0.52, 0.42], [0.22, 0.28, 0.55], INTERIOR),
     box("shifter", [0.06, 0.74, 0.38], [0.04, 0.16, 0.04], TRIM),
     box("shifter-knob", [0.06, 0.84, 0.38], [0.06, 0.05, 0.07], [0.2, 0.14, 0.1]),
-    box("hood", [0, 1.02, 1.45], [1.42, 0.07, 1.05], BODY),
-    box("cowl", [0, 1.06, 0.98], [1.46, 0.04, 0.16], BODY),
+    box("hood", [0, 0.62, 1.9], [1.2, 0.03, 0.85], BODY, quatX(5)),
+    box("cowl", [0, 0.7, 1.35], [1.28, 0.025, 0.12], BODY),
     box("mirror-rear", [-0.38, 1.4, 0.78], [0.22, 0.07, 0.04], TRIM),
     box("mirror-glass-rear", [-0.38, 1.39, 0.8], [0.16, 0.045, 0.01], GLASS),
     box("mirror-left", [-0.98, 1.0, 0.42], [0.12, 0.08, 0.18], BODY),
     box("mirror-right", [0.98, 1.0, 0.42], [0.12, 0.08, 0.18], BODY),
-    box("wiper-left", [-0.28, 0.94, 1.0], [0.4, 0.02, 0.025], TRIM, quatZ(18)),
-    box("wiper-right", [0.22, 0.94, 1.02], [0.38, 0.02, 0.025], TRIM, quatZ(-14)),
+    box("wiper-left", [-0.24, 0.66, 1.7], [0.36, 0.01, 0.016], TRIM, quatZ(16)),
+    box("wiper-right", [0.18, 0.66, 1.72], [0.34, 0.01, 0.016], TRIM, quatZ(-12)),
     box("pedal-clutch", [-0.52, 0.22, 0.72], [0.07, 0.14, 0.12], TRIM),
     box("pedal-brake", [-0.4, 0.22, 0.74], [0.07, 0.14, 0.12], TRIM),
     box("pedal-gas", [-0.28, 0.2, 0.7], [0.06, 0.1, 0.16], METAL),

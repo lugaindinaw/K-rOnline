@@ -57,6 +57,8 @@ type SwedenPanelProps = {
   extendNote: string | null;
   signalNote?: string | null;
   signNote?: string | null;
+  /** True when the roads are the saved OpenStreetMap copy, not a live fetch. */
+  savedRoads?: boolean;
   vehicle: VehicleStatus;
   onChooseBranch: (index: number) => void;
   onPedal: (pedal: "accelerate" | "brake", pressed: boolean) => void;
@@ -93,6 +95,7 @@ export function SwedenPanel({
   extendNote,
   signalNote = null,
   signNote = null,
+  savedRoads = false,
   vehicle = IDLE_VEHICLE,
   onChooseBranch,
   onPedal,
@@ -384,7 +387,9 @@ export function SwedenPanel({
             {truncated
               ? `Visar ${roads.length} av ${matched} vägsträckor, högre vägklasser först.`
               : `${roads.length} vägsträckor.`}{" "}
-            Källa: OpenStreetMap.
+            {savedRoads
+              ? "Källa: sparad OpenStreetMap-kopia från Gustav Adolfs torg. Ingen width-tagg finns, så körbanans bredd och korsningsytan är en klassuppskattning, inte en inmätt vägkant."
+              : "Källa: OpenStreetMap."}
           </p>
         ) : null}
         {signalNote ? <p>{signalNote}</p> : null}
