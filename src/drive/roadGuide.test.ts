@@ -213,7 +213,7 @@ describe("guideFreePose", () => {
 
   it("does not treat the junction flare outside the carriageway as a measured distance", () => {
     const before = vehicleFromPlacement({ edge: south, distanceMeters: south.lengthMeters - 6, gapMeters: 0 });
-    const flared = eastOf(before.position, 8);
+    const flared = eastOf(before.position, 7);
     const next = guideFreePose(before, { position: flared, headingDegrees: 0, speedMps: 4 }, network, 0.05);
     expect(next.position).toEqual(flared);
     expect(next.measurementReliable).toBe(false);
@@ -484,20 +484,31 @@ describe("junction steering", () => {
     let state = vehicleFromPlacement({ edge: south, distanceMeters: 8, gapMeters: 0 });
     state = { ...state, position: eastOf(state.position, 1.1) };
     const wanted = steer === 0 ? "Norrgatan" : steer > 0 ? "Östergatan" : "Västergatan";
-    for (let index = 0; index < 220 && state.roadName !== wanted; index += 1) {
+    let maxGap = 0;
+    for (let index = 0; index < 280 && state.roadName !== wanted; index += 1) {
       const linked = network.edgesById.get(state.edgeId);
       const remaining = linked && state.roadName === "Södergatan" ? linked.lengthMeters - state.distanceMeters : 99;
-      const command = steer !== 0 && remaining < 16 ? steer : 0;
-      state = advanceFreeVehicle(state, { accelerate: true, brake: false, steer: command }, 0.05, network);
+      const turning = steer !== 0 && remaining < 20;
+      const easing = turning && state.speedMps > 4.5;
+      state = advanceFreeVehicle(
+        state,
+        { accelerate: !easing, brake: easing, steer: turning ? steer : 0 },
+        0.05,
+        network,
+      );
+      const now = network.edgesById.get(state.edgeId);
+      if (now) {
+        maxGap = Math.max(maxGap, placementOnEdge(now, state.position).gapMeters);
+      }
     }
     for (let index = 0; index < 30; index += 1) {
       state = advanceFreeVehicle(state, { accelerate: true, brake: false, steer: 0 }, 0.05, network);
     }
-    return state;
+    return { state, maxGap };
   }
 
   it("continues straight onto the gentle connection without steering", () => {
-    const state = drive(0);
+    const { state } = drive(0);
     const linked = network.edgesById.get(state.edgeId);
     expect(state.roadName).toBe("Norrgatan");
     expect(state.speedMps).toBeGreaterThan(4);
@@ -530,8 +541,9 @@ describe("junction steering", () => {
   });
 
   it("turns right onto a shared-node street past 45 degrees", () => {
-    const state = drive(1);
+    const { state, maxGap } = drive(1);
     expect(state.roadName).toBe("Östergatan");
+    expect(maxGap).toBeLessThan(7.5);
     expect(state.speedMps).toBeGreaterThan(4);
     expect(state.message).toBeNull();
     const linked = network.edgesById.get(state.edgeId);
@@ -613,8 +625,9 @@ describe("junction steering", () => {
   });
 
   it("turns left onto a shared-node street past 45 degrees", () => {
-    const state = drive(-1);
+    const { state, maxGap } = drive(-1);
     expect(state.roadName).toBe("Västergatan");
+    expect(maxGap).toBeLessThan(7.5);
     expect(state.speedMps).toBeGreaterThan(4);
     expect(state.message).toBeNull();
     const linked = network.edgesById.get(state.edgeId);

@@ -374,6 +374,35 @@ summary {
   color: #f4f1ea;
 }
 
+.cockpit-indicator {
+  position: absolute;
+  z-index: 4;
+  bottom: 36%;
+  width: 42px;
+  height: 18px;
+  border-radius: 3px;
+  background: rgba(42, 28, 10, 0.55);
+  border: 1px solid rgba(255, 176, 0, 0.4);
+}
+
+.cockpit-indicator-left {
+  left: 14%;
+}
+
+.cockpit-indicator-right {
+  right: 14%;
+}
+
+.cockpit-indicator.active {
+  background: #ffb000;
+  border-color: #ffe0a0;
+  box-shadow: 0 0 18px 4px rgba(255, 176, 0, 0.9);
+}
+
+.cockpit-indicator.active:not(.on) {
+  opacity: 0.4;
+}
+
 .cockpit-canvas {
   position: absolute;
   inset: 0;

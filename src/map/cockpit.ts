@@ -23,6 +23,8 @@ export type CockpitPose = {
   rollDegrees: number;
   /** Map tilt while the driver camera is active. 90 looks at the horizon. */
   viewTiltDegrees: number;
+  /** Lit turn indicator. Absent means off. */
+  indicator?: "off" | "left" | "right";
 };
 
 export type CockpitMotion = {

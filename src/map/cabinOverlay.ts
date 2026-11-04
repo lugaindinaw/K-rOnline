@@ -5,6 +5,8 @@ export type CabinFrame = CabinLean & {
   tiltDegrees: number;
   wheelDegrees: number;
   needleDegrees: number;
+  indicator?: "off" | "left" | "right";
+  indicatorLit?: boolean;
 };
 
 export type ScreenAnchor = {
@@ -159,6 +161,15 @@ export function mountCabinOverlay(host: HTMLElement): CabinOverlay | null {
       const parts = visibleCabinParts(frame.wheelDegrees, frame.needleDegrees).filter(
         (part) => part.name !== "wheel-rim",
       );
+      if (frame.indicatorLit && (frame.indicator === "left" || frame.indicator === "right")) {
+        const side = frame.indicator === "left" ? -1 : 1;
+        parts.push({
+          name: "indicator",
+          center: [side * 0.62, 1.02, 0.86],
+          size: [0.1, 0.035, 0.05],
+          color: [1, 0.62, 0.05],
+        });
+      }
       const packed = packCabin(parts, frame.tiltDegrees, aspect, lean);
       packed.push(...packRing(frame.wheelDegrees, frame.tiltDegrees, aspect, lean));
       const combined = new Float32Array(packed);

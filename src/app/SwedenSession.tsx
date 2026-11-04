@@ -17,7 +17,7 @@ import {
   type DriveSample,
 } from "../training/approach";
 import { fetchDrivingRoads, roadRequestKey } from "../roads/fetchDrivingRoads";
-import { savedStockholmRoads } from "../roads/savedStockholmRoads";
+import { savedStockholmRoads, savedTurnPlacements } from "../roads/savedStockholmRoads";
 import {
   describeSignalCoverage,
   endpointNodeIds,
@@ -399,6 +399,18 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
         }}
         onSteer={(side, pressed) => {
           mapRef.current?.setSteer(side, pressed);
+        }}
+        onIndicator={(side) => {
+          mapRef.current?.setIndicator(side);
+        }}
+        onPlaceTurn={(kind) => {
+          const start = savedTurnPlacements(roads).find((item) => item.kind === kind);
+          if (!start) {
+            return;
+          }
+          mapRef.current?.placeAlong(start.edgeId, start.distanceMeters);
+          mapRef.current?.setCameraView("driver");
+          setCameraView("driver");
         }}
         cameraAvailable={Boolean(apiKey) && mapReady}
         trainingOpen={trainingOpen}

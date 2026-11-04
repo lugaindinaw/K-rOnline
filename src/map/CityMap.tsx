@@ -36,6 +36,8 @@ import { placeSignalHeads, signalLampColor } from "./signalPosts";
 import { mountSignBoard, mountSignalLamp, syncById, type SignalLamp } from "./streetFurniture";
 import type { DriveSample } from "../training/approach";
 import { observeDrive } from "../training/driveObservation";
+import { driveFactsText, EMPTY_DRIVE_FACTS, noteDriveFrame, yieldAheadNote, type DriveFacts } from "../training/driveFacts";
+import { INDICATOR_OFF, stepIndicator, toggleIndicator, type IndicatorMotion } from "../drive/indicators";
 import {
   installGoogleMapFailureHook,
   subscribeGoogleMapFailure,
@@ -75,6 +77,7 @@ export type SwedenMapHandle = {
   chooseBranch: (index: number) => void;
   setPedal: (pedal: "accelerate" | "brake", pressed: boolean) => void;
   setSteer: (side: "left" | "right", pressed: boolean) => void;
+  setIndicator: (side: "left" | "right") => void;
   placeAlong: (edgeId: string, distanceMeters: number) => boolean;
   setCameraView: (view: CameraView) => void;
 };
@@ -202,6 +205,8 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
   const [mapsLibrary, setMapsLibrary] = useState<Maps3dLibrary | null>(null);
   const surfacesRef = useRef<Array<{ remove: () => void }>>([]);
   const observationRef = useRef<ReturnType<typeof observeDrive> | null>(null);
+  const indicatorRef = useRef<IndicatorMotion>(INDICATOR_OFF);
+  const factsRef = useRef<DriveFacts>(EMPTY_DRIVE_FACTS);
   const signsRef = useRef(signs);
   const signalsRef = useRef(signals);
   signsRef.current = signs;
@@ -291,7 +296,12 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
 
   const publishRef = useRef<(state: VehicleState | null, message?: string | null) => void>(() => undefined);
   publishRef.current = (state, message) => {
-    const status = vehicleStatus(state, message);
+    const status = {
+      ...vehicleStatus(state, message),
+      indicator: indicatorRef.current.state,
+      yieldNote: yieldAheadNote(factsRef.current),
+      driveFactLines: state ? driveFactsText(factsRef.current) : [],
+    };
     const signature = JSON.stringify(status);
     if (signature === signatureRef.current) {
       return;
@@ -412,6 +422,9 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     setSteer(side, pressed) {
       steerHoldRef.current[side] = pressed;
     },
+    setIndicator(side) {
+      indicatorRef.current = { state: toggleIndicator(indicatorRef.current.state, side), armed: false };
+    },
     setCameraView(view) {
       cameraViewRef.current = view;
       cameraJobRef.current += 1;
@@ -436,6 +449,10 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       const distance = Math.min(edge.lengthMeters, Math.max(0, distanceMeters));
       const placed = vehicleFromPlacement({ edge, distanceMeters: distance, gapMeters: 0 });
       followRef.current = false;
+      indicatorRef.current = INDICATOR_OFF;
+      factsRef.current = EMPTY_DRIVE_FACTS;
+      pedalsRef.current = { accelerate: false, brake: false };
+      steerHoldRef.current = { left: false, right: false };
       vehicleRef.current = placed;
       if (!vehicleViewRef.current) {
         vehicleViewRef.current = mountRoadVehicle(map, library);
@@ -472,8 +489,12 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
                       ? "ArrowLeft"
                       : event.key === "ArrowRight"
                         ? "ArrowRight"
-                        : event.key === "c" || event.key === "C"
-                          ? "KeyC"
+            : event.key === "q" || event.key === "Q"
+              ? "KeyQ"
+              : event.key === "e" || event.key === "E"
+                ? "KeyE"
+                : event.key === "c" || event.key === "C"
+                  ? "KeyC"
                           : event.key >= "1" && event.key <= "9"
                             ? `Digit${event.key}`
                             : "");
@@ -485,6 +506,14 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
         code === "KeyC"
       ) {
         event.preventDefault();
+      }
+      if (code === "KeyQ" || code === "KeyE") {
+        event.preventDefault();
+        if (!event.repeat) {
+          const side = code === "KeyQ" ? "left" : "right";
+          indicatorRef.current = { state: toggleIndicator(indicatorRef.current.state, side), armed: false };
+        }
+        return;
       }
       if (code === "KeyC") {
         if (!event.repeat) {
@@ -782,6 +811,8 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       vehicleViewRef.current?.remove();
       vehicleViewRef.current = null;
       vehicleRef.current = null;
+      indicatorRef.current = INDICATOR_OFF;
+      factsRef.current = EMPTY_DRIVE_FACTS;
       publishRef.current(null, explained.message);
       bindTraffic(anchor);
       return;
@@ -791,6 +822,8 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     if (explained.message) {
       placed.message = explained.message;
     }
+    indicatorRef.current = INDICATOR_OFF;
+    factsRef.current = EMPTY_DRIVE_FACTS;
     vehicleRef.current = placed;
     const view = mountRoadVehicle(map, library);
     vehicleViewRef.current = view;
@@ -871,6 +904,19 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
           followRef.current = true;
         }
         const next = advanceFreeVehicle(vehicle, input, dt, network);
+        indicatorRef.current = stepIndicator(indicatorRef.current, next.steerApplied ?? 0);
+        factsRef.current = noteDriveFrame(factsRef.current, {
+          position: next.position,
+          headingDegrees: next.headingDegrees,
+          speedMps: next.speedMps,
+          brake: input.brake,
+          steer: next.steerApplied ?? 0,
+          offsetMeters: next.offsetMeters,
+          indicator: indicatorRef.current.state,
+          giveWay: signsRef.current
+            .filter((sign) => sign.kind === "give_way")
+            .map((sign) => ({ id: sign.id, position: sign.position })),
+        });
         const body = bodyAttitude(next.accelMps2 ?? 0, next.steerApplied ?? 0, next.speedMps);
         cockpitRef.current = {
           lat: next.position.lat,
@@ -878,6 +924,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
           headingDegrees: next.headingDegrees,
           speedKmh: next.speedMps * 3.6,
           steer: next.steerApplied ?? 0,
+          indicator: indicatorRef.current.state,
           altitude: lookAltitudeRef.current,
           placed: true,
           pitchDegrees: body.pitchDegrees,
@@ -999,6 +1046,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
           traffic: trafficRef.current.map((car) => car.position),
           signs: signsRef.current,
           signals: signalsRef.current.map((signal) => signal.position),
+          indicator: indicatorRef.current.state,
         });
       }
       frame = requestAnimationFrame(tick);

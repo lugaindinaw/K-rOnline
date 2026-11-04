@@ -10,6 +10,8 @@ import {
 } from "./drive";
 import {
   guideFreePose,
+  headingAfterCommittedTurn,
+  slowingForTurn,
   headingForFreeStep,
   OFF_ROAD_MESSAGE as GUIDE_OFF_ROAD_MESSAGE,
   FREE_ROAD_ASSOCIATION_METERS as GUIDE_ASSOCIATION_METERS,
@@ -103,8 +105,21 @@ export function advanceFreeVehicle(
     { ...input, steer: steerApplied },
     dtSeconds,
   );
+  const committedHeading = headingAfterCommittedTurn(
+    state,
+    moved.headingDegrees,
+    moved.speedMps,
+    commanded,
+    dtSeconds,
+    network,
+  );
+  const dt = !Number.isFinite(dtSeconds) || dtSeconds <= 0 ? 0 : Math.min(0.25, dtSeconds);
+  const speedMps =
+    slowingForTurn(state, commanded, network) && moved.speedMps > 3.6
+      ? Math.max(3.2, moved.speedMps - 6 * dt)
+      : moved.speedMps;
   return {
-    ...guideFreePose(state, moved, network, dtSeconds),
+    ...guideFreePose(state, { ...moved, headingDegrees: committedHeading, speedMps }, network, dtSeconds),
     steerApplied,
     accelMps2: moved.accelMps2,
   };
