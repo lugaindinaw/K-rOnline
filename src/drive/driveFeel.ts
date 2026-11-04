@@ -4,6 +4,8 @@ import { ACCEL_MPS2, BRAKE_MPS2, COAST_MPS2, MAX_SPEED_MPS, type DriveInput } fr
 export const STEER_RESPONSE_PER_SECOND = 5.5;
 /** How fast the gas and brake force may change, in m/s³. */
 export const LONGITUDINAL_JERK_MPS3 = 18;
+/** Sideways acceleration a passenger car can hold through a bend, in m/s². */
+export const MAX_LATERAL_ACCEL_MPS2 = 5.5;
 export const BODY_PITCH_MAX_DEGREES = 1.6;
 export const BODY_ROLL_MAX_DEGREES = 2.4;
 
@@ -26,6 +28,24 @@ function finiteDt(dtSeconds: number): number {
     return 0;
   }
   return Math.min(0.25, dtSeconds);
+}
+
+/**
+ * Full lock only fits at low speed. Above walking pace the steer angle is
+ * reduced so the turn stays inside a passenger car's sideways grip.
+ */
+export function gripLimitedSteerDegrees(speedMps: number, steerDegrees: number, wheelbaseMeters: number): number {
+  if (!Number.isFinite(steerDegrees) || steerDegrees === 0) {
+    return 0;
+  }
+  const speed = Math.max(0, Number.isFinite(speedMps) ? speedMps : 0);
+  const wheelbase = Math.max(0.5, Number.isFinite(wheelbaseMeters) ? wheelbaseMeters : 0.5);
+  if (speed < 1) {
+    return steerDegrees;
+  }
+  const maxTan = (MAX_LATERAL_ACCEL_MPS2 * wheelbase) / (speed * speed);
+  const maxAngle = (Math.atan(Math.max(0, maxTan)) * 180) / Math.PI;
+  return clamp(steerDegrees, -maxAngle, maxAngle);
 }
 
 export function clampSteer(steer: number): number {

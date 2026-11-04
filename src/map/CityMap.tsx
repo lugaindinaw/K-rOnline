@@ -35,6 +35,7 @@ import { refreshTraffic, stepTraffic, type TrafficCar } from "../traffic/traffic
 import { placeSignalHeads, signalLampColor } from "./signalPosts";
 import { mountSignBoard, mountSignalLamp, syncById, type SignalLamp } from "./streetFurniture";
 import type { DriveSample } from "../training/approach";
+import { observeDrive } from "../training/driveObservation";
 import {
   installGoogleMapFailureHook,
   subscribeGoogleMapFailure,
@@ -44,7 +45,9 @@ import { publicMapError, resolveMapScreen, type MapPhase } from "./mapScreen";
 import type { Map3DViewElement, Maps3dLibrary } from "./maps3dTypes";
 import {
   CHASE_TILT_DEGREES,
+  CHASE_VERTICAL_FOV_DEGREES,
   DRIVER_LOOK_ABOVE_GROUND_METERS,
+  DRIVER_VERTICAL_FOV_DEGREES,
   approachDriverPose,
   claimCameraJob,
   followCameraFromView,
@@ -55,9 +58,11 @@ import {
 } from "./followCamera";
 import { createRoadOverlays, type RoadLine } from "./roadOverlays";
 import { mountRoadVehicle, mountTrafficVehicle, type RoadVehicle } from "./roadVehicle";
-import { bodyAttitude } from "../drive/driveFeel";
-import { CarInterior } from "./CarInterior";
+import { mountRoadSurfaces, roadSurfaces, selectSurfaceRoads } from "./roadSurface";
 import type { CockpitPose } from "./cockpit";
+import { bodyAttitude } from "../drive/driveFeel";
+import { clearanceOf } from "../drive/roadGuide";
+import { CarInterior } from "./CarInterior";
 
 export type MapFocus = {
   token: number;
@@ -195,6 +200,12 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
   const [snapNote, setSnapNote] = useState<string | null>(null);
   const [hud, setHud] = useState<VehicleStatus>(IDLE_VEHICLE);
   const [mapsLibrary, setMapsLibrary] = useState<Maps3dLibrary | null>(null);
+  const surfacesRef = useRef<Array<{ remove: () => void }>>([]);
+  const observationRef = useRef<ReturnType<typeof observeDrive> | null>(null);
+  const signsRef = useRef(signs);
+  const signalsRef = useRef(signals);
+  signsRef.current = signs;
+  signalsRef.current = signals;
   const cockpitRef = useRef<CockpitPose>({
     lat: STOCKHOLM_CANDIDATE.camera.center.lat,
     lng: STOCKHOLM_CANDIDATE.camera.center.lng,
@@ -205,6 +216,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     placed: false,
     pitchDegrees: 0,
     rollDegrees: 0,
+    viewTiltDegrees: 86,
   });
   const screen = resolveMapScreen({ apiKey, phase, errorMessage });
 
@@ -659,6 +671,10 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
         line.remove();
       }
       linesRef.current = [];
+      for (const surface of surfacesRef.current) {
+        surface.remove();
+      }
+      surfacesRef.current = [];
       vehicleViewRef.current?.remove();
       vehicleViewRef.current = null;
       vehicleRef.current = null;
@@ -678,6 +694,10 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     if (!map || !library || phase !== "ready") {
       return;
     }
+    for (const surface of surfacesRef.current) {
+      surface.remove();
+    }
+    surfacesRef.current = [];
     for (const line of linesRef.current) {
       line.remove();
     }
@@ -686,17 +706,33 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       setLineNote(null);
       return;
     }
-    if (typeof library.Polyline3DElement !== "function") {
-      setLineNote("Vägdata är hämtad. 3D-linjerna kunde inte skapas.");
-      return;
+    if (typeof library.Polygon3DElement === "function") {
+      try {
+        const surfaces = roadSurfaces(roads, anchor);
+        surfacesRef.current = mountRoadSurfaces(map, library.Polygon3DElement, surfaces);
+      } catch {
+        surfacesRef.current = [];
+      }
     }
-    try {
-      linesRef.current = createRoadOverlays(map, library.Polyline3DElement, roads);
+    const covered = new Set(surfacesRef.current.length > 0 ? selectSurfaceRoads(roads, anchor).map((road) => road.id) : []);
+    const stroked = covered.size > 0 ? roads.filter((road) => !covered.has(road.id)) : roads;
+    if (typeof library.Polyline3DElement === "function" && stroked.length > 0) {
+      try {
+        linesRef.current = createRoadOverlays(map, library.Polyline3DElement, stroked);
+      } catch {
+        linesRef.current = [];
+      }
+    }
+    if (surfacesRef.current.length > 0) {
+      setLineNote(`${covered.size} vägytor med körbana och vägmarkering ligger på terrängen.`);
+    } else if (linesRef.current.length > 0) {
       setLineNote(`${linesRef.current.length} väglinjer ligger på marken i vyn.`);
-    } catch {
+    } else if (typeof library.Polyline3DElement !== "function") {
+      setLineNote("Vägdata är hämtad. 3D-linjerna kunde inte skapas.");
+    } else {
       setLineNote("Vägdata är hämtad. 3D-linjerna kunde inte ritas.");
     }
-  }, [roads, phase, mapVersion]);
+  }, [roads, anchor, phase, mapVersion]);
 
   useEffect(() => {
     const carried = carryRef.current;
@@ -845,6 +881,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
           placed: true,
           pitchDegrees: body.pitchDegrees,
           rollDegrees: body.rollDegrees,
+          viewTiltDegrees: cockpitRef.current.viewTiltDegrees,
         };
         vehicleViewRef.current?.setVisible(cameraViewRef.current !== "driver");
         if (shouldPrefetch(next.position, areasRef.current)) {
@@ -942,6 +979,27 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
           roadDistanceReliable: current.measurementReliable === true,
         });
       }
+      const liveMap = mapRef.current;
+      if (liveMap) {
+        liveMap.fov = cameraViewRef.current === "driver" ? DRIVER_VERTICAL_FOV_DEGREES : CHASE_VERTICAL_FOV_DEGREES;
+        if (cameraViewRef.current === "driver" && typeof liveMap.tilt === "number") {
+          cockpitRef.current = { ...cockpitRef.current, viewTiltDegrees: liveMap.tilt };
+        }
+      }
+      const observed = vehicleRef.current;
+      const observedEdge = observed ? networkRef.current?.edgesById.get(observed.edgeId) : undefined;
+      if (observed) {
+        observationRef.current = observeDrive({
+          position: observed.position,
+          headingDegrees: observed.headingDegrees,
+          speedMps: observed.speedMps,
+          offsetMeters: observed.offsetMeters,
+          roadHalfMeters: observedEdge ? clearanceOf(observedEdge).roadHalf : null,
+          traffic: trafficRef.current.map((car) => car.position),
+          signs: signsRef.current,
+          signals: signalsRef.current.map((signal) => signal.position),
+        });
+      }
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
@@ -996,7 +1054,9 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     <section className="map-stage" aria-label="3D-karta över Sverige">
       <div className="map-view">
         <div ref={hostRef} className="map-host" />
-        {cameraView === "driver" ? <CarInterior poseRef={cockpitRef} library={mapsLibrary} /> : null}
+        {cameraView === "driver" ? (
+          <CarInterior poseRef={cockpitRef} library={mapsLibrary} />
+        ) : null}
       </div>
       {screen.kind === "loading" ? (
         <div className="map-overlay" role="status">

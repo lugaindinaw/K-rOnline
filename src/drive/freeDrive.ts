@@ -14,7 +14,7 @@ import {
   OFF_ROAD_MESSAGE as GUIDE_OFF_ROAD_MESSAGE,
   FREE_ROAD_ASSOCIATION_METERS as GUIDE_ASSOCIATION_METERS,
 } from "./roadGuide";
-import { clampSteer, easeAccel, easeSteer, speedAfterAccel } from "./driveFeel";
+import { clampSteer, easeAccel, easeSteer, gripLimitedSteerDegrees, speedAfterAccel } from "./driveFeel";
 
 export const FREE_ROAD_ASSOCIATION_METERS = GUIDE_ASSOCIATION_METERS;
 export const OFF_ROAD_MESSAGE = GUIDE_OFF_ROAD_MESSAGE;
@@ -146,7 +146,7 @@ function turnBySteer(headingDegrees: number, speedMps: number, input: DriveInput
 }
 
 function yawDegrees(speedMps: number, steer: number, dt: number): number {
-  const angle = steerAngleDegrees(speedMps, steer);
+  const angle = gripLimitedSteerDegrees(speedMps, steerAngleDegrees(speedMps, steer), FREE_WHEELBASE_METERS);
   const radiansPerSecond = (Math.max(0, speedMps) / FREE_WHEELBASE_METERS) * Math.tan((angle * Math.PI) / 180);
   const degrees = radiansPerSecond * (180 / Math.PI) * dt;
   const cap = YAW_DEGREES_PER_SECOND * dt;

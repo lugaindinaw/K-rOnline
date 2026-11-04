@@ -11,6 +11,8 @@ export type Map3DViewElement = HTMLElement & {
   range?: number;
   tilt?: number;
   heading?: number;
+  /** Vertical field of view in degrees. The Maps default is 35. */
+  fov?: number;
   flyCameraTo?: (options: {
     endCamera: {
       center: { lat: number; lng: number; altitude: number };
@@ -38,7 +40,7 @@ export type Model3DOptions = {
   position?: { lat: number; lng: number; altitude?: number };
   orientation?: { heading: number; tilt: number; roll: number };
   scale?: number;
-  altitudeMode?: "CLAMP_TO_GROUND";
+  altitudeMode?: "CLAMP_TO_GROUND" | "ABSOLUTE" | "RELATIVE_TO_GROUND" | "RELATIVE_TO_MESH";
 };
 
 export type Model3DView = HTMLElement & Model3DOptions;
@@ -53,9 +55,25 @@ export type Marker3DOptions = {
 
 export type Marker3DView = HTMLElement & Marker3DOptions;
 
+export type Polygon3DOptions = {
+  fillColor?: string;
+  strokeColor?: string;
+  strokeWidth?: number;
+  altitudeMode?: "CLAMP_TO_GROUND" | "ABSOLUTE" | "RELATIVE_TO_GROUND" | "RELATIVE_TO_MESH";
+  drawsOccludedSegments?: boolean;
+  geodesic?: boolean;
+  zIndex?: number;
+};
+
+export type Polygon3DView = HTMLElement &
+  Polygon3DOptions & {
+    path?: Array<{ lat: number; lng: number; altitude?: number }>;
+  };
+
 export type Maps3dLibrary = {
   Map3DElement: new (options?: Map3DConstructorOptions) => Map3DViewElement;
   Polyline3DElement?: new (options?: Polyline3DOptions) => HTMLElement;
+  Polygon3DElement?: new (options?: Polygon3DOptions) => Polygon3DView;
   Model3DElement?: new (options?: Model3DOptions) => Model3DView;
   Marker3DElement?: new (options?: Marker3DOptions) => Marker3DView;
 };

@@ -18,6 +18,7 @@ describe("CarInterior", () => {
             placed: false,
             pitchDegrees: 0,
             rollDegrees: 0,
+            viewTiltDegrees: 86,
           },
         }}
       />,

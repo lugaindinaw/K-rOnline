@@ -18,8 +18,15 @@ export const CAMERA_LOOKAHEAD_METERS = CHASE_LOOKAHEAD_METERS;
  * so the view runs forward instead of down onto the city.
  */
 export const DRIVER_EYE_HEIGHT_METERS = 1.25;
-export const DRIVER_LOOK_ABOVE_GROUND_METERS = 0.9;
-export const DRIVER_LOOKAHEAD_METERS = 14;
+/**
+ * The look sits just under the horizon so the road fills the lower windshield.
+ * The cabin itself is drawn in front of the map, so this point is the road, not the hood.
+ */
+export const DRIVER_LOOK_ABOVE_GROUND_METERS = 0.55;
+export const DRIVER_LOOKAHEAD_METERS = 12;
+/** Vertical field of view in the driver camera. Wide enough that the left pillar reaches the frame. */
+export const DRIVER_VERTICAL_FOV_DEGREES = 55;
+export const CHASE_VERTICAL_FOV_DEGREES = 35;
 export const DRIVER_FORWARD_METERS = 0.2;
 export const DRIVER_LEFT_METERS = 0.38;
 export const CAMERA_YAW_DEGREES_PER_SECOND = 110;
