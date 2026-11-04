@@ -198,8 +198,31 @@ dialog { border: 0; border-radius: 18px; padding: 0; }
 dialog::backdrop { background: rgba(30, 42, 50, 0.45); }
 .dialog-card { padding: 1.2rem; max-width: 28rem; }
 
+.student-rule { font-size: clamp(2rem, 5vw, 3.4rem); }
+.small-rule { font-size: 1.7rem; }
+.say { font-size: 1.25rem; }
+.big-choice { min-height: 88px; font-size: 1.35rem; justify-content: center; }
+.split { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(240px, 0.7fr); gap: 1rem; align-items: start; }
+.teacher-card { background: #f6efe2; }
+.shop { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.8rem; align-items: stretch; }
+.shop-card { min-width: 0; border: 1px solid var(--line); border-radius: 16px; padding: 1rem; background: #fff; display: flex; flex-direction: column; gap: 0.35rem; }
+.shop-card .primary { width: 100%; }
+.shop-whole { outline: 3px solid var(--amber); }
+.price { font-family: Fraunces, Georgia, serif; font-size: 2rem; margin: 0.2rem 0; }
+.order-form { display: grid; gap: 0.55rem; margin-top: auto; padding-top: 0.6rem; }
+.order-form label { display: grid; gap: 0.2rem; }
+.order-form input[type="text"], .order-form input[type="tel"] {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  padding: 0.4rem 0.6rem;
+}
+.sign-big .sign { width: 140px; height: 140px; }
+
 @media (max-width: 800px) {
   .top { align-items: flex-start; flex-direction: column; }
-  .exam-layout { grid-template-columns: 1fr; }
+  .exam-layout, .split { grid-template-columns: 1fr; }
   .grid { grid-template-columns: repeat(8, 1fr); }
 }

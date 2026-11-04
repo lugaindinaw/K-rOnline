@@ -101,6 +101,7 @@ export const lessons = {
         "Du har 50 minuter.",
         "Ett alternativ är rätt på varje fråga.",
         "Ett godkänt prov gäller i ett år om du gör det från och med 19 augusti 2026. Innan dess gällde fyra månader.",
+        "Båda delarna av riskutbildningen ska vara gjorda och giltiga innan kunskapsprovet.",
       ] },
       { type: "h", text: "De fem områdena" },
       { type: "p", text: "Frågorna fördelas ungefär så här: trafikregler 32, trafiksäkerhet 16, fordonskännedom 7, miljö 5 och personliga förutsättningar 5. Därför räcker det inte att bara lära sig skyltar." },

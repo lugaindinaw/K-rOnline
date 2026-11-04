@@ -2,7 +2,7 @@
   "name": "kronline-teorikurs",
   "private": true,
   "type": "module",
-  "description": "Egen teorikurs för körkortsbehörighet B, med övning och prov i Trafikverkets format.",
+  "description": "Teorikurs i små steg för behörighet B, med paket att beställa och korta träffar.",
   "scripts": {
     "test": "node --test",
     "start": "python3 -m http.server 4173"

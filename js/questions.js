@@ -33,12 +33,12 @@ export const questions = [
     "När ska riskutbildning del 1 och del 2 vara klara?",
     [
       "Innan du får övningsköra privat en enda gång.",
-      "Innan kunskapsprovet. Annars får du inte boka teori.",
-      "Innan körprovet. Du kan göra kunskapsprovet först.",
+      "Båda delarna ska vara gjorda och giltiga innan kunskapsprovet.",
+      "Bara innan körprovet. Teoriprovet får du göra först.",
       "De är frivilliga om du redan har körkortstillstånd.",
     ],
-    2,
-    "Båda delarna av riskutbildningen ska vara gjorda innan körprovet. Kunskapsprovet får du göra innan riskutbildningarna."),
+    1,
+    "Transportstyrelsen kräver båda delarna innan förarprovet. Det gäller kunskapsprovet också, inte bara körprovet. Det kan ta några dagar innan utbildaren rapport syns."),
 
   q("m-04", "meta", "provet",
     "Vad krävs för att du ska få övningsköra privat med personbil?",

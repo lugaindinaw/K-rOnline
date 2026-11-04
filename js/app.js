@@ -17,9 +17,22 @@ import {
 } from "./logic.js";
 import { questions } from "./questions.js";
 import { signSvg } from "./signs.js";
+import {
+  courseLessons,
+  formatPrice,
+  isLessonOpen,
+  lessonById,
+  lessonsInPackage,
+  nextOpenLesson,
+  packageById,
+  packageProgress,
+  packages,
+  unlockedIds,
+} from "./packages.js";
 
 const STORAGE_KEY = "kronline-teori-v1";
 const EXAM_KEY = "kronline-exam-v1";
+const COURSE_KEY = "kronline-course-v1";
 
 const state = {
   view: "home",
@@ -32,6 +45,7 @@ const state = {
 };
 
 let progress = loadProgress();
+let course = loadCourse();
 let clock = null;
 
 const main = document.querySelector("#innehall");
@@ -48,6 +62,20 @@ if (bankErrors.length) {
 } else {
   restoreExam();
   render();
+}
+
+function loadCourse() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(COURSE_KEY) || "null");
+    if (!saved) return { orders: [], done: {} };
+    return { orders: saved.orders || [], done: saved.done || {} };
+  } catch {
+    return { orders: [], done: {} };
+  }
+}
+
+function saveCourse() {
+  localStorage.setItem(COURSE_KEY, JSON.stringify(course));
 }
 
 function loadProgress() {
@@ -72,18 +100,16 @@ function saveProgress() {
 function restoreExam() {
   try {
     const saved = JSON.parse(sessionStorage.getItem(EXAM_KEY) || "null");
-    if (!saved) return;
-    const examQuestions = saved.ids
-      .map((id) => questions.find((question) => question.id === id))
-      .filter(Boolean);
-    if (examQuestions.length !== saved.ids.length) return;
+    if (!saved?.questions?.length) {
+      sessionStorage.removeItem(EXAM_KEY);
+      return;
+    }
     state.exam = {
-      questions: examQuestions,
+      questions: saved.questions,
       index: saved.index || 0,
       answers: saved.answers || {},
       startedAt: saved.startedAt,
     };
-    state.view = "exam";
   } catch {
     sessionStorage.removeItem(EXAM_KEY);
   }
@@ -97,7 +123,7 @@ function persistExam() {
   sessionStorage.setItem(
     EXAM_KEY,
     JSON.stringify({
-      ids: state.exam.questions.map((question) => question.id),
+      questions: state.exam.questions,
       index: state.exam.index,
       answers: state.exam.answers,
       startedAt: state.exam.startedAt,
@@ -152,6 +178,9 @@ function render() {
     button.setAttribute("aria-current", button.dataset.nav === navKey() ? "page" : "false");
   });
   if (state.view === "home") renderHome();
+  else if (state.view === "packages") renderPackages();
+  else if (state.view === "teacher") renderTeacher();
+  else if (state.view === "sitting") renderSitting();
   else if (state.view === "course") renderCourse();
   else if (state.view === "lesson") renderLesson();
   else if (state.view === "practice") renderPractice();
@@ -165,6 +194,9 @@ function render() {
     state.stepId,
     state.practice?.index ?? "",
     state.exam?.index ?? "",
+    state.sitting?.lessonId ?? "",
+    state.sitting?.phase ?? "",
+    state.sitting?.checkIndex ?? "",
     state.repeatMode,
   ].join(":");
   if (place !== state.place) {
@@ -174,71 +206,230 @@ function render() {
 }
 
 function navKey() {
-  if (state.view === "lesson" || state.view === "course") return "course";
-  if (state.view === "practice") return "practice";
-  if (state.view === "exam" || state.view === "result") return "exam";
-  if (state.view === "repeat") return "repeat";
+  if (state.view === "packages") return "packages";
+  if (state.view === "teacher" || state.view === "course" || state.view === "lesson") return "teacher";
+  if (state.view === "sitting") return "today";
+  if (state.view === "practice") return "teacher";
+  if (state.view === "exam" || state.view === "result" || state.view === "repeat") return "teacher";
   return "home";
 }
 
 function renderHome() {
-  const stats = areaStats(questions, progress.attempts);
-  const next = steps.find((step) => !progress.done[step.id]) || steps[0];
-  const lastExam = progress.exams[0];
+  const next = nextOpenLesson(course.orders, course.done);
+  const doneCount = courseLessons.filter((lesson) => course.done[lesson.id]).length;
+  const owned = unlockedIds(course.orders);
   main.innerHTML = `
     <section class="hero">
-      <p class="kicker">Teorikurs för behörighet B</p>
-      <h1>Lär dig regeln, så klarar du en ny fråga.</h1>
-      <p class="lead">En rak plan genom de fem områdena på kunskapsprovet. Egna frågor, korta förklaringar och prov med samma fördelning som hos Trafikverket.</p>
+      <p class="kicker">Kurs i små steg</p>
+      <h1>En sak i taget.</h1>
+      <p class="lead">Tio minuter. En mening. Han säger den. Sen två stora svar. Nästa sak väntar till nästa träff.</p>
       <div class="facts">
-        <div><strong>65</strong><span>frågor som räknas</span></div>
-        <div><strong>52</strong><span>rätt för godkänt</span></div>
-        <div><strong>50</strong><span>minuter</span></div>
+        <div><strong>10</strong><span>minuter per träff</span></div>
+        <div><strong>1</strong><span>ny mening</span></div>
+        <div><strong>${doneCount}</strong><span>${doneCount === 1 ? "träff klar" : "träffar klara"}</span></div>
       </div>
       <div class="row">
-        <button class="primary" data-action="open-step" data-step="${esc(next.id)}">Fortsätt: ${esc(next.title)}</button>
-        <button data-action="start-exam">Starta övningsprov</button>
+        ${
+          next
+            ? `<button class="primary" data-action="open-sitting" data-lesson="${esc(next.id)}">Idag: ${esc(next.title)}</button>`
+            : `<button class="primary" data-action="show-packages">Välj nästa paket</button>`
+        }
+        <button data-action="show-packages">Se paketen</button>
       </div>
-      ${
-        state.exam
-          ? `<p class="note">Du har ett påbörjat prov. Tiden tickar från start, även om du lämnar sidan.</p>`
-          : ""
-      }
+      ${state.orderNote ? `<p class="note">Paketet är öppet på den här datorn. Betalningen tar ni vid sidan av, till exempel med Swish.</p>` : ""}
     </section>
     <section class="panel">
-      <h2>Veckoplan</h2>
+      <h2>Så går en träff</h2>
       <ol class="plan">
-        <li><strong>Dag 1.</strong> Så funkar provet, sedan alkohol, trötthet och grupptryck.</li>
-        <li><strong>Dag 2.</strong> Väjningsregler tills du kan säga vilken regel som gäller före högerregeln.</li>
-        <li><strong>Dag 3.</strong> Hastighet, stoppsträcka, avstånd och omkörning.</li>
-        <li><strong>Dag 4.</strong> Parkering, märken, signaler, gående och cyklister.</li>
-        <li><strong>Dag 5.</strong> Landsväg, motorväg och mörker.</li>
-        <li><strong>Dag 6.</strong> Halka, olycka, vilt, bilen, släpet och vikterna.</li>
-        <li><strong>Dag 7.</strong> Miljö, sedan ditt första hela prov.</li>
-        <li><strong>Därefter.</strong> Bara frågorna du hade fel på. Ett prov om dagen tills tre prov i rad ger minst ${READY_SCORE} rätt.</li>
+        <li>Du läser meningen högt. Han säger efter.</li>
+        <li>Han trycker på ett av de stora svaren.</li>
+        <li>Blir det fel läser du meningen igen. Ingen lång förklaring.</li>
+        <li>Blir det rätt säger du bra, och meningen en gång till.</li>
+        <li>Sen slutar ni. Nästa mening är en annan dag.</li>
       </ol>
     </section>
     <section class="panel">
       <div class="section-head">
-        <h2>Stegen</h2>
-        <button data-action="show-course">Visa hela kursplanen</button>
+        <h2>Paket</h2>
+        <button data-action="show-packages">Alla paket</button>
       </div>
-      <div class="steps">${steps.map((step) => stepCard(step)).join("")}</div>
+      <div class="steps">
+        ${packages
+          .filter((pack) => pack.id !== "hela")
+          .map((pack) => packageCard(pack, owned.includes(pack.id)))
+          .join("")}
+      </div>
     </section>
+  `;
+}
+
+function packageCard(pack, owned) {
+  const progressInfo = packageProgress(pack, course.done);
+  return `
+    <article class="step">
+      <p class="kicker">${owned ? "Beställt" : formatPrice(pack.price)}</p>
+      <h3>${esc(pack.name)}</h3>
+      <p>${esc(pack.blurb)}</p>
+      <p class="status ${progressInfo.finished ? "status-good" : "status-wait"}">${progressInfo.finished} av ${progressInfo.total} träffar klara</p>
+      <button data-action="show-packages">Till paketet</button>
+    </article>
+  `;
+}
+
+function renderPackages() {
+  const owned = unlockedIds(course.orders);
+  main.innerHTML = `
     <section class="panel">
-      <h2>Dina områden</h2>
-      <div class="areas">${EXAM_AREAS.map((area) => areaCard(area, stats[area])).join("")}</div>
+      <p class="kicker">Paket att beställa</p>
+      <h1>Välj hur långt ni ska gå.</h1>
+      <p class="lead">Varje paket är ett antal korta träffar. Första träffen, bältet, går att prova utan beställning. Betalningen gör ni med skolan. Här öppnas lektionerna på den här datorn.</p>
+      <div class="shop">
+        ${packages.map((pack) => shopCard(pack, owned)).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function shopCard(pack, owned) {
+  const list = lessonsInPackage(pack);
+  const hasIt = pack.id === "hela" ? pack.includes.every((id) => owned.includes(id)) : owned.includes(pack.id);
+  const next = nextOpenLesson(course.orders, course.done);
+  return `
+    <article class="shop-card ${pack.id === "hela" ? "shop-whole" : ""}">
+      <p class="kicker">${list.length} träffar · 10 minuter</p>
+      <h2>${esc(pack.name)}</h2>
+      <p class="price">${formatPrice(pack.price)}</p>
+      <p>${esc(pack.blurb)}</p>
       ${
-        lastExam
-          ? `<p class="note">Senaste provet: ${lastExam.score} av ${lastExam.total}, ${lastExam.passed ? "godkänt" : "underkänt"}.</p>`
-          : `<p class="note">Inget övningsprov ännu. Gör det när du har gått igenom stegen en första gång.</p>`
+        hasIt
+          ? `<p class="status status-good">Öppet på den här datorn.</p><button class="primary" data-action="open-sitting" data-lesson="${esc((next && list.some((lesson) => lesson.id === next.id) ? next : list[0]).id)}">Fortsätt</button>`
+          : `<form class="order-form">
+              <input name="package" type="hidden" value="${esc(pack.id)}" />
+              <label>Elevens namn <input name="name" type="text" autocomplete="name" /></label>
+              <label>Telefon <input name="phone" type="tel" autocomplete="tel" /></label>
+              <button class="primary" type="button" data-action="order">Beställ paketet</button>
+            </form>`
+      }
+    </article>
+  `;
+}
+
+function renderTeacher() {
+  const next = nextOpenLesson(course.orders, course.done);
+  main.innerHTML = `
+    <section class="panel lesson">
+      <p class="kicker">För dig som sitter bredvid</p>
+      <h1>En träff. En mening.</h1>
+      <ul>
+        <li>Sitt bredvid honom. Tio minuter, sen är ni klara.</li>
+        <li>Läs meningen. Han säger samma mening.</li>
+        <li>Han trycker själv på svaret. Två val, stora knappar.</li>
+        <li>Fel svar: läs meningen igen. Förklara inte med nya ord.</li>
+        <li>Rätt svar: säg bra, och säg meningen en gång till.</li>
+        <li>Beröm saken han gjorde. Till exempel: du stannade.</li>
+        <li>Sluta medan det fortfarande går bra. Nästa mening får vänta.</li>
+      </ul>
+      <p>Prata med honom som den vuxna han är. Korta ord, samma ord varje gång. Knappen Läs upp säger meningen långsamt.</p>
+      <p>Båda delarna av riskutbildningen ska vara gjorda innan teoriprovet hos Trafikverket. Det här är träningen innan dess.</p>
+      <div class="row">
+        ${next ? `<button class="primary" data-action="open-sitting" data-lesson="${esc(next.id)}">Öppna dagens träff</button>` : ""}
+        <button data-action="show-course">Längre genomgångar, för dig</button>
+        <button data-action="start-exam">Övningsprov, senare</button>
+      </div>
+      ${
+        course.orders.length
+          ? `<h2>Beställningar på den här datorn</h2><ul>${course.orders
+              .map((order) => {
+                const pack = packageById(order.packageId);
+                return `<li>${esc(pack?.name || order.packageId)}${order.name ? `, ${esc(order.name)}` : ""}${order.phone ? `, ${esc(order.phone)}` : ""}</li>`;
+              })
+              .join("")}</ul>`
+          : ""
       }
     </section>
-    <section class="panel quiet">
-      <h2>Vad det här är</h2>
-      <p>Frågorna är skrivna för K-rOnline. De följer trafikförordningen, Transportstyrelsens kursplan och Trafikverkets provform. De är inte kopierade från Trafiko, Abojihad eller från provbanken.</p>
-      <p>Det riktiga provet har fotografier och en del film. Här övar du regeln bakom bilden. När den sitter kan du använda skolans material, till exempel Trafiko eller Abojihad, som extra bildträning.</p>
+  `;
+}
+
+function renderSitting() {
+  const sitting = state.sitting;
+  const lesson = lessonById(sitting?.lessonId);
+  if (!lesson || !isLessonOpen(lesson, course.orders)) {
+    main.innerHTML = `<section class="panel"><h1>Den träffen ingår i ett paket.</h1><button class="primary" data-action="show-packages">Se paketen</button></section>`;
+    return;
+  }
+  const sign = lesson.sign ? signSvg(lesson.sign) : "";
+  if (sitting.phase === "intro") {
+    main.innerHTML = `
+      <section class="split">
+        <div class="panel student">
+          <p class="kicker">${esc(lesson.title)} · ${lesson.minutes} minuter</p>
+          ${sign ? `<div class="sign-wrap sign-big">${sign}</div>` : ""}
+          <h1 class="student-rule">${esc(lesson.rule)}</h1>
+          <p class="say">${esc(lesson.say)}</p>
+          <div class="row">
+            <button class="primary" data-action="speak" data-what="rule">Läs upp</button>
+            <button data-action="begin-checks">Han är redo</button>
+          </div>
+        </div>
+        ${teacherAside(lesson)}
+      </section>
+    `;
+    return;
+  }
+  if (sitting.phase === "done") {
+    main.innerHTML = `
+      <section class="panel student">
+        <p class="kicker">Klar för idag</p>
+        <h1 class="student-rule">${esc(lesson.rule)}</h1>
+        <p class="say">Säg meningen en gång till. Sen slutar ni.</p>
+        <div class="row">
+          <button data-action="speak" data-what="rule">Läs upp</button>
+          <button class="primary" data-action="finish-sitting">Klar för idag</button>
+        </div>
+      </section>
+    `;
+    return;
+  }
+  const check = lesson.checks[sitting.checkIndex];
+  const order = sitting.orders[sitting.checkIndex];
+  main.innerHTML = `
+    <section class="split">
+      <div class="panel student">
+        <p class="kicker">${esc(lesson.title)} · fråga ${sitting.checkIndex + 1} av ${lesson.checks.length}</p>
+        <h1 class="prompt">${esc(check.prompt)}</h1>
+        <div class="choices">
+          ${order
+            .map((choiceIndex) => {
+              const classes = ["choice", "big-choice"];
+              if (sitting.phase !== "check" && sitting.picked === choiceIndex) classes.push(choiceIndex === check.answer ? "right" : "wrong");
+              if (sitting.phase === "right" && choiceIndex === check.answer) classes.push("right");
+              return `<button class="${classes.join(" ")}" data-action="choose" data-index="${choiceIndex}" ${sitting.phase === "check" ? "" : "disabled"}><span>${esc(check.choices[choiceIndex])}</span></button>`;
+            })
+            .join("")}
+        </div>
+        ${
+          sitting.phase === "wrong"
+            ? `<div class="explain explain-wrong"><strong>Vi tar den igen.</strong><p class="student-rule small-rule">${esc(lesson.rule)}</p></div><button class="primary" data-action="retry-check">Försök igen</button>`
+            : ""
+        }
+        ${
+          sitting.phase === "right"
+            ? `<div class="explain explain-right"><strong>Bra.</strong><p>${esc(lesson.rule)}</p></div><button class="primary" data-action="next-check">${sitting.checkIndex + 1 === lesson.checks.length ? "Sista meningen" : "Nästa"}</button>`
+            : ""
+        }
+      </div>
+      ${teacherAside(lesson)}
     </section>
+  `;
+}
+
+function teacherAside(lesson) {
+  return `
+    <aside class="panel teacher-card">
+      <h2>Du som sitter bredvid</h2>
+      <p>${esc(lesson.why)}</p>
+      <ul>${lesson.teacher.map((line) => `<li>${esc(line)}</li>`).join("")}</ul>
+    </aside>
   `;
 }
 
@@ -424,7 +615,7 @@ function renderExam() {
         ${questionBody(question, Number.isInteger(selected) ? selected : null, false)}
         <div class="row">
           <button data-action="exam-prev" ${exam.index === 0 ? "disabled" : ""}>Föregående</button>
-          <button class="primary" data-action="exam-next">${exam.index === exam.questions.length - 1 ? "Till sista översikten" : "Nästa"}</button>
+          <button class="primary" data-action="exam-next">${exam.index === exam.questions.length - 1 ? "Lämna in" : "Nästa"}</button>
           <button data-action="submit-exam">Lämna in</button>
         </div>
       </div>
@@ -534,6 +725,25 @@ async function onClick(event) {
     choose(Number(target.dataset.index));
     return;
   }
+  if (action === "show-packages") {
+    state.view = "packages";
+    return render();
+  }
+  if (action === "open-sitting") return openSitting(target.dataset.lesson);
+  if (action === "begin-checks") {
+    state.sitting.phase = "check";
+    state.sitting.picked = null;
+    return render();
+  }
+  if (action === "retry-check") {
+    state.sitting.phase = "check";
+    state.sitting.picked = null;
+    return render();
+  }
+  if (action === "next-check") return advanceCheck();
+  if (action === "finish-sitting") return finishSitting();
+  if (action === "speak") return speakCurrent(target.dataset.what);
+  if (action === "order") return placeOrder(target);
   if (action === "show-home") return go("home");
   if (action === "show-course") return go("course");
   if (action === "show-repeat") {
@@ -564,7 +774,10 @@ async function onClick(event) {
     return render();
   }
   if (action === "start-exam") return startExam();
-  if (action === "exam-next") return moveExam(1);
+  if (action === "exam-next") {
+    if (state.exam && state.exam.index === state.exam.questions.length - 1) return askSubmit();
+    return moveExam(1);
+  }
   if (action === "exam-prev") return moveExam(-1);
   if (action === "exam-jump") {
     state.exam.index = Number(target.dataset.index);
@@ -601,7 +814,10 @@ function onKey(event) {
       render();
     }
   }
-  if (event.key === "Enter" && state.view === "exam") moveExam(1);
+  if (event.key === "Enter" && state.view === "exam") {
+    if (state.exam && state.exam.index === state.exam.questions.length - 1) askSubmit();
+    else moveExam(1);
+  }
 }
 
 function choose(index) {
@@ -616,7 +832,77 @@ function choose(index) {
     state.exam.answers[question.id] = index;
     persistExam();
     render();
+  } else if (state.view === "sitting" && state.sitting?.phase === "check") {
+    const lesson = lessonById(state.sitting.lessonId);
+    const check = lesson.checks[state.sitting.checkIndex];
+    if (!check.choices[index]) return;
+    state.sitting.picked = index;
+    state.sitting.phase = index === check.answer ? "right" : "wrong";
+    render();
   }
+}
+
+function openSitting(id) {
+  const lesson = lessonById(id);
+  if (!lesson) return;
+  state.sitting = {
+    lessonId: id,
+    phase: "intro",
+    checkIndex: 0,
+    picked: null,
+    orders: lesson.checks.map(() => (Math.random() < 0.5 ? [0, 1] : [1, 0])),
+  };
+  state.view = "sitting";
+  render();
+}
+
+function advanceCheck() {
+  const lesson = lessonById(state.sitting.lessonId);
+  if (state.sitting.checkIndex + 1 >= lesson.checks.length) {
+    state.sitting.phase = "done";
+  } else {
+    state.sitting.checkIndex += 1;
+    state.sitting.phase = "check";
+    state.sitting.picked = null;
+  }
+  render();
+}
+
+function finishSitting() {
+  course.done[state.sitting.lessonId] = true;
+  saveCourse();
+  state.orderNote = "";
+  state.view = "home";
+  render();
+}
+
+function speakCurrent(what) {
+  const lesson = lessonById(state.sitting?.lessonId);
+  if (!lesson || !window.speechSynthesis) return;
+  const check = lesson.checks[state.sitting.checkIndex];
+  const text = what === "prompt" && check ? check.prompt : lesson.rule;
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = "sv-SE";
+  utterance.rate = 0.85;
+  window.speechSynthesis.cancel();
+  window.speechSynthesis.speak(utterance);
+}
+
+function placeOrder(button) {
+  const form = button.closest("form");
+  const data = new FormData(form);
+  const packageId = String(data.get("package") || "");
+  if (!packageById(packageId)) return;
+  course.orders.push({
+    packageId,
+    name: String(data.get("name") || "").trim(),
+    phone: String(data.get("phone") || "").trim(),
+    at: new Date().toISOString(),
+  });
+  saveCourse();
+  state.orderNote = packageId;
+  state.view = "home";
+  render();
 }
 
 async function go(view) {
@@ -752,6 +1038,7 @@ function ask(title, text) {
       </div>
     </form>
   `;
+  dialog.returnValue = "";
   dialog.showModal();
   return new Promise((resolve) => {
     dialog.addEventListener(
@@ -781,21 +1068,20 @@ document.querySelectorAll("[data-nav]").forEach((button) => {
   button.addEventListener("click", () => {
     const target = button.dataset.nav;
     if (target === "home") go("home");
-    if (target === "course") go("course");
-    if (target === "practice") {
-      if (state.practice) go("practice");
-      else go("course");
+    if (target === "packages") {
+      state.view = "packages";
+      render();
     }
-    if (target === "exam") {
-      if (state.exam) {
-        state.view = "exam";
+    if (target === "today") {
+      const next = nextOpenLesson(course.orders, course.done);
+      if (next) openSitting(next.id);
+      else {
+        state.view = "packages";
         render();
-      } else {
-        startExam();
       }
     }
-    if (target === "repeat") {
-      state.view = "repeat";
+    if (target === "teacher") {
+      state.view = "teacher";
       render();
     }
   });

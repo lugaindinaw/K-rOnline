@@ -1,8 +1,10 @@
 # K-rOnline
 
-Teorikurs för körkortsbehörighet B. Kursen har en fast ordning, korta genomgångar på lätt svenska och egna övningsfrågor. Övningsprovet har samma form som Trafikverkets kunskapsprov: 65 frågor, minst 52 rätt och 50 minuter.
+Kurs i små steg för körkortsbehörighet B. En träff tar tio minuter och lär en mening. Den som sitter bredvid läser, eleven säger efter och väljer mellan två stora svar.
 
-Frågorna är skrivna för den här kursen utifrån trafikförordningen, Transportstyrelsens kursplan och den publicerade provformen. De är inte hämtade från Trafiko, Abojihad eller Trafikverkets provbank.
+Paketen går att beställa på sidan. Priserna står i `js/packages.js`. Betalningen görs med skolan. När ett paket beställs öppnas träffarna på den datorn.
+
+Första träffen, om bältet, går att prova utan beställning. Övningsprovet med 65 frågor ligger under Läraren och är till för senare.
 
 ## Kör kursen
 
