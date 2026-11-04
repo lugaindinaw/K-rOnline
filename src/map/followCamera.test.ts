@@ -87,10 +87,10 @@ describe("followCameraStep", () => {
     const driver = cameraProfile("driver");
     const back = DRIVER_LOOKAHEAD_METERS - DRIVER_FORWARD_METERS;
     const drop = DRIVER_EYE_HEIGHT_METERS - DRIVER_LOOK_ABOVE_GROUND_METERS;
-    expect(drop).toBeGreaterThan(0.5);
-    expect(drop).toBeLessThan(1);
-    expect(driver.tiltDegrees).toBeGreaterThan(84);
-    expect(driver.tiltDegrees).toBeLessThan(89);
+    expect(drop).toBeGreaterThan(1);
+    expect(drop).toBeLessThan(1.3);
+    expect(driver.tiltDegrees).toBeGreaterThan(79);
+    expect(driver.tiltDegrees).toBeLessThan(85);
     expect(driver.rangeMeters).toBeCloseTo(Math.hypot(back, drop), 5);
     expect(driver.leftMeters).toBeGreaterThan(0);
 

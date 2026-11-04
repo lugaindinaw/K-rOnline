@@ -42,4 +42,16 @@ describe("visual carriageway", () => {
     const oneWay = roadSurfaces([road({ id: "enkel", oneway: "forward", lanes: 1 })]);
     expect(oneWay.filter((surface) => surface.kind === "marking").length).toBe(2);
   });
+
+  it("adds an estimated pad where two centerlines share a node", () => {
+    const join = north(20);
+    const east = { lat: join.lat, lng: origin.lng + 20 / (111320 * Math.cos((origin.lat * Math.PI) / 180)) };
+    const surfaces = roadSurfaces([
+      road({ id: "norr", coordinates: [origin, join], nodeIds: ["a", "kors"] }),
+      road({ id: "ost", coordinates: [join, east], nodeIds: ["kors", "b"] }),
+    ]);
+    const pad = surfaces.find((surface) => surface.roadId === "korsning:kors" && surface.kind === "asphalt");
+    expect(pad).toBeTruthy();
+    expect(pad!.path.length).toBeGreaterThan(8);
+  });
 });

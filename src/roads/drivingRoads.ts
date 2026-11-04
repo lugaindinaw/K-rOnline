@@ -87,7 +87,7 @@ export type RoadArea = {
   signals: TrafficSignal[];
   /** Posted signs from the same answer. An empty list means none were tagged. */
   signs: RoadSign[];
-  source: "openstreetmap";
+  source: "openstreetmap" | "saved-openstreetmap";
 };
 
 export type SignalKind = "signal" | "continuous_green" | "other";

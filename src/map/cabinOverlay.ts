@@ -1,4 +1,4 @@
-import { visibleCabinParts, type CabinBox } from "./cabinMesh";
+import { GAUGE_CENTER_LOCAL, visibleCabinParts, wheelRingTriangles, type CabinBox } from "./cabinMesh";
 import { projectCabinPoint, projectCabinSize, type CabinLean } from "./cabinProject";
 
 export type CabinFrame = CabinLean & {
@@ -156,8 +156,12 @@ export function mountCabinOverlay(host: HTMLElement): CabinOverlay | null {
       const height = canvas.clientHeight || host.clientHeight;
       const aspect = canvas.width / Math.max(1, canvas.height);
       const lean = { pitchDegrees: frame.pitchDegrees ?? 0, rollDegrees: frame.rollDegrees ?? 0 };
-      const parts = visibleCabinParts(frame.wheelDegrees, frame.needleDegrees);
-      const combined = new Float32Array(packCabin(parts, frame.tiltDegrees, aspect, lean));
+      const parts = visibleCabinParts(frame.wheelDegrees, frame.needleDegrees).filter(
+        (part) => part.name !== "wheel-rim",
+      );
+      const packed = packCabin(parts, frame.tiltDegrees, aspect, lean);
+      packed.push(...packRing(frame.wheelDegrees, frame.tiltDegrees, aspect, lean));
+      const combined = new Float32Array(packed);
       gl.viewport(0, 0, canvas.width, canvas.height);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
       gl.useProgram(program);
@@ -169,7 +173,7 @@ export function mountCabinOverlay(host: HTMLElement): CabinOverlay | null {
       gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 24, 12);
       gl.drawArrays(gl.TRIANGLES, 0, combined.length / 6);
       return {
-        gauge: anchor([-0.38, 1.02, 0.88], 0.16, 0.16, frame, width, height),
+        gauge: anchor(GAUGE_CENTER_LOCAL, 0.16, 0.14, frame, width, height),
         rearMirror: anchor([-0.38, 1.39, 0.8], 0.16, 0.045, frame, width, height),
         leftMirror: anchor([-0.98, 1.0, 0.55], 0.16, 0.1, frame, width, height),
         rightMirror: anchor([0.98, 1.0, 0.55], 0.16, 0.1, frame, width, height),
@@ -179,6 +183,35 @@ export function mountCabinOverlay(host: HTMLElement): CabinOverlay | null {
       canvas.remove();
     },
   };
+}
+
+function packRing(wheelDegrees: number, tiltDegrees: number, aspect: number, lean: CabinLean): number[] {
+  const packed: number[] = [];
+  const rim: [number, number, number] = [0.1, 0.1, 0.11];
+  for (const triangle of wheelRingTriangles(wheelDegrees)) {
+    const color = shade(triangle.normal, rim);
+    const face: number[] = [];
+    let visible = true;
+    for (const corner of triangle.corners) {
+      const projected = projectCabinPoint(corner, tiltDegrees, aspect, lean);
+      if (!projected || Math.abs(projected.x * 2 - 1) > 2.4 || Math.abs(1 - projected.y * 2) > 2.4) {
+        visible = false;
+        break;
+      }
+      face.push(
+        projected.x * 2 - 1,
+        1 - projected.y * 2,
+        Math.min(0.98, projected.depth / 40),
+        color[0],
+        color[1],
+        color[2],
+      );
+    }
+    if (visible) {
+      packed.push(...face);
+    }
+  }
+  return packed;
 }
 
 function packCabin(parts: CabinBox[], tiltDegrees: number, aspect: number, lean: CabinLean): number[] {

@@ -414,6 +414,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     },
     setCameraView(view) {
       cameraViewRef.current = view;
+      cameraJobRef.current += 1;
       onCameraViewChangeRef.current?.(view);
       if (vehicleRef.current) {
         followRef.current = true;

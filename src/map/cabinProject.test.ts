@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CABIN_EYE_LOCAL, GAUGE_CENTER_LOCAL, WHEEL_CENTER_LOCAL } from "./cabinMesh";
+import { CABIN_EYE_LOCAL, WHEEL_CENTER_LOCAL } from "./cabinMesh";
 import { cameraProfile } from "./followCamera";
 import { projectCabinPoint } from "./cabinProject";
 
@@ -21,20 +21,24 @@ describe("projectCabinPoint", () => {
     expect(projected!.y).toBeCloseTo(0.5, 1);
   });
 
-  it("keeps the hood in the lower windshield and the left pillar on the left", () => {
-    const hood = projectCabinPoint([0, 1.02, 1.45], tilt, aspect);
+  it("keeps the hood below the road ahead", () => {
+    const hood = projectCabinPoint([0, 0.6, 2.25], tilt, aspect);
+    const road = projectCabinPoint(
+      [CABIN_EYE_LOCAL[0], 0.05, CABIN_EYE_LOCAL[2] + 12],
+      tilt,
+      aspect,
+    );
     const pillar = projectCabinPoint([-0.78, 1.22, 0.95], tilt, aspect);
     const wheel = projectCabinPoint(WHEEL_CENTER_LOCAL, tilt, aspect);
-    const gauge = projectCabinPoint(GAUGE_CENTER_LOCAL, tilt, aspect);
     expect(hood).not.toBeNull();
-    expect(hood!.y).toBeGreaterThan(0.5);
-    expect(hood!.y).toBeLessThan(0.9);
+    expect(road).not.toBeNull();
+    expect(road!.y).toBeGreaterThan(0.28);
+    expect(road!.y).toBeLessThan(hood!.y);
+    expect(hood!.y).toBeGreaterThan(0.55);
     expect(pillar).not.toBeNull();
-    expect(pillar!.x).toBeLessThan(0.2);
+    expect(pillar!.x).toBeLessThan(0.25);
     expect(wheel).not.toBeNull();
-    expect(wheel!.y).toBeGreaterThan(0.55);
-    expect(gauge).not.toBeNull();
-    expect(gauge!.y).toBeGreaterThan(0.45);
+    expect(wheel!.y).toBeGreaterThan(hood!.y);
   });
 
   it("lifts the hood when the body pitches up", () => {

@@ -148,7 +148,66 @@ export function roadSurfaces(roads: readonly RoadSegment[], anchor: RoadPoint | 
       }
     }
   }
+  surfaces.push(...junctionPads(selectSurfaceRoads(roads, anchor)));
   return surfaces;
+}
+
+/**
+ * A round pad where two centerlines meet, so the ribbons do not leave a hole.
+ * The radius is the widest class estimate or measured width at that node.
+ * It is not a surveyed curb.
+ */
+function junctionPads(roads: readonly RoadSegment[]): RoadSurface[] {
+  const meetings = new Map<string, { point: RoadPoint; halves: number[] }>();
+  for (const road of roads) {
+    if (!road.nodeIds || road.nodeIds.length !== road.coordinates.length) {
+      continue;
+    }
+    const half = visualCarriagewayMeters(road) / 2;
+    const seen = new Set<string>();
+    road.nodeIds.forEach((nodeId, index) => {
+      const point = road.coordinates[index];
+      if (!nodeId || !point || seen.has(nodeId)) {
+        return;
+      }
+      seen.add(nodeId);
+      const meeting = meetings.get(nodeId) ?? { point, halves: [] };
+      meeting.halves.push(half);
+      meetings.set(nodeId, meeting);
+    });
+  }
+  const pads: RoadSurface[] = [];
+  for (const [nodeId, meeting] of meetings) {
+    if (meeting.halves.length < 2) {
+      continue;
+    }
+    const radius = Math.max(...meeting.halves);
+    const asphalt = circleRing(meeting.point, radius);
+    const sidewalk = circleRing(meeting.point, radius + SIDEWALK_METERS);
+    if (sidewalk) {
+      pads.push({ roadId: `korsning:${nodeId}`, kind: "sidewalk", path: sidewalk, fillColor: "#c8c2b6", zIndex: 1 });
+    }
+    if (asphalt) {
+      pads.push({ roadId: `korsning:${nodeId}`, kind: "asphalt", path: asphalt, fillColor: "#3e4246", zIndex: 3 });
+    }
+  }
+  return pads;
+}
+
+function circleRing(center: RoadPoint, radius: number): RoadPoint[] | null {
+  if (!(radius >= 0.5)) {
+    return null;
+  }
+  const ring: RoadPoint[] = [];
+  const steps = 10;
+  for (let index = 0; index < steps; index += 1) {
+    ring.push(offsetPoint(center, (index / steps) * 360, radius));
+  }
+  const first = ring[0];
+  if (first) {
+    ring.push(first);
+  }
+  return ring;
 }
 
 export type SurfacePolygon = {
