@@ -36,7 +36,9 @@ import {
   pruneCoverage,
   type CoverageCircle,
 } from "../roads/roadCoverage";
+import { finishCityReview, reviewCityDrive } from "../game/cityPractice";
 import { ConfigScreen } from "../ui/ConfigScreen";
+import { GameShell } from "../ui/GameShell";
 import { SwedenPanel } from "../ui/SwedenPanel";
 
 const startCenter = STOCKHOLM_CANDIDATE.camera.center;
@@ -104,8 +106,15 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
   const [trainingError, setTrainingError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState<ApproachAttempt>(idleAttempt());
   const [cameraView, setCameraView] = useState<CameraView>("chase");
+  const [playMode, setPlayMode] = useState<"menu" | "free" | "practice" | "review">("menu");
+  const [trafficCount, setTrafficCount] = useState(0);
+  const [storedReview, setStoredReview] = useState<ReturnType<typeof reviewCityDrive> | null>(null);
   const attemptRef = useRef(attempt);
   const startRef = useRef<ApproachStart | null>(null);
+  const practicePlaced = useRef(false);
+  const startRoadRef = useRef<string | null>(null);
+  const playModeRef = useRef(playMode);
+  playModeRef.current = playMode;
 
   function commitAttempt(next: ApproachAttempt) {
     attemptRef.current = next;
@@ -142,6 +151,9 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
   }
 
   function onDriveSample(sample: DriveSample) {
+    if (sample.traffic.length !== trafficCount) {
+      setTrafficCount(sample.traffic.length);
+    }
     const current = attemptRef.current;
     const start = startRef.current;
     if (sample.roadDistanceReliable === false || current.status !== "running" || !start) {
@@ -153,6 +165,51 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
     }
     commitAttempt(next);
   }
+
+  function openFreeDrive() {
+    setPlayMode("free");
+    setCameraView("driver");
+    mapRef.current?.setCameraView("driver");
+  }
+
+  function openPractice() {
+    practicePlaced.current = false;
+    startRoadRef.current = null;
+    setPlayMode("practice");
+  }
+
+  function finishPractice() {
+    const review = finishCityReview(
+      reviewCityDrive({
+        lines: vehicle.driveFactLines ?? [],
+        roadName: vehicle.roadName,
+        startRoad: startRoadRef.current,
+        trafficCount,
+      }),
+    );
+    setPlayMode("review");
+    setStoredReview(review);
+  }
+
+  useEffect(() => {
+    if (playMode !== "practice" || practicePlaced.current || !mapReady || roads.length === 0) {
+      return;
+    }
+    const start = savedTurnPlacements(roads).find((item) => item.kind === "left");
+    if (!start) {
+      practicePlaced.current = true;
+      startRoadRef.current = vehicle.roadName;
+      return;
+    }
+    const placed = mapRef.current?.placeAlong(start.edgeId, start.distanceMeters) ?? false;
+    if (!placed) {
+      return;
+    }
+    practicePlaced.current = true;
+    startRoadRef.current = "Regeringsgatan";
+    mapRef.current?.setCameraView("driver");
+    setCameraView("driver");
+  }, [playMode, mapReady, roads, vehicle.roadName]);
 
   function applyCoverage(stored: StoredArea[], focus: RoadPoint) {
     const kept = pruneCoverage(stored, focus);
@@ -435,6 +492,27 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
           void loadRoads(center, "Kamerans position");
         }}
       />
+      {apiKey ? (
+        <GameShell
+          mode={playMode}
+          review={
+            playMode === "review"
+              ? storedReview
+              : reviewCityDrive({
+                  lines: vehicle.driveFactLines ?? [],
+                  roadName: vehicle.roadName,
+                  startRoad: startRoadRef.current,
+                  trafficCount,
+                })
+          }
+          trafficCount={trafficCount}
+          onFree={openFreeDrive}
+          onPractice={openPractice}
+          onFinish={finishPractice}
+          onAgain={openPractice}
+          onMenu={() => setPlayMode("menu")}
+        />
+      ) : null}
       {apiKey ? (
         <CityMap
           ref={mapRef}
