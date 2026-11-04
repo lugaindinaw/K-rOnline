@@ -1,4 +1,4 @@
-import { CITY_MISSION, PRACTICE_DISCLAIMER, type PracticeReview } from "../game/cityPractice";
+import { cityMission, PRACTICE_DISCLAIMER, type PracticeReview } from "../game/cityPractice";
 import { LICENSE_MOMENTS } from "../game/licenseMoments";
 
 type PlayMode = "menu" | "free" | "practice" | "review";
@@ -7,8 +7,10 @@ type GameShellProps = {
   mode: PlayMode;
   review: PracticeReview | null;
   trafficCount: number;
+  goal: "left" | "right" | null;
   onFree: () => void;
   onPractice: () => void;
+  onChooseTurn: (goal: "left" | "right") => void;
   onFinish: () => void;
   onAgain: () => void;
   onMenu: () => void;
@@ -18,8 +20,10 @@ export function GameShell({
   mode,
   review,
   trafficCount,
+  goal,
   onFree,
   onPractice,
+  onChooseTurn,
   onFinish,
   onAgain,
   onMenu,
@@ -36,12 +40,22 @@ export function GameShell({
     return (
       <section className="game-hud" aria-label="Uppdrag">
         <p className="game-kicker">Körkortsövning</p>
-        <h2>Stadstrafik genom korsningen</h2>
-        <p className="game-mission">{CITY_MISSION}</p>
+        <h2>{goal === "left" ? "Sväng vänster" : goal === "right" ? "Sväng höger" : "Välj sväng"}</h2>
+        <p className="game-mission">{cityMission(goal)}</p>
+        {goal ? null : (
+          <div className="game-hud-actions">
+            <button type="button" onClick={() => onChooseTurn("left")}>
+              Sväng vänster
+            </button>
+            <button type="button" onClick={() => onChooseTurn("right")}>
+              Sväng höger
+            </button>
+          </div>
+        )}
         <p className="game-score">
           <span>{review.score}</span> poäng
         </p>
-        <p className="game-live" role="status">
+        <p className="game-cue" role="status">
           {review.live}
         </p>
         <p className="game-traffic">
@@ -124,7 +138,7 @@ export function GameShell({
           </button>
           <button type="button" className="game-choice game-choice-play" onClick={onPractice}>
             <span>Körkortsövning</span>
-            <small>Stadstrafik: kör genom korsningen och följ trafikreglerna.</small>
+            <small>Stadstrafik: kör fram till korsningen och sväng vänster eller höger.</small>
           </button>
         </div>
         <h2>Kommande övningar</h2>

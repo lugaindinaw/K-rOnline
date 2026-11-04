@@ -783,6 +783,15 @@ summary {
   color: #1f4d3a;
 }
 
+.game-cue {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #1f4d3a;
+  color: #f7f4ee;
+  font-weight: 650;
+}
+
 .game-hud-actions {
   display: flex;
   gap: 8px;

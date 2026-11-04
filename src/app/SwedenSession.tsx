@@ -20,6 +20,7 @@ import { fetchDrivingRoads, roadRequestKey } from "../roads/fetchDrivingRoads";
 import { savedStockholmRoads, savedTurnPlacements } from "../roads/savedStockholmRoads";
 import {
   describeSignalCoverage,
+  distanceMeters,
   endpointNodeIds,
   type OmittedRoad,
   type RoadPoint,
@@ -108,7 +109,10 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
   const [cameraView, setCameraView] = useState<CameraView>("chase");
   const [playMode, setPlayMode] = useState<"menu" | "free" | "practice" | "review">("menu");
   const [trafficCount, setTrafficCount] = useState(0);
+  const [turnGoal, setTurnGoal] = useState<"left" | "right" | null>(null);
   const [storedReview, setStoredReview] = useState<ReturnType<typeof reviewCityDrive> | null>(null);
+  const nearestCarRef = useRef<number | null>(null);
+  const closeSpeedRef = useRef<number | null>(null);
   const attemptRef = useRef(attempt);
   const startRef = useRef<ApproachStart | null>(null);
   const practicePlaced = useRef(false);
@@ -150,7 +154,30 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
     commitAttempt(beginAttempt());
   }
 
+  function practiceInput() {
+    return {
+      lines: vehicle.driveFactLines ?? [],
+      roadName: vehicle.roadName,
+      startRoad: startRoadRef.current,
+      trafficCount,
+      nearestCarMeters: nearestCarRef.current,
+      speedNearCarKmh: closeSpeedRef.current,
+      goal: turnGoal,
+      indicator: vehicle.indicator ?? ("off" as const),
+    };
+  }
+
   function onDriveSample(sample: DriveSample) {
+    if (playModeRef.current === "practice" && sample.traffic.length > 0) {
+      let nearest = Number.POSITIVE_INFINITY;
+      for (const car of sample.traffic) {
+        nearest = Math.min(nearest, distanceMeters(sample.position, car.position));
+      }
+      if (nearest < (nearestCarRef.current ?? Number.POSITIVE_INFINITY)) {
+        nearestCarRef.current = nearest;
+        closeSpeedRef.current = sample.speedMps * 3.6;
+      }
+    }
     if (sample.traffic.length !== trafficCount) {
       setTrafficCount(sample.traffic.length);
     }
@@ -175,27 +202,30 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
   function openPractice() {
     practicePlaced.current = false;
     startRoadRef.current = null;
+    nearestCarRef.current = null;
+    closeSpeedRef.current = null;
+    setTurnGoal(null);
     setPlayMode("practice");
   }
 
+  function chooseTurn(goal: "left" | "right") {
+    practicePlaced.current = false;
+    startRoadRef.current = null;
+    nearestCarRef.current = null;
+    closeSpeedRef.current = null;
+    setTurnGoal(goal);
+  }
+
   function finishPractice() {
-    const review = finishCityReview(
-      reviewCityDrive({
-        lines: vehicle.driveFactLines ?? [],
-        roadName: vehicle.roadName,
-        startRoad: startRoadRef.current,
-        trafficCount,
-      }),
-    );
+    setStoredReview(finishCityReview(reviewCityDrive(practiceInput())));
     setPlayMode("review");
-    setStoredReview(review);
   }
 
   useEffect(() => {
-    if (playMode !== "practice" || practicePlaced.current || !mapReady || roads.length === 0) {
+    if (playMode !== "practice" || !turnGoal || practicePlaced.current || !mapReady || roads.length === 0) {
       return;
     }
-    const start = savedTurnPlacements(roads).find((item) => item.kind === "left");
+    const start = savedTurnPlacements(roads).find((item) => item.kind === turnGoal);
     if (!start) {
       practicePlaced.current = true;
       startRoadRef.current = vehicle.roadName;
@@ -209,7 +239,36 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
     startRoadRef.current = "Regeringsgatan";
     mapRef.current?.setCameraView("driver");
     setCameraView("driver");
-  }, [playMode, mapReady, roads, vehicle.roadName]);
+  }, [playMode, mapReady, roads, turnGoal, vehicle.roadName]);
+
+  useEffect(() => {
+    if (playMode !== "practice" || !turnGoal || !practicePlaced.current) {
+      return;
+    }
+    const start = startRoadRef.current;
+    if (!start || !vehicle.roadName || vehicle.roadName === start) {
+      return;
+    }
+    const speedLine = (vehicle.driveFactLines ?? []).find((line) => line.startsWith("Högsta fart:"));
+    if (!speedLine || speedLine.includes(": 0 km/h")) {
+      return;
+    }
+    setStoredReview(
+      finishCityReview(
+        reviewCityDrive({
+          lines: vehicle.driveFactLines ?? [],
+          roadName: vehicle.roadName,
+          startRoad: start,
+          trafficCount,
+          nearestCarMeters: nearestCarRef.current,
+          speedNearCarKmh: closeSpeedRef.current,
+          goal: turnGoal,
+          indicator: vehicle.indicator ?? "off",
+        }),
+      ),
+    );
+    setPlayMode("review");
+  }, [playMode, turnGoal, trafficCount, vehicle.roadName, vehicle.driveFactLines, vehicle.indicator]);
 
   function applyCoverage(stored: StoredArea[], focus: RoadPoint) {
     const kept = pruneCoverage(stored, focus);
@@ -498,16 +557,13 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
           review={
             playMode === "review"
               ? storedReview
-              : reviewCityDrive({
-                  lines: vehicle.driveFactLines ?? [],
-                  roadName: vehicle.roadName,
-                  startRoad: startRoadRef.current,
-                  trafficCount,
-                })
+              : reviewCityDrive(practiceInput())
           }
           trafficCount={trafficCount}
+          goal={turnGoal}
           onFree={openFreeDrive}
           onPractice={openPractice}
+          onChooseTurn={chooseTurn}
           onFinish={finishPractice}
           onAgain={openPractice}
           onMenu={() => setPlayMode("menu")}

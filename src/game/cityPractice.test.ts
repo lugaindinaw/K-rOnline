@@ -17,10 +17,14 @@ describe("city practice review", () => {
       roadName: "Jakobsgatan",
       startRoad: "Regeringsgatan",
       trafficCount: 3,
+      nearestCarMeters: 12,
+      speedNearCarKmh: 10,
+      goal: "left",
+      indicator: "left",
     });
     expect(review.score).toBe(100);
     expect(review.points.every((point) => point.mark === "bra")).toBe(true);
-    expect(review.points.map((point) => point.title)).toContain("Andra trafikanter");
+    expect(review.live).toContain("Jakobsgatan");
   });
 
   it("asks for practice when a turn had no indicator and a yield was passed", () => {
@@ -37,11 +41,24 @@ describe("city practice review", () => {
         roadName: "Regeringsgatan",
         startRoad: "Regeringsgatan",
         trafficCount: 0,
+        nearestCarMeters: 8,
+        speedNearCarKmh: 36,
+        goal: "right",
+        indicator: "off",
       }),
     );
     expect(review.score).toBeLessThan(50);
-    expect(review.points.find((point) => point.title === "Blinkers")?.mark).toBe("träna");
-    expect(review.points.find((point) => point.title === "Väjningsplikt")?.mark).toBe("träna");
+    expect(review.points.find((point) => point.title === "Blinkers")?.detail).toContain("utan blinkers");
+    expect(review.points.find((point) => point.title === "Samspel")?.mark).toBe("träna");
     expect(review.live).toBe("Övningen är avslutad.");
+    const cue = reviewCityDrive({
+      lines: ["Högsta fart: 12 km/h", "Broms använd: nej", "Blinkers före sväng: ingen sväng ännu"],
+      roadName: "Regeringsgatan",
+      startRoad: "Regeringsgatan",
+      trafficCount: 2,
+      goal: "left",
+      indicator: "off",
+    });
+    expect(cue.live).toContain("Q");
   });
 });

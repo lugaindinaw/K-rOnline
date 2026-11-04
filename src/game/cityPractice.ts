@@ -1,8 +1,15 @@
 export const PRACTICE_DISCLAIMER =
   "Det här är körkortsträning i spelet. Det ersätter inte Trafikverkets körprov.";
 
-export const CITY_MISSION =
-  "Kör genom korsningen. Använd blinkers om du svänger, håll dig på körbanan och stanna vid väjningsplikt. Andra bilar märkta Trafik kör, saktar in och svänger på samma vägar.";
+export function cityMission(goal: "left" | "right" | null): string {
+  if (goal === "left") {
+    return "Mål: kör fram till korsningen och sväng vänster. Tänd vänster blinkers med Q innan du svänger.";
+  }
+  if (goal === "right") {
+    return "Mål: kör fram till korsningen och sväng höger. Tänd höger blinkers med E innan du svänger.";
+  }
+  return "Välj vänster eller höger. Kör sedan fram till korsningen och sväng dit.";
+}
 
 export type PracticeMark = "bra" | "träna" | "pågår";
 
@@ -36,26 +43,36 @@ export function reviewCityDrive(input: {
   roadName: string | null;
   startRoad: string | null;
   trafficCount: number;
+  nearestCarMeters?: number | null;
+  speedNearCarKmh?: number | null;
+  goal?: "left" | "right" | null;
+  indicator?: "off" | "left" | "right";
 }): PracticeReview {
   const speed = Number.parseInt(lineValue(input.lines, "Högsta fart:") ?? "", 10);
   const brake = lineValue(input.lines, "Broms använd:");
-  const steer = lineValue(input.lines, "Styrning:") ?? "";
   const offsetText = lineValue(input.lines, "Största avstånd från mittlinjen:");
   const blink = lineValue(input.lines, "Blinkers före sväng:");
   const yields = input.lines.filter((line) => line.startsWith("Väjningsplikt nod"));
   const offset = offsetText && offsetText !== "inte uppmätt" ? Number.parseFloat(offsetText) : null;
+  const goal = input.goal ?? null;
+  const indicator = input.indicator ?? "off";
+  const nearest = input.nearestCarMeters ?? null;
+  const nearSpeed = input.speedNearCarKmh ?? null;
+  const side = goal === "right" ? "höger" : "vänster";
+  const key = goal === "right" ? "E" : "Q";
+  const steerKey = goal === "right" ? "D" : "A";
   const points: PracticePoint[] = [];
 
   if (!Number.isFinite(speed) || speed <= 0) {
-    points.push({ title: "Komma iväg", mark: "pågår", detail: "Gasa med W eller Gas och kör framåt." });
-  } else if (speed > 50) {
+    points.push({ title: "Hastighet", mark: "pågår", detail: "Gasa med W eller Gas och kör framåt." });
+  } else if (speed > 30) {
     points.push({
-      title: "Fart i stan",
+      title: "Hastighet",
       mark: "träna",
-      detail: `Högsta fart var ${speed} km/h. Sänk farten före korsningen.`,
+      detail: `Högsta fart var ${speed} km/h. Bromsa och håll under 30 km/h genom korsningen.`,
     });
   } else {
-    points.push({ title: "Fart i stan", mark: "bra", detail: `Högsta fart ${speed} km/h.` });
+    points.push({ title: "Hastighet", mark: "bra", detail: `Högsta fart ${speed} km/h, lugnt nog för svängen.` });
   }
 
   if (offset == null || !Number.isFinite(offset)) {
@@ -82,9 +99,9 @@ export function reviewCityDrive(input: {
     points.push({
       title: "Blinkers",
       mark: "pågår",
-      detail: steer.includes("vänster") || steer.includes("höger")
-        ? "Du styr. Tänd blinkers innan kursen ändras."
-        : "Tänd blinkers före en sväng, eller kör rakt genom korsningen.",
+      detail: goal
+        ? `Tänd ${side} blinkers med ${key} innan du svänger.`
+        : "Välj sväng. Tänd blinkers åt samma håll före korsningen.",
     });
   }
 
@@ -117,33 +134,65 @@ export function reviewCityDrive(input: {
 
   const changed = Boolean(input.startRoad && input.roadName && input.roadName !== input.startRoad);
   if (changed) {
-    points.push({ title: "Genom korsningen", mark: "bra", detail: `Du kör på ${input.roadName}.` });
+    points.push({
+      title: "Svängen",
+      mark: "bra",
+      detail: `Du lämnade ${input.startRoad} och kör på ${input.roadName}.`,
+    });
   } else {
     points.push({
-      title: "Genom korsningen",
+      title: "Svängen",
       mark: "pågår",
-      detail: "Fortsätt tills du kommer in på nästa gata.",
+      detail: goal ? `Sväng ${side} med ${steerKey} tills gatan byter namn.` : "Välj vänster eller höger och sväng dit.",
     });
   }
 
-  if (input.trafficCount > 0) {
+  const close = nearest != null && nearest <= 22;
+  const eased = brake === "ja" || (nearSpeed != null && nearSpeed <= 25);
+  if (close && eased) {
     points.push({
-      title: "Andra trafikanter",
+      title: "Samspel",
       mark: "bra",
-      detail: `${input.trafficCount} andra bilar är ute och kör.`,
+      detail: `Närmaste bil var ${Math.round(nearest)} m. Du bromsade eller höll låg fart.`,
+    });
+  } else if (close) {
+    points.push({
+      title: "Samspel",
+      mark: "träna",
+      detail: `En bil var ${Math.round(nearest)} m bort och farten var hög. Släpp gasen och bromsa när någon är nära.`,
+    });
+  } else if (input.trafficCount > 0) {
+    points.push({
+      title: "Samspel",
+      mark: "pågår",
+      detail: `${input.trafficCount} bilar kör runt dig. Bromsa om en kommer inom 20 m.`,
     });
   } else {
     points.push({
-      title: "Andra trafikanter",
+      title: "Samspel",
       mark: "pågår",
       detail: "Trafikbilarna startar när vägnätet är laddat.",
     });
   }
 
-  const live =
-    points.find((point) => point.mark === "träna")?.detail ??
-    points.find((point) => point.mark === "pågår")?.detail ??
-    "Uppdraget ser bra ut. Avsluta när du vill se sammanfattningen.";
+  const moved = Number.isFinite(speed) && speed > 0;
+  const indicatorReady = goal != null && indicator === goal;
+  let live = "Välj vänster eller höger sväng.";
+  if (!goal) {
+    live = "Välj vänster eller höger sväng.";
+  } else if (!moved) {
+    live = `Gasa med W och kör fram mot korsningen. Tänd blinkers med ${key} före svängen.`;
+  } else if (!changed && !indicatorReady) {
+    live = `Tänd ${side} blinkers nu, tangenten ${key}. Sväng sedan med ${steerKey}.`;
+  } else if (ahead && brake !== "ja" && speed > 8) {
+    live = "Väjningsplikt framför. Bromsa och stanna innan du svänger.";
+  } else if (close && !eased) {
+    live = `En bil är ${Math.round(nearest ?? 0)} m bort. Släpp gasen.`;
+  } else if (!changed && indicatorReady) {
+    live = `Blinkers är tänd. Håll ${steerKey} och styr genom korsningen.`;
+  } else if (changed) {
+    live = `Du svängde in på ${input.roadName}.`;
+  }
   return { score: scoreOf(points), points, live };
 }
 
