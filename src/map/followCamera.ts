@@ -13,11 +13,15 @@ export const CHASE_LOOKAHEAD_METERS = 8;
 export const FOLLOW_RANGE_METERS = CHASE_RANGE_METERS;
 export const FOLLOW_TILT_DEGREES = CHASE_TILT_DEGREES;
 export const CAMERA_LOOKAHEAD_METERS = CHASE_LOOKAHEAD_METERS;
-/** Eye height stays here. The cabin is drawn over the view, and the car mesh is hidden in that view. */
-export const DRIVER_EYE_HEIGHT_METERS = 1.35;
-export const DRIVER_LOOKAHEAD_METERS = 22;
-export const DRIVER_FORWARD_METERS = 1.4;
-export const DRIVER_LEFT_METERS = 0.32;
+/**
+ * Seated eye height. The look point sits just under the eyes, down the road,
+ * so the view runs forward instead of down onto the city.
+ */
+export const DRIVER_EYE_HEIGHT_METERS = 1.25;
+export const DRIVER_LOOK_ABOVE_GROUND_METERS = 0.9;
+export const DRIVER_LOOKAHEAD_METERS = 14;
+export const DRIVER_FORWARD_METERS = 0.2;
+export const DRIVER_LEFT_METERS = 0.38;
 export const CAMERA_YAW_DEGREES_PER_SECOND = 110;
 /** Driver aim turns slower than the chase camera so the view does not twitch with the car. */
 export const DRIVER_YAW_DEGREES_PER_SECOND = 62;
@@ -38,9 +42,10 @@ export type CameraProfile = {
 export function cameraProfile(view: CameraView): CameraProfile {
   if (view === "driver") {
     const back = DRIVER_LOOKAHEAD_METERS - DRIVER_FORWARD_METERS;
+    const drop = DRIVER_EYE_HEIGHT_METERS - DRIVER_LOOK_ABOVE_GROUND_METERS;
     return {
-      rangeMeters: Math.hypot(back, DRIVER_EYE_HEIGHT_METERS),
-      tiltDegrees: (Math.atan2(back, DRIVER_EYE_HEIGHT_METERS) * 180) / Math.PI,
+      rangeMeters: Math.hypot(back, drop),
+      tiltDegrees: (Math.atan2(back, drop) * 180) / Math.PI,
       lookaheadMeters: DRIVER_LOOKAHEAD_METERS,
       leftMeters: DRIVER_LEFT_METERS,
       responsePerSecond: DRIVER_RESPONSE_PER_SECOND,
@@ -93,6 +98,42 @@ function moveToward(from: RoadPoint, to: RoadPoint, maxMeters: number): RoadPoin
   return {
     lat: from.lat + (to.lat - from.lat) * scale,
     lng: from.lng + (to.lng - from.lng) * scale,
+  };
+}
+
+/**
+ * If the map cannot tilt up to the horizon, shorten the range so the eye
+ * stays near seated height above the look point instead of hanging in the air.
+ */
+export function streetLevelRange(actualTiltDegrees: number): number {
+  const tilt = Math.min(89, Math.max(50, actualTiltDegrees));
+  const range = DRIVER_EYE_HEIGHT_METERS / Math.cos((tilt * Math.PI) / 180);
+  return Math.min(cameraProfile("driver").rangeMeters, Math.max(3.5, range));
+}
+
+export function framedDriverCamera(
+  requested: { rangeMeters: number; tiltDegrees: number },
+  appliedTiltDegrees: number,
+): { rangeMeters: number; tiltDegrees: number; lookOnRoad: boolean } {
+  const tilt = Number.isFinite(appliedTiltDegrees) ? appliedTiltDegrees : requested.tiltDegrees;
+  if (tilt < requested.tiltDegrees - 2) {
+    return { rangeMeters: streetLevelRange(tilt), tiltDegrees: tilt, lookOnRoad: true };
+  }
+  return {
+    rangeMeters: requested.rangeMeters,
+    tiltDegrees: requested.tiltDegrees,
+    lookOnRoad: false,
+  };
+}
+
+export function approachDriverPose(
+  current: { rangeMeters: number; tiltDegrees: number },
+  dtSeconds: number,
+): { rangeMeters: number; tiltDegrees: number } {
+  const profile = cameraProfile("driver");
+  return {
+    rangeMeters: blend(current.rangeMeters, profile.rangeMeters, dtSeconds, profile.responsePerSecond),
+    tiltDegrees: blend(current.tiltDegrees, profile.tiltDegrees, dtSeconds, profile.responsePerSecond),
   };
 }
 

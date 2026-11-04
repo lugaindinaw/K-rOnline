@@ -5,11 +5,14 @@ import {
   CAMERA_YAW_DEGREES_PER_SECOND,
   DRIVER_EYE_HEIGHT_METERS,
   DRIVER_FORWARD_METERS,
+  DRIVER_LOOK_ABOVE_GROUND_METERS,
   DRIVER_LOOKAHEAD_METERS,
   DRIVER_YAW_DEGREES_PER_SECOND,
   FOLLOW_RANGE_METERS,
+  approachDriverPose,
   cameraProfile,
   claimCameraJob,
+  streetLevelRange,
   followCameraFromView,
   followCameraStep,
 } from "./followCamera";
@@ -83,9 +86,12 @@ describe("followCameraStep", () => {
   it("keeps a driver view near eye height and eases into it", () => {
     const driver = cameraProfile("driver");
     const back = DRIVER_LOOKAHEAD_METERS - DRIVER_FORWARD_METERS;
-    expect(driver.tiltDegrees).toBeGreaterThan(80);
-    expect(driver.tiltDegrees).toBeLessThan(89);
-    expect(driver.rangeMeters).toBeCloseTo(Math.hypot(back, DRIVER_EYE_HEIGHT_METERS), 5);
+    const drop = DRIVER_EYE_HEIGHT_METERS - DRIVER_LOOK_ABOVE_GROUND_METERS;
+    expect(drop).toBeGreaterThan(0.2);
+    expect(drop).toBeLessThan(0.6);
+    expect(driver.tiltDegrees).toBeGreaterThan(84);
+    expect(driver.tiltDegrees).toBeLessThan(89.5);
+    expect(driver.rangeMeters).toBeCloseTo(Math.hypot(back, drop), 5);
     expect(driver.leftMeters).toBeGreaterThan(0);
 
     for (const place of places) {
@@ -133,6 +139,18 @@ describe("followCameraStep", () => {
     );
     expect(distanceMeters(turned, camera)).toBeLessThan(1.2);
     expect(Math.abs(turned.tiltDegrees - settled)).toBeLessThan(0.5);
-    expect(turned.tiltDegrees).toBeGreaterThan(80);
+    expect(turned.tiltDegrees).toBeGreaterThan(84);
+  });
+
+  it("settles an overview camera at seated height", () => {
+    let pose = { rangeMeters: 700, tiltDegrees: 67 };
+    for (let step = 0; step < 50; step += 1) {
+      pose = approachDriverPose(pose, 0.05);
+    }
+    const driver = cameraProfile("driver");
+    expect(pose.tiltDegrees).toBeGreaterThan(84);
+    expect(Math.abs(pose.rangeMeters - driver.rangeMeters)).toBeLessThan(1);
+    expect(streetLevelRange(67.5)).toBeLessThan(6);
+    expect(streetLevelRange(88)).toBeLessThanOrEqual(driver.rangeMeters + 0.01);
   });
 });

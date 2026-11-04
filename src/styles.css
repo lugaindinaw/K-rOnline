@@ -371,57 +371,57 @@ summary {
   z-index: 3;
   overflow: hidden;
   pointer-events: none;
-  color: #f7f4ee;
+  color: #f4f1ea;
 }
 
 .cockpit-glass {
   position: absolute;
-  inset: 0 7% 28% 7%;
+  inset: 0 0 15% 0;
 }
 
 .cockpit-header {
   position: absolute;
   top: 0;
-  left: -8%;
-  right: -8%;
-  height: 46px;
-  background: linear-gradient(#2a241e, #14110f 70%);
-  border-bottom: 4px solid #0b0a09;
-  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.28);
+  left: -4%;
+  right: -4%;
+  height: 18px;
+  background: linear-gradient(#3a342c, #161310);
+  border-bottom: 2px solid #0c0b0a;
 }
 
 .cockpit-pillar {
   position: absolute;
-  top: 36px;
-  bottom: -8px;
-  width: 54px;
-  background: linear-gradient(90deg, #1a1714, #3a342c 45%, #12100e);
-  box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.35);
+  top: 14px;
+  bottom: -2px;
+  width: 28px;
+  background: linear-gradient(90deg, #12100e, #4a433a 42%, #1a1714);
 }
 
 .cockpit-pillar-left {
   left: 0;
-  transform: skewX(8deg);
+  transform: skewX(6deg);
   transform-origin: top left;
+  border-right: 2px solid #6d6458;
 }
 
 .cockpit-pillar-right {
   right: 0;
-  transform: skewX(-8deg);
+  transform: skewX(-6deg);
   transform-origin: top right;
+  border-left: 2px solid #6d6458;
 }
 
 .cockpit-mirror {
   position: absolute;
-  top: 52px;
+  top: 10px;
   left: 50%;
-  width: min(280px, 42%);
-  height: 86px;
+  width: min(248px, 32%);
+  height: 76px;
   transform: translateX(-50%);
-  padding: 7px 8px 12px;
-  border-radius: 8px 8px 16px 16px;
-  background: linear-gradient(#1c1a17, #0c0b0a);
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
+  padding: 6px 7px 10px;
+  border-radius: 4px 4px 14px 14px;
+  background: linear-gradient(#3a342c, #100e0c);
+  box-shadow: 0 8px 12px rgba(0, 0, 0, 0.4);
 }
 
 .cockpit-mirror-glass,
@@ -429,48 +429,49 @@ summary {
   width: 100%;
   height: 100%;
   min-height: 0;
-  border-radius: 3px;
-  background: #1d3a4a;
+  border-radius: 2px;
+  background: #243844;
   overflow: hidden;
 }
 
 .cockpit-hood {
   position: absolute;
-  left: 8%;
-  right: 8%;
-  bottom: -28px;
-  height: 54px;
-  background: linear-gradient(#3d4650, #1d242b 70%);
-  clip-path: polygon(8% 100%, 18% 0, 82% 0, 92% 100%);
+  left: 12%;
+  right: 12%;
+  bottom: -10px;
+  height: 58px;
+  background: linear-gradient(#6a7580, #2a3138 70%);
+  clip-path: polygon(14% 100%, 30% 0, 70% 0, 86% 100%);
 }
 
 .cockpit-door {
   position: absolute;
-  bottom: 18%;
-  width: 8%;
-  height: 46%;
-  background: linear-gradient(#2c2824, #151311);
-  box-shadow: inset 0 0 0 2px #0c0b0a;
+  bottom: 13%;
+  width: 4.2%;
+  height: 26%;
+  background: linear-gradient(#3a342c, #161310);
 }
 
 .cockpit-door-left {
   left: 0;
-  border-right: 3px solid #4a433a;
+  border-right: 2px solid #6d6458;
+  border-radius: 0 8px 0 0;
 }
 
 .cockpit-door-right {
   right: 0;
-  border-left: 3px solid #4a433a;
+  border-left: 2px solid #6d6458;
+  border-radius: 8px 0 0 0;
 }
 
 .cockpit-armrest {
   position: absolute;
-  left: 18%;
-  right: 18%;
-  bottom: 28%;
-  height: 14px;
-  border-radius: 8px;
-  background: #6d6458;
+  left: 16%;
+  right: 16%;
+  top: 42%;
+  height: 8px;
+  border-radius: 6px;
+  background: #8a7d6e;
 }
 
 .cockpit-dash {
@@ -478,41 +479,41 @@ summary {
   left: 0;
   right: 0;
   bottom: 0;
-  height: 26%;
-  transform-origin: 50% 80%;
+  height: 16%;
+  transform-origin: 50% 100%;
   background:
-    linear-gradient(180deg, rgba(0, 0, 0, 0.15), transparent 18%),
-    linear-gradient(90deg, #1a1d21, #2a3138 18%, #23282d 50%, #1a1d21);
-  border-top: 6px solid #101214;
-  box-shadow: 0 -18px 30px rgba(0, 0, 0, 0.35);
+    linear-gradient(180deg, #5a5146 0, #2a241e 16%, #1a1714 100%);
+  border-top: 3px solid #6d6458;
+  box-shadow: 0 -8px 16px rgba(0, 0, 0, 0.28);
 }
 
 .cockpit-vent {
   position: absolute;
-  top: 16px;
-  right: 12%;
-  width: 92px;
-  height: 18px;
-  border-radius: 9px;
-  background: repeating-linear-gradient(90deg, #101214 0 6px, #3a4148 6px 10px);
+  top: 10px;
+  right: 14%;
+  width: 72px;
+  height: 12px;
+  border-radius: 6px;
+  background: repeating-linear-gradient(90deg, #100e0c 0 4px, #3a342c 4px 7px);
 }
 
 .cockpit-cluster {
   position: absolute;
-  left: 27%;
-  bottom: 18%;
-  width: 168px;
-  height: 126px;
+  left: 32%;
+  bottom: 8%;
+  width: 132px;
+  height: 104px;
+  margin-left: -66px;
 }
 
 .cockpit-speed {
   position: absolute;
   left: 0;
   right: 0;
-  top: 42px;
+  top: 28px;
   z-index: 1;
   text-align: center;
-  font-size: 1.55rem;
+  font-size: 1.15rem;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
@@ -521,22 +522,22 @@ summary {
 .cockpit-speedo {
   width: 100%;
   height: 100%;
-  filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.35));
 }
 
 .cockpit-wheel {
   position: absolute;
-  left: 18%;
-  bottom: -22%;
-  width: min(220px, 30%);
+  left: 32%;
+  bottom: -4%;
+  width: clamp(176px, 28vh, 248px);
+  margin-left: calc(clamp(176px, 28vh, 248px) / -2);
   aspect-ratio: 1;
-  transform-origin: 50% 46%;
+  transform-origin: 50% 42%;
 }
 
 .cockpit-wheel svg {
   width: 100%;
   height: 100%;
-  filter: drop-shadow(0 10px 10px rgba(0, 0, 0, 0.45));
+  filter: drop-shadow(0 6px 6px rgba(0, 0, 0, 0.35));
 }
 
 @media (max-width: 800px) {

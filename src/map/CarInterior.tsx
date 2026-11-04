@@ -59,7 +59,7 @@ export function CarInterior({ poseRef, library }: CarInteriorProps) {
         wheelRef.current.style.transform = `rotate(${motion.wheelDegrees.toFixed(2)}deg) translateY(${(-pitch * 5).toFixed(1)}px)`;
       }
       if (dashRef.current) {
-        dashRef.current.style.transform = `translateY(${(-pitch * 4).toFixed(1)}px) rotate(${(-roll).toFixed(2)}deg)`;
+        dashRef.current.style.transform = `perspective(640px) rotateX(${(16 - pitch).toFixed(2)}deg) rotateZ(${(-roll * 0.6).toFixed(2)}deg)`;
       }
       if (needleRef.current) {
         needleRef.current.setAttribute("transform", `rotate(${motion.needleDegrees.toFixed(2)} 100 108)`);
