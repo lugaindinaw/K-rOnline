@@ -16,6 +16,8 @@ describe("CarInterior", () => {
             steer: 0,
             altitude: 25,
             placed: false,
+            pitchDegrees: 0,
+            rollDegrees: 0,
           },
         }}
       />,

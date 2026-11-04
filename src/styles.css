@@ -478,7 +478,8 @@ summary {
   left: 0;
   right: 0;
   bottom: 0;
-  height: 31%;
+  height: 26%;
+  transform-origin: 50% 80%;
   background:
     linear-gradient(180deg, rgba(0, 0, 0, 0.15), transparent 18%),
     linear-gradient(90deg, #1a1d21, #2a3138 18%, #23282d 50%, #1a1d21);
@@ -525,9 +526,9 @@ summary {
 
 .cockpit-wheel {
   position: absolute;
-  left: 22%;
-  bottom: -18%;
-  width: min(250px, 34%);
+  left: 18%;
+  bottom: -22%;
+  width: min(220px, 30%);
   aspect-ratio: 1;
   transform-origin: 50% 46%;
 }

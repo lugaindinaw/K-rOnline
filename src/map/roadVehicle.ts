@@ -19,6 +19,8 @@ export type VehiclePose = {
   lat: number;
   lng: number;
   headingDegrees: number;
+  pitchDegrees?: number;
+  rollDegrees?: number;
 };
 
 export type RoadVehicle = {
@@ -45,8 +47,8 @@ function mountModel(
       model.position = { lat: pose.lat, lng: pose.lng, altitude: 0 };
       model.orientation = {
         heading: (pose.headingDegrees + CAR_HEADING_OFFSET) % 360,
-        tilt: CAR_TILT_DEGREES,
-        roll: 0,
+        tilt: CAR_TILT_DEGREES + (pose.pitchDegrees ?? 0),
+        roll: pose.rollDegrees ?? 0,
       };
     },
     setVisible(visible) {
