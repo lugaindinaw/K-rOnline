@@ -52,6 +52,7 @@ import {
 } from "./followCamera";
 import { createRoadOverlays, type RoadLine } from "./roadOverlays";
 import { mountRoadVehicle, mountTrafficVehicle, type RoadVehicle } from "./roadVehicle";
+import { bodyAttitude } from "../drive/driveFeel";
 import { CarInterior } from "./CarInterior";
 import type { CockpitPose } from "./cockpit";
 
@@ -112,10 +113,13 @@ function moveCamera(map: Map3DViewElement, lat: number, lng: number, altitude: n
 }
 
 function poseOf(state: VehicleState) {
+  const body = bodyAttitude(state.accelMps2 ?? 0, state.steerApplied ?? 0, state.speedMps);
   return {
     lat: state.position.lat,
     lng: state.position.lng,
     headingDegrees: state.headingDegrees,
+    pitchDegrees: body.pitchDegrees,
+    rollDegrees: body.rollDegrees,
   };
 }
 
@@ -187,6 +191,8 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     steer: 0,
     altitude: STOCKHOLM_CANDIDATE.camera.center.altitudeMeters ?? 25,
     placed: false,
+    pitchDegrees: 0,
+    rollDegrees: 0,
   });
   const screen = resolveMapScreen({ apiKey, phase, errorMessage });
 
@@ -747,14 +753,17 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
           followRef.current = true;
         }
         const next = advanceFreeVehicle(vehicle, input, dt, network);
+        const body = bodyAttitude(next.accelMps2 ?? 0, next.steerApplied ?? 0, next.speedMps);
         cockpitRef.current = {
           lat: next.position.lat,
           lng: next.position.lng,
           headingDegrees: next.headingDegrees,
           speedKmh: next.speedMps * 3.6,
-          steer: input.steer ?? 0,
+          steer: next.steerApplied ?? 0,
           altitude: lookAltitudeRef.current,
           placed: true,
+          pitchDegrees: body.pitchDegrees,
+          rollDegrees: body.rollDegrees,
         };
         vehicleViewRef.current?.setVisible(cameraViewRef.current !== "driver");
         if (shouldPrefetch(next.position, areasRef.current)) {

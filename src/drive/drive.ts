@@ -55,6 +55,10 @@ export type VehicleState = {
    * The junction exercise may use that sample. A flare or a miss stays false.
    */
   measurementReliable?: boolean;
+  /** Smoothed steer for the free car. -1 is left and +1 is right. */
+  steerApplied?: number;
+  /** Smoothed longitudinal acceleration in m/s². Positive is the throttle. */
+  accelMps2?: number;
 };
 
 export type VehicleStatus = {

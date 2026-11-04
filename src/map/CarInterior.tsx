@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { Map3DViewElement, Maps3dLibrary } from "./maps3dTypes";
 import { mirrorCamera, needleDegrees, stepCockpit, type CockpitMotion, type CockpitPose } from "./cockpit";
+import { displayedSpeedKmh } from "../drive/driveFeel";
 
 type CarInteriorProps = {
   poseRef: { current: CockpitPose };
@@ -9,6 +10,7 @@ type CarInteriorProps = {
 
 export function CarInterior({ poseRef, library }: CarInteriorProps) {
   const wheelRef = useRef<HTMLDivElement>(null);
+  const dashRef = useRef<HTMLDivElement>(null);
   const needleRef = useRef<SVGLineElement>(null);
   const speedRef = useRef<HTMLSpanElement>(null);
   const mirrorHostRef = useRef<HTMLDivElement>(null);
@@ -51,14 +53,19 @@ export function CarInterior({ poseRef, library }: CarInteriorProps) {
       const pose = poseRef.current;
       const motion = stepCockpit(motionRef.current, pose, dt);
       motionRef.current = motion;
+      const pitch = Number.isFinite(pose.pitchDegrees) ? pose.pitchDegrees : 0;
+      const roll = Number.isFinite(pose.rollDegrees) ? pose.rollDegrees : 0;
       if (wheelRef.current) {
-        wheelRef.current.style.transform = `rotate(${motion.wheelDegrees.toFixed(2)}deg)`;
+        wheelRef.current.style.transform = `rotate(${motion.wheelDegrees.toFixed(2)}deg) translateY(${(-pitch * 5).toFixed(1)}px)`;
+      }
+      if (dashRef.current) {
+        dashRef.current.style.transform = `translateY(${(-pitch * 4).toFixed(1)}px) rotate(${(-roll).toFixed(2)}deg)`;
       }
       if (needleRef.current) {
         needleRef.current.setAttribute("transform", `rotate(${motion.needleDegrees.toFixed(2)} 100 108)`);
       }
       if (speedRef.current) {
-        speedRef.current.textContent = String(Math.round(Math.max(0, pose.speedKmh)));
+        speedRef.current.textContent = String(displayedSpeedKmh(pose.speedKmh / 3.6));
       }
       const mirror = mirrorRef.current;
       if (mirror) {
@@ -91,7 +98,7 @@ export function CarInterior({ poseRef, library }: CarInteriorProps) {
       <div className="cockpit-door cockpit-door-right">
         <span className="cockpit-armrest" />
       </div>
-      <div className="cockpit-dash">
+      <div ref={dashRef} className="cockpit-dash">
         <div className="cockpit-vent" />
         <div className="cockpit-cluster">
           <span ref={speedRef} className="cockpit-speed">

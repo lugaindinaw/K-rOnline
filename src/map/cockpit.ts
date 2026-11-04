@@ -15,10 +15,12 @@ export type CockpitPose = {
   lng: number;
   headingDegrees: number;
   speedKmh: number;
-  /** -1 is left, +1 is right. */
+  /** -1 is left, +1 is right. This is the smoothed steer the car is using. */
   steer: number;
   altitude: number;
   placed: boolean;
+  pitchDegrees: number;
+  rollDegrees: number;
 };
 
 export type CockpitMotion = {
@@ -72,8 +74,8 @@ export function stepCockpit(
 ): CockpitMotion {
   const dt = Number.isFinite(dtSeconds) ? Math.min(Math.max(dtSeconds, 0), 0.1) : 0;
   return {
-    wheelDegrees: ease(motion.wheelDegrees, wheelRotationDegrees(pose.steer), dt, 14),
-    needleDegrees: ease(motion.needleDegrees, needleDegrees(pose.speedKmh), dt, 8),
+    wheelDegrees: ease(motion.wheelDegrees, wheelRotationDegrees(pose.steer), dt, 10),
+    needleDegrees: ease(motion.needleDegrees, needleDegrees(pose.speedKmh), dt, 18),
   };
 }
 

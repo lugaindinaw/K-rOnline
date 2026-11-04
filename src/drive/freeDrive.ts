@@ -1,11 +1,7 @@
 import type { RoadPoint } from "../roads/drivingRoads";
 import { nearestPlacement, type RoadNetwork } from "../roads/roadNetwork";
 import {
-  ACCEL_MPS2,
-  BRAKE_MPS2,
-  COAST_MPS2,
   MAX_FRAME_SECONDS,
-  MAX_SPEED_MPS,
   MAX_STEP_SECONDS,
   YAW_DEGREES_PER_SECOND,
   steerAngleDegrees,
@@ -18,6 +14,7 @@ import {
   OFF_ROAD_MESSAGE as GUIDE_OFF_ROAD_MESSAGE,
   FREE_ROAD_ASSOCIATION_METERS as GUIDE_ASSOCIATION_METERS,
 } from "./roadGuide";
+import { clampSteer, easeAccel, easeSteer, speedAfterAccel } from "./driveFeel";
 
 export const FREE_ROAD_ASSOCIATION_METERS = GUIDE_ASSOCIATION_METERS;
 export const OFF_ROAD_MESSAGE = GUIDE_OFF_ROAD_MESSAGE;
@@ -39,6 +36,7 @@ export type FreeVehicleState = {
   position: RoadPoint;
   headingDegrees: number;
   speedMps: number;
+  accelMps2?: number;
 };
 
 /** Link to a centerline. This is not a position, and applying it must not move the car. */
@@ -92,17 +90,24 @@ export function advanceFreeVehicle(
   dtSeconds: number,
   network: RoadNetwork,
 ): VehicleState {
-  const headingDegrees = headingForFreeStep(state, input.steer ?? 0, dtSeconds, network);
+  const commanded = clampSteer(input.steer ?? 0);
+  const steerApplied = easeSteer(state.steerApplied ?? 0, commanded, dtSeconds);
+  const headingDegrees = headingForFreeStep(state, commanded, dtSeconds, network);
   const moved = stepFreeVehicle(
     {
       position: state.position,
       headingDegrees,
       speedMps: state.speedMps,
+      accelMps2: state.accelMps2,
     },
-    input,
+    { ...input, steer: steerApplied },
     dtSeconds,
   );
-  return guideFreePose(state, moved, network, dtSeconds);
+  return {
+    ...guideFreePose(state, moved, network, dtSeconds),
+    steerApplied,
+    accelMps2: moved.accelMps2,
+  };
 }
 
 export function stepFreeVehicle(
@@ -128,23 +133,11 @@ function stepOnce(state: FreeVehicleState, input: DriveInput, dtSeconds: number)
   if (dt === 0) {
     return state;
   }
-  const speedMps = nextSpeed(state.speedMps, input, dt);
+  const accelMps2 = easeAccel(state.accelMps2 ?? 0, input, dt, state.speedMps);
+  const speedMps = speedAfterAccel(state.speedMps, accelMps2, dt);
   const headingDegrees = turnBySteer(state.headingDegrees, speedMps, input, dt);
   const position = translate(state.position, headingDegrees, speedMps * dt);
-  return { position, headingDegrees, speedMps };
-}
-
-function nextSpeed(speedMps: number, input: DriveInput, dt: number): number {
-  const speed = Math.max(0, Number.isFinite(speedMps) ? speedMps : 0);
-  const brake = input.brake;
-  const accelerate = input.accelerate && !brake;
-  if (brake) {
-    return Math.max(0, speed - BRAKE_MPS2 * dt);
-  }
-  if (accelerate) {
-    return Math.min(MAX_SPEED_MPS, speed + ACCEL_MPS2 * dt);
-  }
-  return Math.max(0, speed - COAST_MPS2 * dt);
+  return { position, headingDegrees, speedMps, accelMps2 };
 }
 
 function turnBySteer(headingDegrees: number, speedMps: number, input: DriveInput, dt: number): number {
