@@ -44,9 +44,12 @@ import { publicMapError, resolveMapScreen, type MapPhase } from "./mapScreen";
 import type { Map3DViewElement, Maps3dLibrary } from "./maps3dTypes";
 import {
   CHASE_TILT_DEGREES,
+  DRIVER_LOOK_ABOVE_GROUND_METERS,
+  approachDriverPose,
   claimCameraJob,
   followCameraFromView,
   followCameraStep,
+  framedDriverCamera,
   type CameraView,
   type FollowCamera,
 } from "./followCamera";
@@ -172,6 +175,15 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
   onCameraViewChangeRef.current = onCameraViewChange;
   const followJobRef = useRef(0);
   const lookAltitudeRef = useRef(25);
+  const groundAltitudeRef = useRef<number | null>(null);
+  const overviewRef = useRef<{
+    lat: number;
+    lng: number;
+    altitude: number;
+    range: number;
+    tilt: number;
+    heading: number;
+  } | null>(null);
   const cameraJobRef = useRef(0);
   const signatureRef = useRef("");
   const [phase, setPhase] = useState<MapPhase>("loading");
@@ -293,6 +305,42 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     publishRef.current(next);
   };
 
+  const rememberStreetGround = () => {
+    const map = mapRef.current;
+    const center = map?.center;
+    if (!map || !center || typeof center.lat !== "number" || typeof center.lng !== "number") {
+      return;
+    }
+    if (!vehicleRef.current && !overviewRef.current && typeof map.range === "number" && typeof map.tilt === "number") {
+      overviewRef.current = {
+        lat: center.lat,
+        lng: center.lng,
+        altitude: typeof center.altitude === "number" ? center.altitude : lookAltitudeRef.current,
+        range: map.range,
+        tilt: map.tilt,
+        heading: typeof map.heading === "number" ? map.heading : 0,
+      };
+    }
+    void readGroundElevation(center.lat, center.lng).then((ground) => {
+      if (ground != null) {
+        groundAltitudeRef.current = ground;
+      }
+    });
+  };
+
+  const restoreOverview = () => {
+    const saved = overviewRef.current;
+    const map = mapRef.current;
+    overviewRef.current = null;
+    if (!saved || !map || vehicleRef.current) {
+      return;
+    }
+    map.center = { lat: saved.lat, lng: saved.lng, altitude: saved.altitude };
+    map.range = saved.range;
+    map.tilt = saved.tilt;
+    map.heading = saved.heading;
+  };
+
   const flyToCarRef = useRef<(lat: number, lng: number, heading: number) => void>(() => undefined);
   flyToCarRef.current = (lat, lng, heading) => {
     const map = mapRef.current;
@@ -324,6 +372,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       if (mapRef.current !== map || ground == null) {
         return;
       }
+      groundAltitudeRef.current = ground;
       lookAltitudeRef.current = ground + 2;
       if (job !== cameraJobRef.current) {
         return;
@@ -356,6 +405,11 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       onCameraViewChangeRef.current?.(view);
       if (vehicleRef.current) {
         followRef.current = true;
+      }
+      if (view === "driver") {
+        rememberStreetGround();
+      } else {
+        restoreOverview();
       }
     },
     placeAlong(edgeId, distanceMeters) {
@@ -426,6 +480,11 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
           onCameraViewChangeRef.current?.(next);
           if (vehicleRef.current) {
             followRef.current = true;
+          }
+          if (next === "driver") {
+            rememberStreetGround();
+          } else {
+            restoreOverview();
           }
         }
         return;
@@ -742,6 +801,28 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       }
       const network = networkRef.current;
       const vehicle = vehicleRef.current;
+      const streetMap = mapRef.current;
+      if (streetMap && cameraViewRef.current === "driver" && !vehicle) {
+        const range = typeof streetMap.range === "number" ? streetMap.range : 700;
+        const tilt = typeof streetMap.tilt === "number" ? streetMap.tilt : 67;
+        const nextPose = approachDriverPose(
+          { rangeMeters: range, tiltDegrees: tilt },
+          Math.min(Math.max(dt, 0), MAX_FRAME_SECONDS),
+        );
+        streetMap.tilt = nextPose.tiltDegrees;
+        const applied = typeof streetMap.tilt === "number" ? streetMap.tilt : nextPose.tiltDegrees;
+        const framed = framedDriverCamera(nextPose, applied);
+        streetMap.range = framed.rangeMeters;
+        const lat = streetMap.center?.lat;
+        const lng = streetMap.center?.lng;
+        if (typeof lat === "number" && typeof lng === "number") {
+          streetMap.center = {
+            lat,
+            lng,
+            altitude: (groundAltitudeRef.current ?? 20) + (framed.lookOnRoad ? 0.35 : DRIVER_LOOK_ABOVE_GROUND_METERS),
+          };
+        }
+      }
       if (network && vehicle) {
         const input = driveInputFromKeys(keysRef.current);
         const held = steerHoldRef.current;
@@ -792,14 +873,22 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
           followCameraRef.current = camera;
           const claim = claimCameraJob(followJobRef.current, cameraJobRef.current);
           followJobRef.current = claim.ownedJob;
+          const driverView = cameraViewRef.current === "driver";
+          const framed = driverView
+            ? framedDriverCamera(camera, camera.tiltDegrees)
+            : { rangeMeters: camera.rangeMeters, tiltDegrees: camera.tiltDegrees, lookOnRoad: false };
+          const ground = groundAltitudeRef.current;
+          const altitude = driverView
+            ? (ground ?? 20) + (framed.lookOnRoad ? 0.35 : DRIVER_LOOK_ABOVE_GROUND_METERS)
+            : lookAltitudeRef.current;
           const endCamera = {
             center: {
               lat: camera.lat,
               lng: camera.lng,
-              altitude: lookAltitudeRef.current,
+              altitude,
             },
-            range: camera.rangeMeters,
-            tilt: camera.tiltDegrees,
+            range: framed.rangeMeters,
+            tilt: framed.tiltDegrees,
             heading: camera.headingDegrees,
           };
           if (claim.interrupt) {
@@ -809,9 +898,25 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
             }
           }
           map.center = endCamera.center;
-          map.range = endCamera.range;
           map.tilt = endCamera.tilt;
+          const appliedTilt = typeof map.tilt === "number" ? map.tilt : endCamera.tilt;
+          const settled = driverView
+            ? framedDriverCamera({ rangeMeters: endCamera.range, tiltDegrees: camera.tiltDegrees }, appliedTilt)
+            : { rangeMeters: endCamera.range, tiltDegrees: appliedTilt, lookOnRoad: false };
+          map.range = settled.rangeMeters;
+          if (driverView && settled.lookOnRoad && map.center) {
+            map.center = {
+              lat: endCamera.center.lat,
+              lng: endCamera.center.lng,
+              altitude: (groundAltitudeRef.current ?? 20) + 0.35,
+            };
+          }
           map.heading = endCamera.heading;
+          followCameraRef.current = {
+            ...camera,
+            rangeMeters: settled.rangeMeters,
+            tiltDegrees: appliedTilt,
+          };
         }
         const current = vehicleRef.current ?? next;
         trafficRef.current = stepTraffic(
@@ -857,6 +962,9 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       const ground = await readGroundElevation(focus.lat, focus.lng);
       if (cancelled || mapRef.current !== map || job !== cameraJobRef.current) {
         return;
+      }
+      if (ground != null) {
+        groundAltitudeRef.current = ground;
       }
       const groundAltitude = (ground ?? 600) + 2;
       lookAltitudeRef.current = groundAltitude;
