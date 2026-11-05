@@ -37,6 +37,7 @@ import {
   pruneCoverage,
   type CoverageCircle,
 } from "../roads/roadCoverage";
+import { requestTiltPermission } from "../drive/tiltSteer";
 import { type PracticeReview } from "../game/cityPractice";
 import {
   EMPTY_CHECKS,
@@ -116,6 +117,8 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
   const [trainingError, setTrainingError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState<ApproachAttempt>(idleAttempt());
   const [cameraView, setCameraView] = useState<CameraView>("chase");
+  const [tiltOn, setTiltOn] = useState(false);
+  const [tiltNote, setTiltNote] = useState<string | null>(null);
   const [playMode, setPlayMode] = useState<"menu" | "free" | "practice" | "review">("menu");
   const [trafficCount, setTrafficCount] = useState(0);
   const [turnGoal, setTurnGoal] = useState<"left" | "right" | null>(null);
@@ -208,6 +211,23 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
       return;
     }
     commitAttempt(next);
+  }
+
+  async function toggleTilt() {
+    if (tiltOn) {
+      setTiltOn(false);
+      setTiltNote(null);
+      return;
+    }
+    const device = DeviceOrientationEvent as unknown as { requestPermission?: () => Promise<string> };
+    const allowed = await requestTiltPermission(device.requestPermission?.bind(device));
+    if (!allowed) {
+      setTiltOn(false);
+      setTiltNote("Lutning gick inte att aktivera. Använd knapparna eller tangenterna.");
+      return;
+    }
+    setTiltOn(true);
+    setTiltNote("Luta mobilen i sidled för att styra.");
   }
 
   function openFreeDrive() {
@@ -660,6 +680,9 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
           onDriveSample={onDriveSample}
           cameraView={cameraView}
           onCameraViewChange={setCameraView}
+          tiltSteer={tiltOn}
+          tiltNote={tiltNote}
+          onToggleTilt={() => void toggleTilt()}
           rideHint={
             trainingOpen && attempt.status === "running"
               ? "Övning: gas och broms som vanligt. Avstånd registreras bara i körbanan mot korsningen."

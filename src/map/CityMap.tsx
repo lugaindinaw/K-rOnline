@@ -64,6 +64,8 @@ import { mountRoadSurfaces, roadSurfaces, selectSurfaceRoads } from "./roadSurfa
 import type { CockpitPose } from "./cockpit";
 import { bodyAttitude } from "../drive/driveFeel";
 import { clearanceOf } from "../drive/roadGuide";
+import { steerFromTilt } from "../drive/tiltSteer";
+import { DrivePad } from "../ui/DrivePad";
 import { CarInterior } from "./CarInterior";
 
 export type MapFocus = {
@@ -103,6 +105,9 @@ type CityMapProps = {
   rideHint?: string | null;
   cameraView?: CameraView;
   onCameraViewChange?: (view: CameraView) => void;
+  tiltSteer?: boolean;
+  tiltNote?: string | null;
+  onToggleTilt?: () => void;
 };
 
 function moveCamera(map: Map3DViewElement, lat: number, lng: number, altitude: number): void {
@@ -152,6 +157,9 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     rideHint = null,
     cameraView = "chase",
     onCameraViewChange,
+    tiltSteer = false,
+    tiltNote = null,
+    onToggleTilt,
   },
   ref,
 ) {
@@ -175,6 +183,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
   const keysRef = useRef(new Set<string>());
   const pedalsRef = useRef({ accelerate: false, brake: false });
   const steerHoldRef = useRef({ left: false, right: false });
+  const tiltRef = useRef(0);
   const followRef = useRef(false);
   const followCameraRef = useRef<FollowCamera | null>(null);
   const cameraViewRef = useRef<CameraView>(cameraView);
@@ -349,6 +358,22 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       }
     });
   };
+
+  useEffect(() => {
+    if (!tiltSteer) {
+      tiltRef.current = 0;
+      return;
+    }
+    const onTilt = (event: DeviceOrientationEvent) => {
+      const landscape = window.matchMedia("(orientation: landscape)").matches;
+      tiltRef.current = steerFromTilt({ beta: event.beta, gamma: event.gamma }, landscape);
+    };
+    window.addEventListener("deviceorientation", onTilt);
+    return () => {
+      window.removeEventListener("deviceorientation", onTilt);
+      tiltRef.current = 0;
+    };
+  }, [tiltSteer]);
 
   const restoreOverview = () => {
     const saved = overviewRef.current;
@@ -899,7 +924,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
         const buttonSteer = held.left === held.right ? 0 : held.left ? -1 : 1;
         input.accelerate = input.accelerate || pedalsRef.current.accelerate;
         input.brake = input.brake || pedalsRef.current.brake;
-        input.steer = Math.max(-1, Math.min(1, (input.steer ?? 0) + buttonSteer));
+        input.steer = Math.max(-1, Math.min(1, (input.steer ?? 0) + buttonSteer + tiltRef.current));
         if (input.accelerate || input.steer) {
           followRef.current = true;
         }
@@ -1106,6 +1131,44 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
         {cameraView === "driver" ? (
           <CarInterior poseRef={cockpitRef} library={mapsLibrary} />
         ) : null}
+        <DrivePad
+          cameraView={cameraView}
+          tiltOn={tiltSteer}
+          tiltNote={tiltNote}
+          onGas={(pressed) => {
+            pedalsRef.current.accelerate = pressed;
+            if (pressed) {
+              pedalsRef.current.brake = false;
+            }
+          }}
+          onBrake={(pressed) => {
+            pedalsRef.current.brake = pressed;
+            if (pressed) {
+              pedalsRef.current.accelerate = false;
+            }
+          }}
+          onSteer={(side, pressed) => {
+            steerHoldRef.current[side] = pressed;
+          }}
+          onIndicator={(side) => {
+            indicatorRef.current = { state: toggleIndicator(indicatorRef.current.state, side), armed: false };
+          }}
+          onCamera={() => {
+            const next = cameraViewRef.current === "driver" ? "chase" : "driver";
+            cameraViewRef.current = next;
+            cameraJobRef.current += 1;
+            onCameraViewChangeRef.current?.(next);
+            if (vehicleRef.current) {
+              followRef.current = true;
+            }
+            if (next === "driver") {
+              rememberStreetGround();
+            } else {
+              restoreOverview();
+            }
+          }}
+          onTilt={() => onToggleTilt?.()}
+        />
       </div>
       {screen.kind === "loading" ? (
         <div className="map-overlay" role="status">

@@ -1,29 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import type { Map3DViewElement, Maps3dLibrary } from "./maps3dTypes";
 import { mirrorCamera, needleDegrees, sideMirrorCamera, stepCockpit, type CockpitMotion, type CockpitPose } from "./cockpit";
 import { displayedSpeedKmh } from "../drive/driveFeel";
-import { mountCabinOverlay, type CabinOverlay, type ScreenAnchor } from "./cabinOverlay";
 
 type CarInteriorProps = {
   poseRef: { current: CockpitPose };
   library: Maps3dLibrary | null;
 };
-
-function placeAnchor(element: HTMLElement | null, anchor: ScreenAnchor | null, minWidth: number, minHeight: number): void {
-  if (!element || !anchor) {
-    return;
-  }
-  const width = Math.max(minWidth, anchor.width);
-  const height = Math.max(minHeight, anchor.height);
-  element.style.left = `${anchor.x - width / 2}px`;
-  element.style.top = `${anchor.y - height / 2}px`;
-  element.style.width = `${width}px`;
-  element.style.height = `${height}px`;
-  element.style.right = "auto";
-  element.style.bottom = "auto";
-  element.style.transform = "none";
-  element.style.marginLeft = "0";
-}
 
 export function CarInterior({ poseRef, library }: CarInteriorProps) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -43,27 +26,7 @@ export function CarInterior({ poseRef, library }: CarInteriorProps) {
   const mirrorRef = useRef<Map3DViewElement | null>(null);
   const leftMirrorRef = useRef<Map3DViewElement | null>(null);
   const rightMirrorRef = useRef<Map3DViewElement | null>(null);
-  const overlayRef = useRef<CabinOverlay | null>(null);
   const motionRef = useRef<CockpitMotion>({ wheelDegrees: 0, needleDegrees: needleDegrees(0) });
-  const [solidCabin, setSolidCabin] = useState(false);
-
-  useEffect(() => {
-    const host = rootRef.current;
-    if (!host) {
-      return;
-    }
-    const overlay = mountCabinOverlay(host);
-    if (!overlay) {
-      return;
-    }
-    overlayRef.current = overlay;
-    setSolidCabin(true);
-    return () => {
-      overlay.remove();
-      overlayRef.current = null;
-      setSolidCabin(false);
-    };
-  }, []);
 
   useEffect(() => {
     const host = mirrorHostRef.current;
@@ -86,12 +49,10 @@ export function CarInterior({ poseRef, library }: CarInteriorProps) {
     }
     host.replaceChildren(map);
     mirrorRef.current = map;
-    const extras: Array<{ host: HTMLDivElement | null; slot: "left" | "right"; target: { current: Map3DViewElement | null } }> = solidCabin
-      ? [
-          { host: leftMirrorHostRef.current, slot: "left", target: leftMirrorRef },
-          { host: rightMirrorHostRef.current, slot: "right", target: rightMirrorRef },
-        ]
-      : [];
+    const extras: Array<{ host: HTMLDivElement | null; slot: "left" | "right"; target: { current: Map3DViewElement | null } }> = [
+      { host: leftMirrorHostRef.current, slot: "left", target: leftMirrorRef },
+      { host: rightMirrorHostRef.current, slot: "right", target: rightMirrorRef },
+    ];
     const created: Map3DViewElement[] = [];
     for (const extra of extras) {
       if (!extra.host) {
@@ -121,7 +82,7 @@ export function CarInterior({ poseRef, library }: CarInteriorProps) {
         side.remove();
       }
     };
-  }, [library, poseRef, solidCabin]);
+  }, [library, poseRef]);
 
   useEffect(() => {
     let frame = 0;
@@ -173,22 +134,6 @@ export function CarInterior({ poseRef, library }: CarInteriorProps) {
       rightLampRef.current?.classList.toggle("active", indicator === "right");
       leftLampRef.current?.classList.toggle("on", indicator === "left" && lit);
       rightLampRef.current?.classList.toggle("on", indicator === "right" && lit);
-      const overlay = overlayRef.current;
-      if (overlay) {
-        const anchors = overlay.render({
-          tiltDegrees: pose.viewTiltDegrees,
-          wheelDegrees: motion.wheelDegrees,
-          needleDegrees: motion.needleDegrees,
-          pitchDegrees: pitch,
-          rollDegrees: roll,
-          indicator,
-          indicatorLit: lit,
-        });
-        placeAnchor(clusterRef.current, anchors.gauge, 112, 86);
-        placeAnchor(rearMirrorRef.current, anchors.rearMirror, 120, 52);
-        placeAnchor(leftMirrorFrameRef.current, anchors.leftMirror, 72, 42);
-        placeAnchor(rightMirrorFrameRef.current, anchors.rightMirror, 72, 42);
-      }
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
@@ -196,7 +141,7 @@ export function CarInterior({ poseRef, library }: CarInteriorProps) {
   }, [poseRef]);
 
   return (
-    <div ref={rootRef} className={solidCabin ? "cockpit cockpit-world" : "cockpit"} aria-hidden="true">
+    <div ref={rootRef} className="cockpit" aria-hidden="true">
       <div ref={leftLampRef} className="cockpit-indicator cockpit-indicator-left" />
       <div ref={rightLampRef} className="cockpit-indicator cockpit-indicator-right" />
       <div className="cockpit-glass">
@@ -207,16 +152,12 @@ export function CarInterior({ poseRef, library }: CarInteriorProps) {
           <div ref={mirrorHostRef} className="cockpit-mirror-glass" />
         </div>
         <div className="cockpit-hood" />
-        {solidCabin ? (
-          <>
-            <div ref={leftMirrorFrameRef} className="cockpit-side-mirror cockpit-side-mirror-left">
-              <div ref={leftMirrorHostRef} className="cockpit-mirror-glass" />
-            </div>
-            <div ref={rightMirrorFrameRef} className="cockpit-side-mirror cockpit-side-mirror-right">
-              <div ref={rightMirrorHostRef} className="cockpit-mirror-glass" />
-            </div>
-          </>
-        ) : null}
+        <div ref={leftMirrorFrameRef} className="cockpit-side-mirror cockpit-side-mirror-left">
+          <div ref={leftMirrorHostRef} className="cockpit-mirror-glass" />
+        </div>
+        <div ref={rightMirrorFrameRef} className="cockpit-side-mirror cockpit-side-mirror-right">
+          <div ref={rightMirrorHostRef} className="cockpit-mirror-glass" />
+        </div>
       </div>
       <div className="cockpit-door cockpit-door-left">
         <span className="cockpit-armrest" />
@@ -233,6 +174,8 @@ export function CarInterior({ poseRef, library }: CarInteriorProps) {
             <circle cx="100" cy="100" r="68" fill="none" stroke="#3a4148" strokeWidth="6" />
             <path d="M100 32 V78 M40 128 L86 108 M160 128 L114 108" fill="none" stroke="#1a1d21" strokeWidth="12" strokeLinecap="round" />
             <circle cx="100" cy="100" r="16" fill="#2c3238" stroke="#d7c4a3" strokeWidth="3" />
+            <ellipse cx="46" cy="108" rx="18" ry="24" fill="#e4b89a" />
+            <ellipse cx="154" cy="108" rx="18" ry="24" fill="#e4b89a" />
           </svg>
         </div>
       </div>
