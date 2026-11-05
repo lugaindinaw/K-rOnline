@@ -1,0 +1,82 @@
+import type { PointerEvent } from "react";
+import type { CameraView } from "../map/followCamera";
+
+type DrivePadProps = {
+  cameraView: CameraView;
+  tiltOn: boolean;
+  tiltNote: string | null;
+  onGas: (pressed: boolean) => void;
+  onBrake: (pressed: boolean) => void;
+  onSteer: (side: "left" | "right", pressed: boolean) => void;
+  onIndicator: (side: "left" | "right") => void;
+  onCamera: () => void;
+  onTilt: () => void;
+};
+
+function hold(onChange: (pressed: boolean) => void) {
+  return {
+    onPointerDown(event: PointerEvent<HTMLButtonElement>) {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      onChange(true);
+    },
+    onPointerUp() {
+      onChange(false);
+    },
+    onPointerCancel() {
+      onChange(false);
+    },
+    onLostPointerCapture() {
+      onChange(false);
+    },
+  };
+}
+
+export function DrivePad({
+  cameraView,
+  tiltOn,
+  tiltNote,
+  onGas,
+  onBrake,
+  onSteer,
+  onIndicator,
+  onCamera,
+  onTilt,
+}: DrivePadProps) {
+  return (
+    <div className="drive-pad">
+      <div className="drive-pad-steer">
+        <button type="button" {...hold((pressed) => onSteer("left", pressed))}>
+          Vänster
+        </button>
+        <button type="button" {...hold((pressed) => onSteer("right", pressed))}>
+          Höger
+        </button>
+      </div>
+      <div className="drive-pad-center">
+        <button type="button" onClick={onCamera}>
+          {cameraView === "driver" ? "Utanför bilen" : "I bilen"}
+        </button>
+        <button type="button" aria-pressed={tiltOn} onClick={onTilt}>
+          {tiltOn ? "Lutning på" : "Styr med lutning"}
+        </button>
+        <div className="drive-pad-blinkers">
+          <button type="button" onClick={() => onIndicator("left")}>
+            Blinkers vänster
+          </button>
+          <button type="button" onClick={() => onIndicator("right")}>
+            Blinkers höger
+          </button>
+        </div>
+        {tiltNote ? <p>{tiltNote}</p> : null}
+      </div>
+      <div className="drive-pad-pedals">
+        <button type="button" {...hold(onBrake)}>
+          Broms
+        </button>
+        <button type="button" {...hold(onGas)}>
+          Gas
+        </button>
+      </div>
+    </div>
+  );
+}

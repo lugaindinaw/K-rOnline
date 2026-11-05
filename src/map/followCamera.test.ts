@@ -107,7 +107,7 @@ describe("followCameraStep", () => {
       const switched = followCameraStep(camera, car, 0.05, "driver");
       expect(Math.abs(switched.rangeMeters - before.rangeMeters)).toBeLessThan(6);
       expect(Math.abs(switched.tiltDegrees - before.tiltDegrees)).toBeLessThan(16);
-      expect(Math.abs(driver.tiltDegrees - before.tiltDegrees)).toBeGreaterThan(15);
+      expect(Math.abs(driver.tiltDegrees - before.tiltDegrees)).toBeGreaterThan(8);
       expect(headingDelta(switched.headingDegrees, before.headingDegrees)).toBeLessThanOrEqual(
         CAMERA_YAW_DEGREES_PER_SECOND * 0.05 + 0.001,
       );

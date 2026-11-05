@@ -200,8 +200,7 @@ export function SwedenPanel({
           växlar kameran. Q eller Blinkers vänster, och E eller Blinkers höger, tänder blinkersen.
           Den slocknar när ratten har vridits åt det hållet och sedan rätats. Väjningsplikt visas bara
           där OpenStreetMap har en give_way-nod, och ett stopp där registreras som fakta, inte som ett
-          förarprov. Förarvyn sitter i förarens ögonhöjd inne i en tredimensionell bil, med ratt,
-          instrumentpanel, vindrutetorkare, sidospeglar och backspegel, i samma perspektiv som kartan. Körbanan ritas som en yta när vägdata finns. Vy bakifrån visar bilen utifrån. Några andra bilar märkta Trafik följer samma vägar, saktar in
+          förarprov. Förarvyn sitter i förarens ögonhöjd, med ratt, instrument och backspegel runt den riktiga gatan. På mobil, surfplatta och dator finns knapparna på kartan, och på mobil kan du välja att styra genom att luta enheten. Körbanan ritas som en yta när vägdata finns. Knappen utanför bilen visar bilen utifrån. Några andra bilar märkta Trafik följer samma vägar, saktar in
           där vägen delar sig och håller avstånd.
         </p>
         <div className="drive-pedals">

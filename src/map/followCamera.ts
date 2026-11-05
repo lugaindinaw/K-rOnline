@@ -7,9 +7,9 @@ export type CameraView = "chase" | "driver";
  * Look a short distance ahead and stay far enough back that the whole car
  * sits in the lower part of the frame instead of under the camera.
  */
-export const CHASE_RANGE_METERS = 26;
-export const CHASE_TILT_DEGREES = 58;
-export const CHASE_LOOKAHEAD_METERS = 8;
+export const CHASE_RANGE_METERS = 18;
+export const CHASE_TILT_DEGREES = 70;
+export const CHASE_LOOKAHEAD_METERS = 10;
 export const FOLLOW_RANGE_METERS = CHASE_RANGE_METERS;
 export const FOLLOW_TILT_DEGREES = CHASE_TILT_DEGREES;
 export const CAMERA_LOOKAHEAD_METERS = CHASE_LOOKAHEAD_METERS;

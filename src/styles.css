@@ -437,7 +437,7 @@ summary {
   position: absolute;
   top: 14px;
   bottom: -2px;
-  width: 28px;
+  width: 46px;
   background: linear-gradient(90deg, #12100e, #4a433a 42%, #1a1714);
 }
 
@@ -480,12 +480,13 @@ summary {
 
 .cockpit-hood {
   position: absolute;
-  left: 12%;
-  right: 12%;
-  bottom: -10px;
-  height: 58px;
-  background: linear-gradient(#6a7580, #2a3138 70%);
-  clip-path: polygon(14% 100%, 30% 0, 70% 0, 86% 100%);
+  left: 8%;
+  right: 8%;
+  bottom: -8px;
+  height: 92px;
+  background: linear-gradient(#8b97a3, #3c4650 68%);
+  clip-path: polygon(8% 100%, 24% 0, 76% 0, 92% 100%);
+  box-shadow: 0 -12px 20px rgba(0, 0, 0, 0.25);
 }
 
 .cockpit-door {
@@ -543,11 +544,11 @@ summary {
 
 .cockpit-cluster {
   position: absolute;
-  left: 32%;
-  bottom: 28%;
-  width: 156px;
-  height: 122px;
-  margin-left: -78px;
+  left: 50%;
+  bottom: 22%;
+  width: 168px;
+  height: 128px;
+  margin-left: -84px;
 }
 
 .cockpit-speed {
@@ -572,12 +573,12 @@ summary {
 
 .cockpit-wheel {
   position: absolute;
-  left: 32%;
-  bottom: -4%;
-  width: clamp(176px, 28vh, 248px);
-  margin-left: calc(clamp(176px, 28vh, 248px) / -2);
+  left: 50%;
+  bottom: 8%;
+  width: clamp(200px, 34vh, 300px);
+  margin-left: calc(clamp(200px, 34vh, 300px) / -2);
   aspect-ratio: 1;
-  transform-origin: 50% 42%;
+  transform-origin: 50% 46%;
 }
 
 .cockpit-wheel svg {
@@ -817,6 +818,74 @@ summary {
   z-index: 12;
   pointer-events: none;
   background: rgba(4, 10, 24, 0.78);
+}
+
+.drive-pad {
+  position: absolute;
+  z-index: 6;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.drive-pad button {
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  min-height: 48px;
+  background: rgba(20, 24, 28, 0.88);
+  color: #f7f4ee;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+}
+
+.drive-pad-steer,
+.drive-pad-pedals,
+.drive-pad-blinkers {
+  display: flex;
+  gap: 8px;
+}
+
+.drive-pad-pedals button:last-child {
+  background: #1f4d3a;
+}
+
+.drive-pad-center {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  max-width: 280px;
+}
+
+.drive-pad-center p {
+  margin: 0;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: rgba(20, 24, 28, 0.88);
+  color: #f7f4ee;
+  font-size: 0.85rem;
+}
+
+@media (max-width: 800px) {
+  .drive-pad {
+    flex-wrap: wrap;
+  }
+
+  .drive-pad-center {
+    order: -1;
+    width: 100%;
+    max-width: none;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .drive-pad-center p,
+  .drive-pad-blinkers {
+    grid-column: 1 / -1;
+  }
 }
 
 .game-hud-actions {
