@@ -85,7 +85,62 @@ export function momentMission(moment: MomentId, goal: "left" | "right" | null): 
   if (moment === "motorway") {
     return "Håll en jämn fart nära bilens toppfart, omkring 40 km/h, och bli kvar i körfältet. Den här prototypen kör inte i riktig motorvägsfart.";
   }
-  return "Det är mörkt. Kör en kort bit och håll dig på vägen. Tänd blinkers om du svänger.";
+  return "Det är mörkt. Kör en kort bit, håll dig i körfältet och tänd blinkers med Q eller E.";
+}
+
+const NIGHT_SPEED_KMH = 12;
+
+export function freshIndicatorSide(
+  previous: "off" | "left" | "right" | null,
+  indicator: "off" | "left" | "right",
+): "left" | "right" | null {
+  if (previous == null || indicator === "off" || indicator === previous) {
+    return null;
+  }
+  return indicator;
+}
+
+function nightBlinked(input: MomentSnapshot): boolean {
+  return input.checks.left || input.checks.right || lineValue(input.lines, "Blinkers före sväng:") === "använd";
+}
+
+function reviewNight(input: MomentSnapshot): PracticeReview {
+  const speed = maxSpeed(input.lines);
+  const offset = offsetMeters(input.lines);
+  const blinked = nightBlinked(input);
+  const fastEnough = speed >= NIGHT_SPEED_KMH;
+  const inLane = offset != null && offset <= 4;
+  const points = [
+    point(
+      "Fart",
+      fastEnough,
+      fastEnough
+        ? `Högsta fart ${speed} km/h. I mörker räcker en lugn fart.`
+        : "Håll W och kom upp i minst 12 km/h. Kör lugnt så du hinner se vägen.",
+    ),
+    point(
+      "Placering",
+      inLane,
+      offset == null
+        ? "Sidoläget mäts när bilen rullar. Håll dig nära mittlinjen."
+        : inLane
+          ? `${offset.toFixed(1)} m från mittlinjen. Du höll dig i körfältet.`
+          : `${offset.toFixed(1)} m från mittlinjen. Styr tillbaka mot körfältet med A eller D.`,
+    ),
+    point(
+      "Blinkers",
+      blinked,
+      blinked
+        ? "Blinkersen tändes under körningen."
+        : "Tryck Q eller E och tänd blinkers innan du svänger.",
+    ),
+  ];
+  const waiting = !fastEnough ? points[0] : !blinked ? points[2] : !inLane ? points[1] : null;
+  return {
+    score: Math.round((points.filter((item) => item.mark === "bra").length / points.length) * 100),
+    points,
+    live: waiting?.detail ?? "Mörkersträckan är körd.",
+  };
 }
 
 export function reviewMoment(input: MomentSnapshot): PracticeReview {
@@ -137,6 +192,9 @@ export function reviewMoment(input: MomentSnapshot): PracticeReview {
       live: points.find((item) => item.mark === "träna")?.detail ?? "Parkeringen är klar.",
     };
   }
+  if (input.moment === "night") {
+    return reviewNight(input);
+  }
   const target = input.moment === "motorway" ? 40 : input.moment === "rural" ? 35 : 12;
   const fastEnough = speed >= target;
   const inLane = offset != null && offset <= 4;
@@ -169,6 +227,10 @@ export function momentComplete(input: MomentSnapshot): boolean {
   }
   if (input.moment === "parking") {
     return maxSpeed(input.lines) >= 4 && input.speedKmh === 0 && input.checks.brake;
+  }
+  if (input.moment === "night") {
+    const offset = offsetMeters(input.lines);
+    return maxSpeed(input.lines) >= NIGHT_SPEED_KMH && offset != null && offset <= 4 && nightBlinked(input);
   }
   const target = input.moment === "motorway" ? 40 : input.moment === "rural" ? 35 : 12;
   const offset = offsetMeters(input.lines);

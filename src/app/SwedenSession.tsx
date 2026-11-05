@@ -41,6 +41,7 @@ import { type PracticeReview } from "../game/cityPractice";
 import {
   EMPTY_CHECKS,
   finishMoment,
+  freshIndicatorSide,
   momentComplete,
   reviewMoment,
   type MomentId,
@@ -124,6 +125,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
   const nearestCarRef = useRef<number | null>(null);
   const closeSpeedRef = useRef<number | null>(null);
   const sawStartRoad = useRef(false);
+  const seenIndicator = useRef<"off" | "left" | "right" | null>(null);
   const attemptRef = useRef(attempt);
   const startRef = useRef<ApproachStart | null>(null);
   const practicePlaced = useRef(false);
@@ -219,6 +221,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
     nearestCarRef.current = null;
     closeSpeedRef.current = null;
     sawStartRoad.current = false;
+    seenIndicator.current = null;
     setChecks(EMPTY_CHECKS);
     setMoment(next);
     setTurnGoal(next === "roundabout" ? "right" : null);
@@ -264,10 +267,12 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
     if (playMode !== "practice") {
       return;
     }
+    const side = freshIndicatorSide(seenIndicator.current, vehicle.indicator ?? "off");
+    seenIndicator.current = vehicle.indicator ?? "off";
     setChecks((prev) => {
       const next = { ...prev };
-      if (vehicle.indicator === "left") next.left = true;
-      if (vehicle.indicator === "right") next.right = true;
+      if (side === "left") next.left = true;
+      if (side === "right") next.right = true;
       if (vehicle.speedKmh >= 2) next.gas = true;
       if ((vehicle.driveFactLines ?? []).some((line) => line.startsWith("Broms använd: ja"))) next.brake = true;
       if (
