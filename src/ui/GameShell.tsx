@@ -1,5 +1,11 @@
-import { cityMission, PRACTICE_DISCLAIMER, type PracticeReview } from "../game/cityPractice";
+import { PRACTICE_DISCLAIMER, type PracticeReview } from "../game/cityPractice";
 import { LICENSE_MOMENTS } from "../game/licenseMoments";
+import {
+  momentMission,
+  momentTitle,
+  type MomentId,
+  type SafetyChecks,
+} from "../game/simpleMoments";
 
 type PlayMode = "menu" | "free" | "practice" | "review";
 
@@ -8,9 +14,13 @@ type GameShellProps = {
   review: PracticeReview | null;
   trafficCount: number;
   goal: "left" | "right" | null;
+  moment: MomentId | null;
+  checks: SafetyChecks;
   onFree: () => void;
   onPractice: () => void;
+  onStartMoment: (moment: MomentId) => void;
   onChooseTurn: (goal: "left" | "right") => void;
+  onSafety: (step: keyof SafetyChecks) => void;
   onFinish: () => void;
   onAgain: () => void;
   onMenu: () => void;
@@ -21,9 +31,13 @@ export function GameShell({
   review,
   trafficCount,
   goal,
+  moment,
+  checks,
   onFree,
   onPractice,
+  onStartMoment,
   onChooseTurn,
+  onSafety,
   onFinish,
   onAgain,
   onMenu,
@@ -38,11 +52,13 @@ export function GameShell({
 
   if (mode === "practice" && review) {
     return (
-      <section className="game-hud" aria-label="Uppdrag">
+      <>
+        {moment === "night" ? <div className="game-night" /> : null}
+        <section className="game-hud" aria-label="Uppdrag">
         <p className="game-kicker">Körkortsövning</p>
-        <h2>{goal === "left" ? "Sväng vänster" : goal === "right" ? "Sväng höger" : "Välj sväng"}</h2>
-        <p className="game-mission">{cityMission(goal)}</p>
-        {goal ? null : (
+        <h2>{moment ? momentTitle(moment, goal) : "Övning"}</h2>
+        <p className="game-mission">{moment ? momentMission(moment, goal) : ""}</p>
+        {moment === "city" && !goal ? (
           <div className="game-hud-actions">
             <button type="button" onClick={() => onChooseTurn("left")}>
               Sväng vänster
@@ -51,7 +67,23 @@ export function GameShell({
               Sväng höger
             </button>
           </div>
-        )}
+        ) : null}
+        {moment === "safety" ? (
+          <div className="game-hud-actions">
+            <button type="button" aria-pressed={checks.left} onClick={() => onSafety("left")}>
+              Blinkers vänster
+            </button>
+            <button type="button" aria-pressed={checks.right} onClick={() => onSafety("right")}>
+              Blinkers höger
+            </button>
+            <button type="button" aria-pressed={checks.brake} onClick={() => onSafety("brake")}>
+              Prova broms
+            </button>
+            <button type="button" aria-pressed={checks.gas} onClick={() => onSafety("gas")}>
+              Prova gas
+            </button>
+          </div>
+        ) : null}
         <p className="game-score">
           <span>{review.score}</span> poäng
         </p>
@@ -70,6 +102,7 @@ export function GameShell({
           </button>
         </div>
       </section>
+      </>
     );
   }
 
@@ -122,7 +155,8 @@ export function GameShell({
     );
   }
 
-  const later = LICENSE_MOMENTS.filter((moment) => !moment.playable);
+  const playable = LICENSE_MOMENTS.filter((item) => item.playable && item.id !== "city");
+  const later = LICENSE_MOMENTS.filter((item) => !item.playable);
   return (
     <div className="game-menu">
       <div className="game-card game-card-wide">
@@ -141,13 +175,22 @@ export function GameShell({
             <small>Stadstrafik: kör fram till korsningen och sväng vänster eller höger.</small>
           </button>
         </div>
-        <h2>Kommande övningar</h2>
+        <h2>Övningar</h2>
+        <div className="game-moment-list">
+          {playable.map((item) => (
+            <button key={item.id} type="button" className="game-moment" onClick={() => onStartMoment(item.id as MomentId)}>
+              <strong>{item.title}</strong>
+              <span>{item.summary}</span>
+            </button>
+          ))}
+        </div>
+        <h2>Inte med i den här versionen</h2>
         <ul className="game-later">
-          {later.map((moment) => (
-            <li key={moment.id}>
-              <strong>{moment.title}</strong>
+          {later.map((item) => (
+            <li key={item.id}>
+              <strong>{item.title}</strong>
               <span>
-                {moment.area}. {moment.summary}
+                {item.area}. {item.summary}
               </span>
             </li>
           ))}
