@@ -126,7 +126,7 @@ export function reviewCityDrive(input: {
     points.push({
       title: "Väjningsplikt",
       mark: "pågår",
-      detail: "Väjningsplikt framför. Stanna innan du kör vidare.",
+      detail: "Stanna helt med S vid väjningsplikten innan du svänger.",
     });
   } else {
     points.push({ title: "Väjningsplikt", mark: "pågår", detail: "Ingen give_way-nod är nådd ännu." });
@@ -182,10 +182,10 @@ export function reviewCityDrive(input: {
     live = "Välj vänster eller höger sväng.";
   } else if (!moved) {
     live = `Gasa med W och kör fram mot korsningen. Tänd blinkers med ${key} före svängen.`;
+  } else if (ahead && brake !== "ja") {
+    live = "Stanna vid väjningsplikten. Håll S tills bilen står stilla, och sväng sedan.";
   } else if (!changed && !indicatorReady) {
     live = `Tänd ${side} blinkers nu, tangenten ${key}. Sväng sedan med ${steerKey}.`;
-  } else if (ahead && brake !== "ja" && speed > 8) {
-    live = "Väjningsplikt framför. Bromsa och stanna innan du svänger.";
   } else if (close && !eased) {
     live = `En bil är ${Math.round(nearest ?? 0)} m bort. Släpp gasen.`;
   } else if (!changed && indicatorReady) {
