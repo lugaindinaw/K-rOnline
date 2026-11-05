@@ -85,7 +85,7 @@ export function momentMission(moment: MomentId, goal: "left" | "right" | null): 
   if (moment === "motorway") {
     return "Håll en jämn fart nära bilens toppfart, omkring 40 km/h, och bli kvar i körfältet. Den här prototypen kör inte i riktig motorvägsfart.";
   }
-  return "Det är mörkt. Kör en kort bit, håll dig i körfältet och tänd blinkers med Q eller E.";
+  return "Det är mörkt. Kör en kort bit och håll dig i körfältet.";
 }
 
 const NIGHT_SPEED_KMH = 12;
@@ -100,14 +100,9 @@ export function freshIndicatorSide(
   return indicator;
 }
 
-function nightBlinked(input: MomentSnapshot): boolean {
-  return input.checks.left || input.checks.right || lineValue(input.lines, "Blinkers före sväng:") === "använd";
-}
-
 function reviewNight(input: MomentSnapshot): PracticeReview {
   const speed = maxSpeed(input.lines);
   const offset = offsetMeters(input.lines);
-  const blinked = nightBlinked(input);
   const fastEnough = speed >= NIGHT_SPEED_KMH;
   const inLane = offset != null && offset <= 4;
   const points = [
@@ -127,15 +122,8 @@ function reviewNight(input: MomentSnapshot): PracticeReview {
           ? `${offset.toFixed(1)} m från mittlinjen. Du höll dig i körfältet.`
           : `${offset.toFixed(1)} m från mittlinjen. Styr tillbaka mot körfältet med A eller D.`,
     ),
-    point(
-      "Blinkers",
-      blinked,
-      blinked
-        ? "Blinkersen tändes under körningen."
-        : "Tryck Q eller E och tänd blinkers innan du svänger.",
-    ),
   ];
-  const waiting = !fastEnough ? points[0] : !blinked ? points[2] : !inLane ? points[1] : null;
+  const waiting = !fastEnough ? points[0] : !inLane ? points[1] : null;
   return {
     score: Math.round((points.filter((item) => item.mark === "bra").length / points.length) * 100),
     points,
@@ -230,7 +218,7 @@ export function momentComplete(input: MomentSnapshot): boolean {
   }
   if (input.moment === "night") {
     const offset = offsetMeters(input.lines);
-    return maxSpeed(input.lines) >= NIGHT_SPEED_KMH && offset != null && offset <= 4 && nightBlinked(input);
+    return maxSpeed(input.lines) >= NIGHT_SPEED_KMH && offset != null && offset <= 4;
   }
   const target = input.moment === "motorway" ? 40 : input.moment === "rural" ? 35 : 12;
   const offset = offsetMeters(input.lines);

@@ -126,6 +126,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
   const closeSpeedRef = useRef<number | null>(null);
   const sawStartRoad = useRef(false);
   const seenIndicator = useRef<"off" | "left" | "right" | null>(null);
+  const nightFactsReady = useRef(false);
   const attemptRef = useRef(attempt);
   const startRef = useRef<ApproachStart | null>(null);
   const practicePlaced = useRef(false);
@@ -222,6 +223,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
     closeSpeedRef.current = null;
     sawStartRoad.current = false;
     seenIndicator.current = null;
+    nightFactsReady.current = false;
     setChecks(EMPTY_CHECKS);
     setMoment(next);
     setTurnGoal(next === "roundabout" ? "right" : null);
@@ -326,6 +328,10 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
       if (!sawStartRoad.current) {
         return;
       }
+    }
+    if (moment === "night" && !nightFactsReady.current) {
+      nightFactsReady.current = true;
+      return;
     }
     const snapshot = practiceInput();
     if (!momentComplete(snapshot)) {

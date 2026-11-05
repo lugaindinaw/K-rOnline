@@ -46,20 +46,24 @@ describe("simple moments", () => {
     expect(freshIndicatorSide("left", "right")).toBe("right");
   });
 
-  it("finishes the night drive when speed, lane and a blinker are all done", () => {
-    const base = snap({
+  it("scores the night drive on speed and lane, and skips blinkers when the task has no turn", () => {
+    const straight = snap({
       moment: "night",
       lines: ["Högsta fart: 18 km/h", "Största avstånd från mittlinjen: 1.2 m", "Blinkers före sväng: ingen sväng ännu"],
+      checks: { ...EMPTY_CHECKS, left: true },
     });
-    expect(momentComplete(base)).toBe(false);
-    const missingBlinker = reviewMoment(base);
-    expect(missingBlinker.live).toContain("Q eller E");
-    expect(missingBlinker.points.find((point) => point.title === "Blinkers")?.mark).toBe("träna");
-    const done = { ...base, checks: { ...EMPTY_CHECKS, left: true } };
-    expect(momentComplete(done)).toBe(true);
-    const review = reviewMoment(done);
+    expect(momentComplete(straight)).toBe(true);
+    const review = reviewMoment(straight);
     expect(review.score).toBe(100);
-    expect(review.points.map((point) => point.title)).toEqual(["Fart", "Placering", "Blinkers"]);
+    expect(review.points.map((point) => point.title)).toEqual(["Fart", "Placering"]);
+    const turnedWithoutBlinker = reviewMoment(
+      snap({
+        moment: "night",
+        lines: ["Högsta fart: 8 km/h", "Största avstånd från mittlinjen: 1.2 m", "Blinkers före sväng: inte använd"],
+      }),
+    );
+    expect(turnedWithoutBlinker.points.map((point) => point.title)).toEqual(["Fart", "Placering"]);
+    expect(turnedWithoutBlinker.points.find((point) => point.title === "Fart")?.detail).toContain("12 km/h");
   });
 
   it("tells the night driver to steer back when the car leaves the lane", () => {
