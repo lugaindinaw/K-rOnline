@@ -69,7 +69,7 @@ export const LICENSE_MOMENTS: readonly LicenseMoment[] = [
     title: "Mörkerkörning",
     area: "Riskmedvetenhet",
     playable: true,
-    summary: "Kör en kort bit i mörk vy. Regn och halka ingår inte.",
+    summary: "Kör en kort bit i mörker, håll körfältet och tänd blinkers.",
   },
   {
     id: "independent",
