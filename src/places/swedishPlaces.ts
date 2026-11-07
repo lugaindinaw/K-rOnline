@@ -1,6 +1,6 @@
 import { isInSweden } from "../geo/sweden";
 
-export const PLACE_EXAMPLES = ["Göteborg", "Malmö", "Kiruna", "Visby", "Glommersträsk"] as const;
+export const PLACE_EXAMPLES = ["Göteborg", "Malmö", "Uppsala", "Umeå", "Kiruna", "Visby", "Glommersträsk"] as const;
 
 export type SwedishPlace = {
   id: string;

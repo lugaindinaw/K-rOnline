@@ -12,6 +12,8 @@ import {
   type VehicleStatus,
 } from "../drive/drive";
 import { advanceFreeVehicle, describeFreeVehicle } from "../drive/freeDrive";
+import { cycleGear, gearFromKey, gearOf, type Gear } from "../drive/gears";
+import { surfaceGrip, surfaceLabel, type Surface } from "../drive/surface";
 import { formatGeographicPosition, readGeographicPosition, type GeographicPosition } from "../geo/coordinates";
 import { readGroundElevation } from "../geo/groundElevation";
 import { STOCKHOLM_CANDIDATE } from "../geo/stockholmCandidate";
@@ -59,7 +61,8 @@ import {
   type FollowCamera,
 } from "./followCamera";
 import { createRoadOverlays, type RoadLine } from "./roadOverlays";
-import { mountRoadVehicle, mountTrafficVehicle, type RoadVehicle } from "./roadVehicle";
+import { mountPracticeMarker, mountRoadVehicle, mountTrafficVehicle, type RoadVehicle } from "./roadVehicle";
+import { EMPTY_SCENE, updatePracticeScene, type PracticeSceneState, type SceneActor } from "./practiceScene";
 import { mountRoadSurfaces, roadSurfaces, selectSurfaceRoads } from "./roadSurface";
 import type { CockpitPose } from "./cockpit";
 import { bodyAttitude } from "../drive/driveFeel";
@@ -108,6 +111,14 @@ type CityMapProps = {
   tiltSteer?: boolean;
   tiltNote?: string | null;
   onToggleTilt?: () => void;
+  /** Exercise that places practice figures. Null during free driving. */
+  practiceMoment?: string | null;
+  /** Dry, rain, fog or ice. Dry leaves the car unchanged. */
+  surface?: Surface;
+  /** Simulated uphill, in m/s². Zero on a flat exercise. */
+  gradeMps2?: number;
+  weatherLabel?: string | null;
+  onWeather?: () => void;
 };
 
 function moveCamera(map: Map3DViewElement, lat: number, lng: number, altitude: number): void {
@@ -160,6 +171,11 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     tiltSteer = false,
     tiltNote = null,
     onToggleTilt,
+    practiceMoment = null,
+    surface = "clear",
+    gradeMps2 = 0,
+    weatherLabel = null,
+    onWeather,
   },
   ref,
 ) {
@@ -178,6 +194,15 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
   const vehicleViewRef = useRef<RoadVehicle | null>(null);
   const trafficRef = useRef<TrafficCar[]>([]);
   const trafficViewsRef = useRef<Map<string, RoadVehicle>>(new Map());
+  const actorViewsRef = useRef<Map<string, RoadVehicle>>(new Map());
+  const gearRef = useRef<Gear>("D");
+  const sceneRef = useRef<PracticeSceneState>(EMPTY_SCENE);
+  const surfaceRef = useRef<Surface>(surface);
+  const gradeRef = useRef(gradeMps2);
+  const practiceMomentRef = useRef<string | null>(practiceMoment);
+  surfaceRef.current = surface;
+  gradeRef.current = gradeMps2;
+  practiceMomentRef.current = practiceMoment;
   const lampsRef = useRef<Map<string, SignalLamp>>(new Map());
   const signViewsRef = useRef<Map<string, { remove: () => void }>>(new Map());
   const keysRef = useRef(new Set<string>());
@@ -251,12 +276,52 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     signViewsRef.current.clear();
   };
 
+  const clearActors = () => {
+    for (const view of actorViewsRef.current.values()) {
+      view.remove();
+    }
+    actorViewsRef.current.clear();
+  };
+
   const clearTraffic = () => {
     for (const view of trafficViewsRef.current.values()) {
       view.remove();
     }
     trafficViewsRef.current.clear();
     trafficRef.current = [];
+    clearActors();
+  };
+
+  const syncPracticeActors = (actors: readonly SceneActor[]) => {
+    const map = mapRef.current;
+    const library = libraryRef.current;
+    const views = actorViewsRef.current;
+    const ids = new Set(actors.map((actor) => actor.id));
+    for (const [id, view] of views) {
+      if (!ids.has(id)) {
+        view.remove();
+        views.delete(id);
+      }
+    }
+    if (!map || !library) {
+      return;
+    }
+    for (const actor of actors) {
+      let view = views.get(actor.id);
+      if (!view) {
+        const mounted = mountPracticeMarker(map, library, actor.label);
+        if (!mounted) {
+          continue;
+        }
+        view = mounted;
+        views.set(actor.id, view);
+      }
+      view.update({
+        lat: actor.position.lat,
+        lng: actor.position.lng,
+        headingDegrees: actor.headingDegrees,
+      });
+    }
   };
 
   const syncTrafficViews = () => {
@@ -310,6 +375,8 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       indicator: indicatorRef.current.state,
       yieldNote: yieldAheadNote(factsRef.current),
       driveFactLines: state ? driveFactsText(factsRef.current) : [],
+      gear: state ? gearRef.current : undefined,
+      surface: state ? surfaceRef.current : undefined,
     };
     const signature = JSON.stringify(status);
     if (signature === signatureRef.current) {
@@ -476,6 +543,9 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       followRef.current = false;
       indicatorRef.current = INDICATOR_OFF;
       factsRef.current = EMPTY_DRIVE_FACTS;
+      gearRef.current = "D";
+      sceneRef.current = EMPTY_SCENE;
+      clearActors();
       pedalsRef.current = { accelerate: false, brake: false };
       steerHoldRef.current = { left: false, right: false };
       vehicleRef.current = placed;
@@ -494,6 +564,15 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     const keys = keysRef.current;
     const onKeyDown = (event: KeyboardEvent) => {
       if (isTextEntry(event.target) || isTextEntry(document.activeElement)) {
+        return;
+      }
+      const gearKey = gearFromKey(event.code, event.key);
+      if (gearKey) {
+        event.preventDefault();
+        if (!event.repeat) {
+          gearRef.current = gearKey === "cycle" ? cycleGear(gearRef.current) : gearKey;
+          publishRef.current(vehicleRef.current);
+        }
         return;
       }
       const code =
@@ -925,6 +1004,11 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
         input.accelerate = input.accelerate || pedalsRef.current.accelerate;
         input.brake = input.brake || pedalsRef.current.brake;
         input.steer = Math.max(-1, Math.min(1, (input.steer ?? 0) + buttonSteer + tiltRef.current));
+        input.gear = gearRef.current;
+        input.gradeMps2 = gradeRef.current;
+        const feel = surfaceGrip(surfaceRef.current);
+        input.grip = feel.grip;
+        input.brakeScale = feel.brakeScale;
         if (input.accelerate || input.steer) {
           followRef.current = true;
         }
@@ -1042,6 +1126,19 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
           signalTime.seconds,
         );
         syncTrafficViews();
+        const edge = network.edgesById.get(current.edgeId);
+        const scene = updatePracticeScene(sceneRef.current, {
+          moment: practiceMomentRef.current,
+          edgeId: current.edgeId,
+          distanceMeters: current.distanceMeters,
+          edgeLengthMeters: edge?.lengthMeters ?? 0,
+          position: current.position,
+          headingDegrees: current.headingDegrees,
+          speedMps: current.speedMps,
+          timeSeconds: signalTime.seconds,
+        });
+        sceneRef.current = scene.state;
+        syncPracticeActors(scene.actors);
         onSampleRef.current?.({
           speedMps: current.speedMps,
           edgeId: current.edgeId,
@@ -1049,7 +1146,19 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
           position: current.position,
           headingDegrees: current.headingDegrees,
           offsetMeters: current.offsetMeters,
-          highway: network.edgesById.get(current.edgeId)?.highway ?? null,
+          highway: edge?.highway ?? null,
+          gear: gearRef.current,
+          rollMps: current.rollMps ?? 0,
+          dtSeconds: Math.min(Math.max(dt, 0), MAX_FRAME_SECONDS),
+          brake: input.brake,
+          indicator: indicatorRef.current.state,
+          signal: scene.signal,
+          roadName: current.roadName,
+          actors: scene.actors.map((actor) => ({
+            kind: actor.kind,
+            gapMeters: actor.gapMeters,
+            ahead: actor.ahead,
+          })),
           mode: current.mode,
           traffic: trafficRef.current.map((car) => ({
             id: car.id,
@@ -1124,12 +1233,13 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     };
   }, [focus, phase, mapVersion]);
 
+  const surfaceBit = hud.surface && hud.surface !== "clear" ? ` · ${surfaceLabel(hud.surface)}` : "";
   const hudText = snapNote
-    ? snapNote
+    ? `${snapNote}${surfaceBit}`
     : hud.message
-      ? hud.message
+      ? `${hud.message}${surfaceBit}`
       : hud.placed
-        ? `${hud.speedKmh} km/h${hud.roadName ? ` · ${hud.roadName}` : ""}`
+        ? `${hud.speedKmh} km/h · växel ${hud.gear ?? "D"}${surfaceBit}${hud.roadName ? ` · ${hud.roadName}` : ""}`
         : "Klicka nära en väglinje för att flytta bilen.";
 
   return (
@@ -1143,6 +1253,13 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
           cameraView={cameraView}
           tiltOn={tiltSteer}
           tiltNote={tiltNote}
+          gear={gearOf(hud.gear)}
+          onGear={(next) => {
+            gearRef.current = next;
+            publishRef.current(vehicleRef.current);
+          }}
+          weatherLabel={weatherLabel}
+          onWeather={onWeather}
           onGas={(pressed) => {
             pedalsRef.current.accelerate = pressed;
             if (pressed) {

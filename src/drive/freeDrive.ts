@@ -18,6 +18,7 @@ import {
   FREE_ROAD_ASSOCIATION_METERS as GUIDE_ASSOCIATION_METERS,
 } from "./roadGuide";
 import { clampSteer, easeAccel, easeSteer, gripLimitedSteerDegrees, speedAfterAccel } from "./driveFeel";
+import { gearMotion, gearOf } from "./gears";
 import { speedCapMps } from "./roadSpeed";
 
 export const FREE_ROAD_ASSOCIATION_METERS = GUIDE_ASSOCIATION_METERS;
@@ -41,6 +42,7 @@ export type FreeVehicleState = {
   headingDegrees: number;
   speedMps: number;
   accelMps2?: number;
+  rollMps?: number;
 };
 
 /** Link to a centerline. This is not a position, and applying it must not move the car. */
@@ -104,6 +106,7 @@ export function advanceFreeVehicle(
       headingDegrees,
       speedMps: state.speedMps,
       accelMps2: state.accelMps2,
+      rollMps: state.rollMps,
     },
     { ...input, steer: steerApplied },
     dtSeconds,
@@ -124,6 +127,7 @@ export function advanceFreeVehicle(
     ...guideFreePose(state, { ...moved, headingDegrees: committedHeading, speedMps }, network, dtSeconds),
     steerApplied,
     accelMps2: moved.accelMps2,
+    rollMps: moved.rollMps,
   };
 }
 
@@ -156,20 +160,40 @@ function stepOnce(
   if (dt === 0) {
     return state;
   }
+  const motion = gearMotion(input.gear);
   const accelMps2 = easeAccel(state.accelMps2 ?? 0, input, dt, state.speedMps);
-  const speedMps = speedAfterAccel(state.speedMps, accelMps2, dt, capMps);
+  const cap = motion.capMps == null ? capMps : Math.min(capMps, motion.capMps);
+  let speedMps = speedAfterAccel(state.speedMps, accelMps2, dt, cap);
   const headingDegrees = turnBySteer(state.headingDegrees, speedMps, input, dt);
-  const position = translate(state.position, headingDegrees, speedMps * dt);
-  return { position, headingDegrees, speedMps, accelMps2 };
+  const travel = motion.reverse ? wrapDegrees(headingDegrees + 180) : headingDegrees;
+  let position = translate(state.position, travel, speedMps * dt);
+  let rollMps = state.rollMps ?? 0;
+  const grade = Number.isFinite(input.gradeMps2) ? Math.max(0, input.gradeMps2 ?? 0) : 0;
+  if (grade <= 0 || motion.reverse) {
+    rollMps = 0;
+  } else {
+    const holding = input.brake || gearOf(input.gear) === "P" || (motion.powered && input.accelerate);
+    if (holding) {
+      rollMps = Math.max(0, rollMps - 8 * dt);
+    } else if (speedMps < 0.8) {
+      speedMps = 0;
+      rollMps = Math.min(2.2, rollMps + grade * dt);
+      position = translate(position, wrapDegrees(headingDegrees + 180), rollMps * dt);
+    } else {
+      rollMps = Math.max(0, rollMps - 4 * dt);
+    }
+  }
+  return { position, headingDegrees, speedMps, accelMps2, rollMps };
 }
 
 function turnBySteer(headingDegrees: number, speedMps: number, input: DriveInput, dt: number): number {
-  const yaw = yawDegrees(speedMps, steerCommand(input), dt);
+  const grip = input.grip == null || !Number.isFinite(input.grip) ? 1 : input.grip;
+  const yaw = yawDegrees(speedMps, steerCommand(input), dt, grip);
   return wrapDegrees(headingDegrees + yaw);
 }
 
-function yawDegrees(speedMps: number, steer: number, dt: number): number {
-  const angle = gripLimitedSteerDegrees(speedMps, steerAngleDegrees(speedMps, steer), FREE_WHEELBASE_METERS);
+function yawDegrees(speedMps: number, steer: number, dt: number, grip = 1): number {
+  const angle = gripLimitedSteerDegrees(speedMps, steerAngleDegrees(speedMps, steer), FREE_WHEELBASE_METERS, grip);
   const radiansPerSecond = (Math.max(0, speedMps) / FREE_WHEELBASE_METERS) * Math.tan((angle * Math.PI) / 180);
   const degrees = radiansPerSecond * (180 / Math.PI) * dt;
   const cap = YAW_DEGREES_PER_SECOND * dt;

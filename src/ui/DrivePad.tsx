@@ -1,10 +1,15 @@
 import type { PointerEvent } from "react";
+import type { Gear } from "../drive/gears";
 import type { CameraView } from "../map/followCamera";
 
 type DrivePadProps = {
   cameraView: CameraView;
   tiltOn: boolean;
   tiltNote: string | null;
+  gear: Gear;
+  onGear: (gear: Gear) => void;
+  weatherLabel?: string | null;
+  onWeather?: () => void;
   onGas: (pressed: boolean) => void;
   onBrake: (pressed: boolean) => void;
   onSteer: (side: "left" | "right", pressed: boolean) => void;
@@ -31,10 +36,16 @@ function hold(onChange: (pressed: boolean) => void) {
   };
 }
 
+const GEAR_BUTTONS: readonly Gear[] = ["P", "R", "N", "1", "D"];
+
 export function DrivePad({
   cameraView,
   tiltOn,
   tiltNote,
+  gear,
+  onGear,
+  weatherLabel = null,
+  onWeather,
   onGas,
   onBrake,
   onSteer,
@@ -53,6 +64,19 @@ export function DrivePad({
         </button>
       </div>
       <div className="drive-pad-center">
+        <p className="drive-gear">Växel {gear}</p>
+        <div className="drive-pad-gears">
+          {GEAR_BUTTONS.map((item) => (
+            <button key={item} type="button" aria-pressed={gear === item} onClick={() => onGear(item)}>
+              {item}
+            </button>
+          ))}
+        </div>
+        {weatherLabel ? (
+          <button type="button" onClick={onWeather} disabled={!onWeather}>
+            Väder: {weatherLabel}
+          </button>
+        ) : null}
         <button type="button" onClick={onCamera}>
           {cameraView === "driver" ? "Utanför bilen" : "I bilen"}
         </button>

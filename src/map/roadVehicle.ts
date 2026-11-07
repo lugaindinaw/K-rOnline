@@ -149,3 +149,19 @@ export function mountTrafficVehicle(
 ): RoadVehicle | null {
   return mountVehicle(parent, library, TRAFFIC_SCALE, "Trafik");
 }
+
+/** A labelled pin for a practice figure. It is not a second car model. */
+export function mountPracticeMarker(
+  parent: { append: (child: HTMLElement) => void },
+  library: Maps3dLibrary,
+  label: string,
+): RoadVehicle | null {
+  if (typeof library.Marker3DElement !== "function") {
+    return null;
+  }
+  try {
+    return mountMarker(parent, library.Marker3DElement, label);
+  } catch {
+    return null;
+  }
+}

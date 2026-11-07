@@ -61,7 +61,6 @@ export function GameShell({
   if (mode === "practice" && review) {
     return (
       <>
-        {moment === "night" ? <div className="game-night" /> : null}
         <section className="game-hud" aria-label="Uppdrag">
         <p className="game-kicker">Körkortsövning</p>
         <h2>{moment ? momentTitle(moment, goal) : "Övning"}</h2>
@@ -202,12 +201,16 @@ export function GameShell({
         <p className="game-kicker">KörOnline</p>
         <h1>Körkortsspelet</h1>
         <p>
-          Öva i Stockholm med bilen, vägarna och de andra bilarna. {PRACTICE_DISCLAIMER}
+          Välj en svensk ort och kör på vägar från OpenStreetMap. Stockholm är först. 3D-byggnader följer
+          kartans täckning och saknas på många platser. {PRACTICE_DISCLAIMER}
         </p>
         <div className="game-choices">
           <button type="button" className="game-choice" onClick={onFree}>
             <span>Fri körning</span>
-            <small>Kör vart du vill. W gasar, S bromsar, A och D styr, Q och E blinkar.</small>
+            <small>
+              Kör vart du vill i Sverige. W gasar, S bromsar, A och D styr, Q och E blinkar, R backar, F är drive
+              och G växlar. Väderknappen byter regn, dimma och halka.
+            </small>
           </button>
           <button type="button" className="game-choice game-choice-play" onClick={onPractice}>
             <span>Körkortsövning</span>
@@ -229,17 +232,21 @@ export function GameShell({
             </button>
           ))}
         </div>
-        <h2>Inte med i den här versionen</h2>
-        <ul className="game-later">
-          {later.map((item) => (
-            <li key={item.id}>
-              <strong>{item.title}</strong>
-              <span>
-                {item.area}. {item.summary}
-              </span>
-            </li>
-          ))}
-        </ul>
+        {later.length > 0 ? (
+          <>
+            <h2>Inte med i den här versionen</h2>
+            <ul className="game-later">
+              {later.map((item) => (
+                <li key={item.id}>
+                  <strong>{item.title}</strong>
+                  <span>
+                    {item.area}. {item.summary}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : null}
       </div>
     </div>
   );

@@ -42,6 +42,8 @@ import { requestTiltPermission } from "../drive/tiltSteer";
 import { type PracticeReview } from "../game/cityPractice";
 import { browserProgressStore, readProgress, recordAttempt, type MomentProgress } from "../game/progress";
 import { EMPTY_COURSE, noteCourseFrame } from "../game/courseDrive";
+import { EMPTY_MANEUVER, isManeuver, noteManeuverFrame } from "../game/maneuvers";
+import { cycleSurface, surfaceLabel, type Surface } from "../drive/surface";
 import {
   EMPTY_CHECKS,
   finishMoment,
@@ -123,6 +125,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
   const [cameraView, setCameraView] = useState<CameraView>("chase");
   const [tiltOn, setTiltOn] = useState(false);
   const [tiltNote, setTiltNote] = useState<string | null>(null);
+  const [surface, setSurface] = useState<Surface>("clear");
   const [playMode, setPlayMode] = useState<"menu" | "free" | "brief" | "practice" | "review">("menu");
   const [progress, setProgress] = useState<Record<string, MomentProgress>>(() => readProgress(browserProgressStore()));
   const [targetRoad, setTargetRoad] = useState<string | null>(null);
@@ -146,6 +149,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
   const momentRef = useRef<MomentId | null>(moment);
   momentRef.current = moment;
   const courseRef = useRef(EMPTY_COURSE);
+  const maneuverRef = useRef(EMPTY_MANEUVER);
   const areaKind = useRef<"stockholm" | CourseKind>("stockholm");
 
   function commitAttempt(next: ApproachAttempt) {
@@ -197,6 +201,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
       checks,
       targetRoad: targetRef.current,
       course: courseRef.current,
+      maneuver: maneuverRef.current,
     };
   }
 
@@ -220,6 +225,22 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
       }
     }
     const activeMoment = momentRef.current;
+    if (playModeRef.current === "practice" && isManeuver(activeMoment) && sample.headingDegrees != null) {
+      maneuverRef.current = noteManeuverFrame(maneuverRef.current, {
+        dtSeconds: sample.dtSeconds ?? 0,
+        speedMps: sample.speedMps,
+        headingDegrees: sample.headingDegrees,
+        offsetMeters: sample.offsetMeters ?? 0,
+        brake: sample.brake === true,
+        indicator: sample.indicator ?? "off",
+        gear: sample.gear ?? "D",
+        rollMps: sample.rollMps ?? 0,
+        roadName: sample.roadName ?? null,
+        startRoad: startRoadRef.current,
+        signal: sample.signal ?? null,
+        actors: sample.actors ?? [],
+      });
+    }
     if (
       playModeRef.current === "practice" &&
       (activeMoment === "rural" || activeMoment === "motorway") &&
@@ -297,6 +318,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
   function beginMoment(next: MomentId) {
     practicePlaced.current = false;
     courseRef.current = EMPTY_COURSE;
+    maneuverRef.current = EMPTY_MANEUVER;
     momentRef.current = next;
     if (next === "rural" || next === "motorway") {
       mountCourse(next);
@@ -392,6 +414,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
       }
       practicePlaced.current = true;
       courseRef.current = EMPTY_COURSE;
+      maneuverRef.current = EMPTY_MANEUVER;
       sawStartRoad.current = false;
       startRoadRef.current = moment === "rural" ? "Färentunavägen" : "påfarten";
       mapRef.current?.setCameraView("driver");
@@ -410,6 +433,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
       return;
     }
     practicePlaced.current = true;
+    maneuverRef.current = EMPTY_MANEUVER;
     sawStartRoad.current = false;
     startRoadRef.current = "Regeringsgatan";
     mapRef.current?.setCameraView("driver");
@@ -440,7 +464,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
       return;
     }
     closePractice(finishMoment(reviewMoment(snapshot)));
-  }, [playMode, moment, turnGoal, trafficCount, checks, vehicle.roadName, vehicle.speedKmh, vehicle.driveFactLines, vehicle.indicator]);
+  }, [playMode, moment, turnGoal, trafficCount, checks, vehicle.roadName, vehicle.speedKmh, vehicle.driveFactLines, vehicle.indicator, vehicle.gear]);
 
   function applyCoverage(stored: StoredArea[], focus: RoadPoint) {
     const kept = pruneCoverage(stored, focus);
@@ -686,8 +710,22 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
     mapRef.current?.setCameraView("driver");
   }, [mapReady, savedRoads]);
 
+  const driveSurface: Surface =
+    playMode === "practice" && moment === "ice"
+      ? "ice"
+      : playMode === "practice" && moment === "hazard"
+        ? "rain"
+        : playMode === "practice"
+          ? "clear"
+          : surface;
+  const showFog = driveSurface === "fog" || (playMode === "practice" && moment === "hazard");
+
   return (
     <>
+      {playMode === "practice" && moment === "night" ? <div className="game-night" /> : null}
+      {driveSurface === "rain" || (playMode === "practice" && moment === "hazard") ? <div className="game-rain" /> : null}
+      {showFog ? <div className="game-fog" /> : null}
+      {driveSurface === "ice" ? <div className="game-ice" /> : null}
       <SwedenPanel
         query={query}
         onQueryChange={setQuery}
@@ -808,6 +846,17 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
           tiltSteer={tiltOn}
           tiltNote={tiltNote}
           onToggleTilt={() => void toggleTilt()}
+          practiceMoment={playMode === "practice" ? moment : null}
+          surface={driveSurface}
+          gradeMps2={playMode === "practice" && moment === "hill" ? 1.4 : 0}
+          weatherLabel={
+            playMode === "practice" && moment === "hazard"
+              ? "Regn och dimma"
+              : playMode === "free" || driveSurface !== "clear"
+                ? surfaceLabel(driveSurface)
+                : null
+          }
+          onWeather={playMode === "free" ? () => setSurface((current) => cycleSurface(current)) : undefined}
           rideHint={
             trainingOpen && attempt.status === "running"
               ? "Övning: gas och broms som vanligt. Avstånd registreras bara i körbanan mot korsningen."

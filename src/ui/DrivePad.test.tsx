@@ -9,6 +9,8 @@ describe("DrivePad", () => {
         cameraView="driver"
         tiltOn={false}
         tiltNote={null}
+        gear="D"
+        onGear={() => undefined}
         onGas={() => undefined}
         onBrake={() => undefined}
         onSteer={() => undefined}
@@ -17,6 +19,7 @@ describe("DrivePad", () => {
         onTilt={() => undefined}
       />,
     );
+    expect(inside).toContain("Växel D");
     expect(inside).toContain("Utanför bilen");
     expect(inside).toContain("Styr med lutning");
     expect(inside).toContain("Gas");
@@ -26,6 +29,10 @@ describe("DrivePad", () => {
         cameraView="chase"
         tiltOn
         tiltNote="Luta mobilen i sidled för att styra."
+        gear="R"
+        onGear={() => undefined}
+        weatherLabel="Regn"
+        onWeather={() => undefined}
         onGas={() => undefined}
         onBrake={() => undefined}
         onSteer={() => undefined}
@@ -34,6 +41,8 @@ describe("DrivePad", () => {
         onTilt={() => undefined}
       />,
     );
+    expect(outside).toContain("Växel R");
+    expect(outside).toContain("Väder: Regn");
     expect(outside).toContain("I bilen");
     expect(outside).toContain("Lutning på");
     expect(outside).toContain("Luta mobilen");
