@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EMPTY_CHECKS, freshIndicatorSide, momentComplete, reviewMoment, type MomentSnapshot } from "./simpleMoments";
+import { EMPTY_CHECKS, freshIndicatorSide, goalStreet, momentComplete, reviewMoment, type MomentSnapshot } from "./simpleMoments";
 
 function snap(overrides: Partial<MomentSnapshot>): MomentSnapshot {
   return {
@@ -14,6 +14,7 @@ function snap(overrides: Partial<MomentSnapshot>): MomentSnapshot {
     goal: null,
     indicator: "off",
     checks: EMPTY_CHECKS,
+    targetRoad: null,
     ...overrides,
   };
 }
@@ -81,6 +82,26 @@ describe("simple moments", () => {
       lines: ["Högsta fart: 20 km/h", "Största avstånd från mittlinjen: 6.4 m"],
       checks: { ...EMPTY_CHECKS, right: true },
     }))).toBe(false);
+  });
+
+  it("picks Jakobsgatan as the goal when that street is loaded", () => {
+    expect(goalStreet(["Regeringsgatan", "Jakobsgatan", "Strömgatan"])).toBe("Jakobsgatan");
+    expect(goalStreet(["Regeringsgatan"])).toBeNull();
+  });
+
+  it("finishes the goal drive only on the named street", () => {
+    const rolling = snap({
+      moment: "independent",
+      targetRoad: "Jakobsgatan",
+      roadName: "Regeringsgatan",
+      startRoad: "Regeringsgatan",
+      lines: ["Högsta fart: 16 km/h", "Största avstånd från mittlinjen: 1.1 m"],
+    });
+    expect(momentComplete(rolling)).toBe(false);
+    expect(reviewMoment(rolling).live).toContain("Jakobsgatan");
+    const arrived = { ...rolling, roadName: "Jakobsgatan" };
+    expect(momentComplete(arrived)).toBe(true);
+    expect(reviewMoment(arrived).score).toBe(100);
   });
 
   it("asks the city driver to stop at the yield before the turn", () => {

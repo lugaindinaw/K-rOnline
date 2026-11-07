@@ -75,8 +75,8 @@ export const LICENSE_MOMENTS: readonly LicenseMoment[] = [
     id: "independent",
     title: "Körning mot mål",
     area: "Självständig körning",
-    playable: false,
-    summary: "Välj väg och kör fram till ett mål.",
+    playable: true,
+    summary: "Kör från Regeringsgatan till en annan namngiven gata.",
   },
   {
     id: "exam",

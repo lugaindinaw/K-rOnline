@@ -1,6 +1,6 @@
 import { finishCityReview, reviewCityDrive, type PracticeReview } from "./cityPractice";
 
-export type MomentId = "city" | "safety" | "parking" | "roundabout" | "rural" | "motorway" | "night";
+export type MomentId = "city" | "safety" | "parking" | "roundabout" | "rural" | "motorway" | "night" | "independent";
 
 export type SafetyChecks = {
   left: boolean;
@@ -23,6 +23,7 @@ export type MomentSnapshot = {
   goal: "left" | "right" | null;
   indicator: "off" | "left" | "right";
   checks: SafetyChecks;
+  targetRoad: string | null;
 };
 
 function lineValue(lines: readonly string[], prefix: string): string | null {
@@ -57,10 +58,46 @@ export function momentTitle(moment: MomentId, goal: "left" | "right" | null): st
   if (moment === "roundabout") return "Rondell";
   if (moment === "rural") return "Landsväg";
   if (moment === "motorway") return "Motorväg";
+  if (moment === "independent") return "Körning mot mål";
   return "Mörkerkörning";
 }
 
-export function momentMission(moment: MomentId, goal: "left" | "right" | null): string {
+export function goalStreet(names: readonly (string | null | undefined)[]): string | null {
+  const unique = [...new Set(names.filter((name): name is string => Boolean(name && name !== "Regeringsgatan")))];
+  if (unique.includes("Jakobsgatan")) {
+    return "Jakobsgatan";
+  }
+  return unique[0] ?? null;
+}
+
+export function momentJudged(moment: MomentId): readonly string[] {
+  if (moment === "city" || moment === "roundabout") {
+    return [
+      "Fart: håll låg fart genom korsningen. För hög fart gör att du inte hinner stanna eller styra.",
+      "Placering: stanna på körbanan. Att skära över är fel placering.",
+      "Blinkers: tänd den innan svängen så att andra ser vart du ska.",
+      "Väjningsplikt: stanna om skylten kräver det. Att köra utan att lämna företräde är fel.",
+    ];
+  }
+  if (moment === "safety") {
+    return ["Blinkers, broms och gas ska provas innan du kör. Då vet du att reglagen svarar."];
+  }
+  if (moment === "parking") {
+    return ["Rulla fram och stanna helt. En parkering är inte klar förrän bilen står stilla."];
+  }
+  if (moment === "independent") {
+    return [
+      "Målet är en annan namngiven gata. Övningen är klar först när bilen är där.",
+      "Håll dig på körbanan dit. Att lämna vägen är fel placering.",
+    ];
+  }
+  if (moment === "night") {
+    return ["Fart och körfält. Uppgiften har ingen sväng, så blinkers bedöms inte."];
+  }
+  return ["Fart och körfält. Håll en jämn fart och lämna inte körbanan."];
+}
+
+export function momentMission(moment: MomentId, goal: "left" | "right" | null, targetRoad?: string | null): string {
   if (moment === "city") {
     if (goal === "left") {
       return "Kör fram till korsningen, stanna vid väjningsplikt och sväng vänster. Tänd blinkers med Q.";
@@ -84,6 +121,10 @@ export function momentMission(moment: MomentId, goal: "left" | "right" | null): 
   }
   if (moment === "motorway") {
     return "Håll en jämn fart nära bilens toppfart, omkring 40 km/h, och bli kvar i körfältet. Den här prototypen kör inte i riktig motorvägsfart.";
+  }
+  if (moment === "independent") {
+    const target = targetRoad ?? "nästa gata";
+    return `Kör till ${target}. Du startar på Regeringsgatan. Välj den anslutna gatan och håll dig på körbanan.`;
   }
   return "Det är mörkt. Kör en kort bit och håll dig i körfältet.";
 }
@@ -183,6 +224,36 @@ export function reviewMoment(input: MomentSnapshot): PracticeReview {
   if (input.moment === "night") {
     return reviewNight(input);
   }
+  if (input.moment === "independent") {
+    const target = input.targetRoad;
+    const arrived = Boolean(target && input.roadName === target && maxSpeed(input.lines) > 0);
+    const offset = offsetMeters(input.lines);
+    const inLane = offset != null && offset <= 4;
+    const points = [
+      point(
+        "Mål",
+        arrived,
+        arrived
+          ? `Du körde till ${target}.`
+          : `Du är på ${input.roadName ?? "starten"}. Kör vidare till ${target ?? "målgatan"}. Övningen är inte klar förrän du är framme.`,
+      ),
+      point(
+        "Placering",
+        inLane,
+        offset == null
+          ? "Sidoläget mäts när bilen rullar."
+          : inLane
+            ? `${offset.toFixed(1)} m från mittlinjen.`
+            : `${offset.toFixed(1)} m från mittlinjen. Tillbaka till körbanan, annars är placeringen fel.`,
+      ),
+    ];
+    const good = points.filter((item) => item.mark === "bra").length;
+    return {
+      score: Math.round((good / points.length) * 100),
+      points,
+      live: points.find((item) => item.mark === "träna")?.detail ?? "Målet är nått.",
+    };
+  }
   const target = input.moment === "motorway" ? 40 : input.moment === "rural" ? 35 : 12;
   const fastEnough = speed >= target;
   const inLane = offset != null && offset <= 4;
@@ -219,6 +290,15 @@ export function momentComplete(input: MomentSnapshot): boolean {
   if (input.moment === "night") {
     const offset = offsetMeters(input.lines);
     return maxSpeed(input.lines) >= NIGHT_SPEED_KMH && offset != null && offset <= 4;
+  }
+  if (input.moment === "independent") {
+    return Boolean(
+      input.targetRoad &&
+        input.startRoad &&
+        input.roadName === input.targetRoad &&
+        input.roadName !== input.startRoad &&
+        maxSpeed(input.lines) > 0,
+    );
   }
   const target = input.moment === "motorway" ? 40 : input.moment === "rural" ? 35 : 12;
   const offset = offsetMeters(input.lines);
