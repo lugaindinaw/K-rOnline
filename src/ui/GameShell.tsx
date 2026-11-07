@@ -1,13 +1,15 @@
 import { PRACTICE_DISCLAIMER, type PracticeReview } from "../game/cityPractice";
 import { LICENSE_MOMENTS } from "../game/licenseMoments";
+import { PASS_SCORE, type MomentProgress } from "../game/progress";
 import {
+  momentJudged,
   momentMission,
   momentTitle,
   type MomentId,
   type SafetyChecks,
 } from "../game/simpleMoments";
 
-type PlayMode = "menu" | "free" | "practice" | "review";
+type PlayMode = "menu" | "free" | "brief" | "practice" | "review";
 
 type GameShellProps = {
   mode: PlayMode;
@@ -16,9 +18,12 @@ type GameShellProps = {
   goal: "left" | "right" | null;
   moment: MomentId | null;
   checks: SafetyChecks;
+  targetRoad: string | null;
+  progress: Record<string, MomentProgress>;
   onFree: () => void;
   onPractice: () => void;
   onStartMoment: (moment: MomentId) => void;
+  onBegin: () => void;
   onChooseTurn: (goal: "left" | "right") => void;
   onSafety: (step: keyof SafetyChecks) => void;
   onFinish: () => void;
@@ -33,9 +38,12 @@ export function GameShell({
   goal,
   moment,
   checks,
+  targetRoad,
+  progress,
   onFree,
   onPractice,
   onStartMoment,
+  onBegin,
   onChooseTurn,
   onSafety,
   onFinish,
@@ -57,7 +65,7 @@ export function GameShell({
         <section className="game-hud" aria-label="Uppdrag">
         <p className="game-kicker">Körkortsövning</p>
         <h2>{moment ? momentTitle(moment, goal) : "Övning"}</h2>
-        <p className="game-mission">{moment ? momentMission(moment, goal) : ""}</p>
+        <p className="game-mission">{moment ? momentMission(moment, goal, targetRoad) : ""}</p>
         {moment === "city" && !goal ? (
           <div className="game-hud-actions">
             <button type="button" onClick={() => onChooseTurn("left")}>
@@ -103,6 +111,37 @@ export function GameShell({
         </div>
       </section>
       </>
+    );
+  }
+
+  if (mode === "brief" && moment) {
+    const saved = progress[moment];
+    return (
+      <div className="game-menu">
+        <div className="game-card game-card-wide">
+          <p className="game-kicker">Innan du kör</p>
+          <h1>{momentTitle(moment, goal)}</h1>
+          <p>{momentMission(moment, goal, targetRoad)}</p>
+          <h2>Det här bedöms</h2>
+          <ul className="game-results">
+            {momentJudged(moment).map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+          <p>
+            {PASS_SCORE} poäng eller mer räknas som godkänd övning i spelet. Det är inte Trafikverkets körprov.
+            {saved ? ` Bästa resultat hittills: ${saved.best} poäng.` : ""}
+          </p>
+          <div className="game-actions">
+            <button type="button" onClick={onBegin}>
+              Starta övning
+            </button>
+            <button type="button" className="game-quiet" onClick={onMenu}>
+              Meny
+            </button>
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -172,7 +211,10 @@ export function GameShell({
           </button>
           <button type="button" className="game-choice game-choice-play" onClick={onPractice}>
             <span>Körkortsövning</span>
-            <small>Stadstrafik: kör fram till korsningen och sväng vänster eller höger.</small>
+            <small>
+              Stadstrafik: kör fram till korsningen och sväng vänster eller höger.
+              {progress.city ? ` Bästa: ${progress.city.best} poäng.` : ""}
+            </small>
           </button>
         </div>
         <h2>Övningar</h2>
@@ -180,7 +222,10 @@ export function GameShell({
           {playable.map((item) => (
             <button key={item.id} type="button" className="game-moment" onClick={() => onStartMoment(item.id as MomentId)}>
               <strong>{item.title}</strong>
-              <span>{item.summary}</span>
+              <span>
+                {item.summary}
+                {progress[item.id] ? ` Bästa: ${progress[item.id].best} poäng${progress[item.id].passed ? ", godkänd i spelet" : ""}.` : " Inte körd ännu."}
+              </span>
             </button>
           ))}
         </div>
