@@ -1,4 +1,5 @@
 import { finishCityReview, reviewCityDrive, type PracticeReview } from "./cityPractice";
+import { EMPTY_COURSE, courseComplete, reviewCourse, type CourseFacts } from "./courseDrive";
 
 export type MomentId = "city" | "safety" | "parking" | "roundabout" | "rural" | "motorway" | "night" | "independent";
 
@@ -24,6 +25,7 @@ export type MomentSnapshot = {
   indicator: "off" | "left" | "right";
   checks: SafetyChecks;
   targetRoad: string | null;
+  course?: CourseFacts;
 };
 
 function lineValue(lines: readonly string[], prefix: string): string | null {
@@ -94,6 +96,24 @@ export function momentJudged(moment: MomentId): readonly string[] {
   if (moment === "night") {
     return ["Fart och körfält. Uppgiften har ingen sväng, så blinkers bedöms inte."];
   }
+  if (moment === "rural") {
+    return [
+      "Fart: håll omkring 70 km/h. Det är den skyltade gränsen på den här landsvägen.",
+      "Placering: kör på höger sida. Vänster körfält är för mötande.",
+      "Kurva: följ vägens böj och bli kvar på höger sida.",
+      "Möte: håll höger när en bil kommer emot.",
+      "Omkörning: kör om bara när mötande körfält är fritt. Annars stannar du bakom.",
+    ];
+  }
+  if (moment === "motorway") {
+    return [
+      "Påfart: accelerera på påfarten. Gränsen där är 80 km/h.",
+      "Fart: på Arlandaleden är gränsen 100 km/h.",
+      "Körfält: håll höger och byt sedan ett körfält.",
+      "Avstånd: lämna lucka till bilen framför.",
+      "Avfart: lämna motorvägen på avfarten.",
+    ];
+  }
   return ["Fart och körfält. Håll en jämn fart och lämna inte körbanan."];
 }
 
@@ -117,10 +137,10 @@ export function momentMission(moment: MomentId, goal: "left" | "right" | null, t
     return "Kör en kort bit och stanna. Håll S tills bilen står stilla.";
   }
   if (moment === "rural") {
-    return "Kör rakt och håll en jämn fart kring 35 km/h. Stanna i körfältet.";
+    return "Färentunavägen är en tvåfilig landsväg med 70 km/h. Håll höger, möt trafiken, följ kurvan och kör om bara när det är fritt.";
   }
   if (moment === "motorway") {
-    return "Håll en jämn fart nära bilens toppfart, omkring 40 km/h, och bli kvar i körfältet. Den här prototypen kör inte i riktig motorvägsfart.";
+    return "Du står på påfarten till Arlandaleden. Accelerera, håll omkring 100 km/h, byt körfält, håll avstånd och styr höger där avfarten viker av.";
   }
   if (moment === "independent") {
     const target = targetRoad ?? "nästa gata";
@@ -224,6 +244,9 @@ export function reviewMoment(input: MomentSnapshot): PracticeReview {
   if (input.moment === "night") {
     return reviewNight(input);
   }
+  if (input.moment === "rural" || input.moment === "motorway") {
+    return reviewCourse(input.moment, input.course ?? EMPTY_COURSE);
+  }
   if (input.moment === "independent") {
     const target = input.targetRoad;
     const arrived = Boolean(target && input.roadName === target && maxSpeed(input.lines) > 0);
@@ -254,7 +277,7 @@ export function reviewMoment(input: MomentSnapshot): PracticeReview {
       live: points.find((item) => item.mark === "träna")?.detail ?? "Målet är nått.",
     };
   }
-  const target = input.moment === "motorway" ? 40 : input.moment === "rural" ? 35 : 12;
+  const target = 12;
   const fastEnough = speed >= target;
   const inLane = offset != null && offset <= 4;
   const points = [
@@ -291,6 +314,9 @@ export function momentComplete(input: MomentSnapshot): boolean {
     const offset = offsetMeters(input.lines);
     return maxSpeed(input.lines) >= NIGHT_SPEED_KMH && offset != null && offset <= 4;
   }
+  if (input.moment === "rural" || input.moment === "motorway") {
+    return courseComplete(input.moment, input.course ?? EMPTY_COURSE);
+  }
   if (input.moment === "independent") {
     return Boolean(
       input.targetRoad &&
@@ -300,9 +326,8 @@ export function momentComplete(input: MomentSnapshot): boolean {
         maxSpeed(input.lines) > 0,
     );
   }
-  const target = input.moment === "motorway" ? 40 : input.moment === "rural" ? 35 : 12;
   const offset = offsetMeters(input.lines);
-  return maxSpeed(input.lines) >= target && offset != null && offset <= 4;
+  return maxSpeed(input.lines) >= 12 && offset != null && offset <= 4;
 }
 
 export function finishMoment(review: PracticeReview): PracticeReview {

@@ -48,14 +48,14 @@ export const LICENSE_MOMENTS: readonly LicenseMoment[] = [
     title: "Landsväg och möte",
     area: "Körning på landsväg",
     playable: true,
-    summary: "Håll en jämn fart och stanna i körfältet.",
+    summary: "Färentunavägen, 70 km/h: höger sida, möte, kurva och omkörning.",
   },
   {
     id: "motorway",
     title: "Motorväg och omkörning",
-    area: "Körning på landsväg",
+    area: "Körning på motorväg",
     playable: true,
-    summary: "Håll jämn fart och körfält. Toppfarten i prototypen är begränsad.",
+    summary: "Arlandaleden: påfart, omkring 100 km/h, körfältsbyte, avstånd och avfart.",
   },
   {
     id: "works",

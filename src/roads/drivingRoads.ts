@@ -64,6 +64,8 @@ export type RoadSegment = {
   widthMeters?: number | null;
   /** Lane count from the OSM `lanes` tag. This is not a width. */
   lanes?: number | null;
+  /** Posted limit from the OSM `maxspeed` tag, in km/h. Null when the tag is missing or not a plain number. */
+  maxspeedKmh?: number | null;
 };
 
 export type OmittedRoad = {
@@ -147,6 +149,22 @@ function readLaneCount(value: unknown): number | null {
   }
   const lanes = Number(match[1]);
   return Number.isInteger(lanes) ? lanes : null;
+}
+
+function readMaxspeedKmh(value: unknown): number | null {
+  const text = typeof value === "number" ? String(value) : typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (!text || text.includes(";") || text.includes("mph") || text.includes("kn")) {
+    return null;
+  }
+  const match = /^(\d+)(?:\s*km\/h)?$/.exec(text);
+  if (!match?.[1]) {
+    return null;
+  }
+  const kmh = Number(match[1]);
+  if (!Number.isInteger(kmh) || kmh < 5 || kmh > 130) {
+    return null;
+  }
+  return kmh;
 }
 
 function readOneWay(value: unknown): OneWay {
@@ -295,7 +313,13 @@ export function parseOverpassRoads(payload: unknown): RoadSegment[] {
     if (!geometry) {
       continue;
     }
-    const tagRecord = tags as { name?: unknown; oneway?: unknown; width?: unknown; lanes?: unknown };
+    const tagRecord = tags as {
+      name?: unknown;
+      oneway?: unknown;
+      width?: unknown;
+      lanes?: unknown;
+      maxspeed?: unknown;
+    };
     const name = tagRecord.name;
     const wayId = String(record.id);
     roads.push({
@@ -308,6 +332,7 @@ export function parseOverpassRoads(payload: unknown): RoadSegment[] {
       nodeIds: geometry.nodeIds,
       widthMeters: readMeterValue(tagRecord.width),
       lanes: readLaneCount(tagRecord.lanes),
+      maxspeedKmh: readMaxspeedKmh(tagRecord.maxspeed),
     });
   }
   return roads;

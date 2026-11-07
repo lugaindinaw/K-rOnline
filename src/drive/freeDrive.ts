@@ -2,6 +2,7 @@ import type { RoadPoint } from "../roads/drivingRoads";
 import { nearestPlacement, type RoadNetwork } from "../roads/roadNetwork";
 import {
   MAX_FRAME_SECONDS,
+  MAX_SPEED_MPS,
   MAX_STEP_SECONDS,
   YAW_DEGREES_PER_SECOND,
   steerAngleDegrees,
@@ -17,6 +18,7 @@ import {
   FREE_ROAD_ASSOCIATION_METERS as GUIDE_ASSOCIATION_METERS,
 } from "./roadGuide";
 import { clampSteer, easeAccel, easeSteer, gripLimitedSteerDegrees, speedAfterAccel } from "./driveFeel";
+import { speedCapMps } from "./roadSpeed";
 
 export const FREE_ROAD_ASSOCIATION_METERS = GUIDE_ASSOCIATION_METERS;
 export const OFF_ROAD_MESSAGE = GUIDE_OFF_ROAD_MESSAGE;
@@ -95,6 +97,7 @@ export function advanceFreeVehicle(
   const commanded = clampSteer(input.steer ?? 0);
   const steerApplied = easeSteer(state.steerApplied ?? 0, commanded, dtSeconds);
   const headingDegrees = headingForFreeStep(state, commanded, dtSeconds, network);
+  const capMps = speedCapMps(network.edgesById.get(state.edgeId));
   const moved = stepFreeVehicle(
     {
       position: state.position,
@@ -104,6 +107,7 @@ export function advanceFreeVehicle(
     },
     { ...input, steer: steerApplied },
     dtSeconds,
+    capMps,
   );
   const committedHeading = headingAfterCommittedTurn(
     state,
@@ -114,10 +118,8 @@ export function advanceFreeVehicle(
     network,
   );
   const dt = !Number.isFinite(dtSeconds) || dtSeconds <= 0 ? 0 : Math.min(0.25, dtSeconds);
-  const speedMps =
-    slowingForTurn(state, commanded, network) && moved.speedMps > 3.6
-      ? Math.max(3.2, moved.speedMps - 6 * dt)
-      : moved.speedMps;
+  const cityTurn = capMps <= MAX_SPEED_MPS + 0.01 && slowingForTurn(state, commanded, network);
+  const speedMps = cityTurn && moved.speedMps > 3.6 ? Math.max(3.2, moved.speedMps - 6 * dt) : moved.speedMps;
   return {
     ...guideFreePose(state, { ...moved, headingDegrees: committedHeading, speedMps }, network, dtSeconds),
     steerApplied,
@@ -129,6 +131,7 @@ export function stepFreeVehicle(
   state: FreeVehicleState,
   input: DriveInput,
   dtSeconds: number,
+  capMps = MAX_SPEED_MPS,
 ): FreeVehicleState {
   let left = clampFrame(dtSeconds);
   if (left === 0) {
@@ -137,19 +140,24 @@ export function stepFreeVehicle(
   let current = normalized(state);
   while (left > 1e-6) {
     const slice = Math.min(MAX_STEP_SECONDS, left);
-    current = stepOnce(current, input, slice);
+    current = stepOnce(current, input, slice, capMps);
     left -= slice;
   }
   return current;
 }
 
-function stepOnce(state: FreeVehicleState, input: DriveInput, dtSeconds: number): FreeVehicleState {
+function stepOnce(
+  state: FreeVehicleState,
+  input: DriveInput,
+  dtSeconds: number,
+  capMps: number,
+): FreeVehicleState {
   const dt = clampStep(dtSeconds);
   if (dt === 0) {
     return state;
   }
   const accelMps2 = easeAccel(state.accelMps2 ?? 0, input, dt, state.speedMps);
-  const speedMps = speedAfterAccel(state.speedMps, accelMps2, dt);
+  const speedMps = speedAfterAccel(state.speedMps, accelMps2, dt, capMps);
   const headingDegrees = turnBySteer(state.headingDegrees, speedMps, input, dt);
   const position = translate(state.position, headingDegrees, speedMps * dt);
   return { position, headingDegrees, speedMps, accelMps2 };

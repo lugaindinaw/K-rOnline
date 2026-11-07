@@ -91,11 +91,17 @@ export function easeAccel(current: number, input: DriveInput, dtSeconds: number,
   return next;
 }
 
-export function speedAfterAccel(speedMps: number, accelMps2: number, dtSeconds: number): number {
+export function speedAfterAccel(
+  speedMps: number,
+  accelMps2: number,
+  dtSeconds: number,
+  capMps = MAX_SPEED_MPS,
+): number {
   const speed = Math.max(0, Number.isFinite(speedMps) ? speedMps : 0);
   const dt = finiteDt(dtSeconds);
   const accel = Number.isFinite(accelMps2) ? accelMps2 : 0;
-  return clamp(speed + accel * dt, 0, MAX_SPEED_MPS);
+  const cap = Number.isFinite(capMps) && capMps > 0 ? capMps : MAX_SPEED_MPS;
+  return clamp(speed + accel * dt, 0, cap);
 }
 
 /**
@@ -115,5 +121,5 @@ export function displayedSpeedKmh(speedMps: number): number {
   if (!Number.isFinite(speedMps) || speedMps <= 0) {
     return 0;
   }
-  return Math.round(Math.min(MAX_SPEED_MPS, speedMps) * 3.6);
+  return Math.round(Math.min(160, speedMps) * 3.6);
 }

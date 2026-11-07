@@ -18,6 +18,7 @@ import {
 } from "../training/approach";
 import { fetchDrivingRoads, roadRequestKey } from "../roads/fetchDrivingRoads";
 import { savedStockholmRoads, savedTurnPlacements } from "../roads/savedStockholmRoads";
+import { courseStart, savedCourseArea, type CourseKind } from "../roads/savedRoadCourses";
 import {
   describeSignalCoverage,
   distanceMeters,
@@ -40,6 +41,7 @@ import {
 import { requestTiltPermission } from "../drive/tiltSteer";
 import { type PracticeReview } from "../game/cityPractice";
 import { browserProgressStore, readProgress, recordAttempt, type MomentProgress } from "../game/progress";
+import { EMPTY_COURSE, noteCourseFrame } from "../game/courseDrive";
 import {
   EMPTY_CHECKS,
   finishMoment,
@@ -141,6 +143,10 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
   const startRoadRef = useRef<string | null>(null);
   const playModeRef = useRef(playMode);
   playModeRef.current = playMode;
+  const momentRef = useRef<MomentId | null>(moment);
+  momentRef.current = moment;
+  const courseRef = useRef(EMPTY_COURSE);
+  const areaKind = useRef<"stockholm" | CourseKind>("stockholm");
 
   function commitAttempt(next: ApproachAttempt) {
     attemptRef.current = next;
@@ -190,6 +196,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
       indicator: vehicle.indicator ?? ("off" as const),
       checks,
       targetRoad: targetRef.current,
+      course: courseRef.current,
     };
   }
 
@@ -211,6 +218,29 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
         nearestCarRef.current = nearest;
         closeSpeedRef.current = sample.speedMps * 3.6;
       }
+    }
+    const activeMoment = momentRef.current;
+    if (
+      playModeRef.current === "practice" &&
+      (activeMoment === "rural" || activeMoment === "motorway") &&
+      sample.headingDegrees != null &&
+      sample.offsetMeters != null
+    ) {
+      courseRef.current = noteCourseFrame(
+        courseRef.current,
+        {
+          speedMps: sample.speedMps,
+          headingDegrees: sample.headingDegrees,
+          offsetMeters: sample.offsetMeters,
+          highway: sample.highway ?? null,
+          cars: sample.traffic.flatMap((car) =>
+            car.id && car.headingDegrees != null
+              ? [{ id: car.id, position: car.position, headingDegrees: car.headingDegrees }]
+              : [],
+          ),
+        },
+        sample.position,
+      );
     }
     if (sample.traffic.length !== trafficCount) {
       setTrafficCount(sample.traffic.length);
@@ -245,6 +275,7 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
   }
 
   function openFreeDrive() {
+    ensureCityRoads();
     setPlayMode("free");
     setCameraView("driver");
     mapRef.current?.setCameraView("driver");
@@ -265,6 +296,13 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
 
   function beginMoment(next: MomentId) {
     practicePlaced.current = false;
+    courseRef.current = EMPTY_COURSE;
+    momentRef.current = next;
+    if (next === "rural" || next === "motorway") {
+      mountCourse(next);
+    } else {
+      ensureCityRoads();
+    }
     startRoadRef.current = null;
     nearestCarRef.current = null;
     closeSpeedRef.current = null;
@@ -343,6 +381,23 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
     if (moment === "city" && !turnGoal) {
       return;
     }
+    if (moment === "rural" || moment === "motorway") {
+      const start = courseStart(roads, moment);
+      if (!start) {
+        return;
+      }
+      const placed = mapRef.current?.placeAlong(start.edgeId, start.distanceMeters) ?? false;
+      if (!placed) {
+        return;
+      }
+      practicePlaced.current = true;
+      courseRef.current = EMPTY_COURSE;
+      sawStartRoad.current = false;
+      startRoadRef.current = moment === "rural" ? "Färentunavägen" : "påfarten";
+      mapRef.current?.setCameraView("driver");
+      setCameraView("driver");
+      return;
+    }
     const kind = moment === "roundabout" ? "right" : moment === "city" ? turnGoal : "left";
     const start = kind ? savedTurnPlacements(roads).find((item) => item.kind === kind) : undefined;
     if (!start) {
@@ -419,6 +474,43 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
     setSigns([...mergedSigns.values()]);
     setMatched(kept.reduce((sum, area) => sum + area.matched, 0));
     setRadiusMeters(kept[0]?.radiusMeters ?? null);
+  }
+
+  function mountCourse(kind: CourseKind) {
+    const course = savedCourseArea(kind);
+    areaKind.current = kind;
+    requestRef.current += 1;
+    setLoadingRoads(false);
+    setSavedRoads(true);
+    setRoadError(null);
+    setExtendNote(null);
+    setAreaLabel(kind === "rural" ? "Färentunavägen, landsväg" : "Arlandaleden, motorväg");
+    const key = roadRequestKey(course.center, course.radiusMeters);
+    applyCoverage(
+      [
+        {
+          key,
+          center: course.center,
+          radiusMeters: course.radiusMeters,
+          roads: course.roads,
+          truncated: course.truncated,
+          matched: course.matched,
+          omitted: course.omitted,
+          signals: course.signals,
+          signs: course.signs,
+        },
+      ],
+      course.center,
+    );
+    setFocus({ token: Date.now(), lat: course.center.lat, lng: course.center.lng });
+  }
+
+  function ensureCityRoads() {
+    if (areaKind.current === "stockholm") {
+      return;
+    }
+    areaKind.current = "stockholm";
+    void loadRoads(startCenter, "Stockholm, startposition");
   }
 
   async function loadRoads(center: { lat: number; lng: number }, label: string) {

@@ -43,7 +43,10 @@ export type DriveSample = {
   distanceMeters: number;
   position: RoadPoint;
   mode: "driving" | "choose" | "ended";
-  traffic: { position: RoadPoint }[];
+  traffic: { id?: string; position: RoadPoint; headingDegrees?: number }[];
+  headingDegrees?: number;
+  offsetMeters?: number;
+  highway?: string | null;
   /** Live network after a refetch. Absent samples keep the original edge. */
   network?: RoadNetwork | null;
   /**
