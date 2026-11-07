@@ -22,6 +22,8 @@ export type RoadEdge = {
   widthMeters: number | null;
   /** OSM `lanes` count, or null when the tag is missing. */
   lanes: number | null;
+  /** OSM `maxspeed` in km/h, or null when the tag is missing. */
+  maxspeedKmh: number | null;
   nodeIds: string[];
   /** True when the edge follows the way's node order. */
   followsWay: boolean;
@@ -128,6 +130,7 @@ function pushEdge(
     cumulativeMeters: measured.cumulativeMeters,
     widthMeters: road.widthMeters ?? null,
     lanes: road.lanes ?? null,
+    maxspeedKmh: road.maxspeedKmh ?? null,
     nodeIds: directedNodes,
     followsWay: forward,
   });

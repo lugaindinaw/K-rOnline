@@ -1,4 +1,6 @@
+import { seedCourseTraffic } from "./courseTraffic";
 import { listChoices, turnToward } from "../drive/drive";
+import { postedLimitKmh } from "../drive/roadSpeed";
 import { distanceMeters, highwayRank, type RoadPoint } from "../roads/drivingRoads";
 import {
   bearingDegrees,
@@ -39,12 +41,15 @@ export type TrafficCar = {
   speedMps: number;
   position: RoadPoint;
   headingDegrees: number;
+  /** Own cruise speed. Absent cars use the road's cruise. */
+  cruiseMps?: number;
 };
 
 export type TrafficLead = {
   edgeId: string;
   distanceMeters: number;
   position: RoadPoint;
+  headingDegrees?: number;
 };
 
 export function trafficCount(usableEdges: number): number {
@@ -216,7 +221,17 @@ function exitOccupied(
   return cars.some((other) => other.id !== car.id && blocks(other.edgeId, other.distanceMeters));
 }
 
-function speedForLine(room: number, speed: number): number {
+/** How fast other cars cruise. City streets stay at the existing pace. */
+export function roadCruiseMps(edge: { highway?: string | null; maxspeedKmh?: number | null }): number {
+  const posted = postedLimitKmh(edge);
+  if (posted == null) {
+    return TRAFFIC_SPEED_MPS;
+  }
+  const cruise = posted >= 100 ? posted - 8 : posted >= 70 ? posted - 10 : posted;
+  return Math.max(TRAFFIC_SPEED_MPS, cruise / 3.6);
+}
+
+function speedForLine(room: number, speed: number, cruise = TRAFFIC_SPEED_MPS): number {
   if (room <= 0.4) {
     return 0;
   }
@@ -224,7 +239,7 @@ function speedForLine(room: number, speed: number): number {
   if (speed * speed > 2 * braking * room) {
     return 0;
   }
-  return Math.min(TRAFFIC_SPEED_MPS, Math.sqrt(2 * TRAFFIC_ACCEL_MPS2 * room));
+  return Math.min(cruise, Math.sqrt(2 * TRAFFIC_ACCEL_MPS2 * room));
 }
 
 function moveAlong(
@@ -299,21 +314,27 @@ function junctionBlocked(
   return false;
 }
 
-function junctionSpeed(remaining: number, blocked: boolean, kind: RoadEndKind, speed: number): number {
+function junctionSpeed(
+  remaining: number,
+  blocked: boolean,
+  kind: RoadEndKind,
+  speed: number,
+  cruise = TRAFFIC_SPEED_MPS,
+): number {
   if (!isDecision(kind)) {
-    return TRAFFIC_SPEED_MPS;
+    return cruise;
   }
   if (blocked) {
     if (remaining <= JUNCTION_APPROACH_METERS) {
       return 0;
     }
-    return targetSpeed(Math.max(0, remaining), speed);
+    return targetSpeed(Math.max(0, remaining), speed, TRAFFIC_GAP_METERS, cruise);
   }
   if (remaining >= JUNCTION_APPROACH_METERS) {
-    return TRAFFIC_SPEED_MPS;
+    return cruise;
   }
   const ratio = Math.max(0, remaining) / JUNCTION_APPROACH_METERS;
-  return JUNCTION_CREEP_MPS + (TRAFFIC_SPEED_MPS - JUNCTION_CREEP_MPS) * ratio;
+  return JUNCTION_CREEP_MPS + (cruise - JUNCTION_CREEP_MPS) * ratio;
 }
 
 function distanceAhead(network: RoadNetwork, car: TrafficCar, lead: TrafficLead): number | null {
@@ -351,9 +372,14 @@ function closestAhead(network: RoadNetwork, car: TrafficCar, leads: readonly Tra
   return best;
 }
 
-function targetSpeed(ahead: number | null, speed: number, noticeMeters = TRAFFIC_GAP_METERS): number {
+function targetSpeed(
+  ahead: number | null,
+  speed: number,
+  noticeMeters = TRAFFIC_GAP_METERS,
+  cruise = TRAFFIC_SPEED_MPS,
+): number {
   if (ahead === null || ahead >= noticeMeters) {
-    return TRAFFIC_SPEED_MPS;
+    return cruise;
   }
   if (ahead <= TRAFFIC_STOP_METERS) {
     return 0;
@@ -364,7 +390,7 @@ function targetSpeed(ahead: number | null, speed: number, noticeMeters = TRAFFIC
   if (speed * speed > 2 * braking * room) {
     return 0;
   }
-  return Math.min(TRAFFIC_SPEED_MPS, Math.sqrt(2 * TRAFFIC_ACCEL_MPS2 * room));
+  return Math.min(cruise, Math.sqrt(2 * TRAFFIC_ACCEL_MPS2 * room));
 }
 
 /** Distance to the player when they are in front of this car, on any street. */
@@ -378,6 +404,12 @@ function playerNotice(car: TrafficCar, player: TrafficLead | null): number | nul
   }
   const bearing = bearingDegrees(car.position, player.position);
   if (headingDelta(bearing, car.headingDegrees) > 75) {
+    return null;
+  }
+  if (
+    player.headingDegrees != null &&
+    headingDelta(player.headingDegrees, car.headingDegrees) > 120
+  ) {
     return null;
   }
   return gap;
@@ -398,9 +430,12 @@ function stepOne(
   const leads: TrafficLead[] = cars
     .filter((other) => other.id !== car.id)
     .map((other) => ({ edgeId: other.edgeId, distanceMeters: other.distanceMeters, position: other.position }));
-  if (player) {
+  const sameWay =
+    player?.headingDegrees == null || headingDelta(player.headingDegrees, car.headingDegrees) <= 120;
+  if (player && sameWay) {
     leads.push(player);
   }
+  const cruise = Math.min(roadCruiseMps(edge), car.cruiseMps ?? Number.POSITIVE_INFINITY);
   const ahead = closestAhead(network, car, leads);
   const kind = roadEndKind(network, edge);
   const remaining = edge.lengthMeters - car.distanceMeters;
@@ -431,18 +466,18 @@ function stepOne(
     }
   }
   let desired = Math.min(
-    targetSpeed(ahead, car.speedMps),
-    targetSpeed(playerNotice(car, player), car.speedMps, PLAYER_NOTICE_METERS),
-    junctionSpeed(remaining, blocked, kind, car.speedMps),
+    targetSpeed(ahead, car.speedMps, TRAFFIC_GAP_METERS, cruise),
+    targetSpeed(playerNotice(car, sameWay ? player : null), car.speedMps, PLAYER_NOTICE_METERS, cruise),
+    junctionSpeed(remaining, blocked, kind, car.speedMps, cruise),
   );
   if (holdAt !== null && lineRoom !== null) {
-    desired = Math.min(desired, speedForLine(lineRoom, car.speedMps));
+    desired = Math.min(desired, speedForLine(lineRoom, car.speedMps, cruise));
   }
   if (easeYellow) {
     desired = Math.min(desired, Math.max(JUNCTION_CREEP_MPS, 5));
   }
   const delta = Math.max(-TRAFFIC_ACCEL_MPS2 * dt, Math.min(TRAFFIC_ACCEL_MPS2 * dt, desired - car.speedMps));
-  const speed = Math.max(0, Math.min(TRAFFIC_SPEED_MPS, car.speedMps + delta));
+  const speed = Math.max(0, Math.min(cruise, car.speedMps + delta));
   const travel = car.distanceMeters + speed * dt;
   let capped = blocked ? Math.min(travel, edge.lengthMeters) : travel;
   if (holdAt !== null) {
@@ -457,6 +492,7 @@ function stepOne(
     speedMps: speed,
     position: sample.position,
     headingDegrees: turnToward(car.headingDegrees, sample.headingDegrees, dt),
+    cruiseMps: car.cruiseMps,
   };
 }
 
@@ -627,8 +663,6 @@ export function refreshTraffic(
   if (network.edges.length === 0) {
     return [];
   }
-  if (cars.length === 0) {
-    return createTraffic(network, player);
-  }
-  return rejoinTraffic(cars, network, player);
+  const base = cars.length === 0 ? createTraffic(network, player) : rejoinTraffic(cars, network, player);
+  return seedCourseTraffic(network, base, player);
 }

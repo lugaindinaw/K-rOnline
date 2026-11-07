@@ -28,6 +28,7 @@ type Chain = {
   nodeIds: string[];
   widthMeters: number | null;
   lanes: number | null;
+  maxspeedKmh: number | null;
 };
 
 export function coverageMargin(point: RoadPoint, areas: readonly CoverageCircle[]): number {
@@ -95,6 +96,7 @@ function tryStitch(base: Chain, extra: Chain): Chain | null {
     name: base.name ?? extra.name,
     widthMeters: base.widthMeters ?? extra.widthMeters,
     lanes: base.lanes ?? extra.lanes,
+    maxspeedKmh: base.maxspeedKmh ?? extra.maxspeedKmh,
     nodeIds: [...base.nodeIds, ...extra.nodeIds.slice(overlap)],
     coordinates: [...base.coordinates, ...extra.coordinates.slice(overlap)],
   };
@@ -143,6 +145,7 @@ export function mergeRoadSegments(roads: readonly RoadSegment[]): RoadSegment[] 
       nodeIds: road.nodeIds,
       widthMeters: road.widthMeters ?? null,
       lanes: road.lanes ?? null,
+      maxspeedKmh: road.maxspeedKmh ?? null,
     };
     const group = byWay.get(road.osmWayId) ?? [];
     group.push(chain);

@@ -66,5 +66,12 @@ describe("drive feel", () => {
     expect(displayedSpeedKmh(0)).toBe(0);
     expect(displayedSpeedKmh(12)).toBe(43);
     expect(displayedSpeedKmh(-3)).toBe(0);
+    expect(displayedSpeedKmh(110 / 3.6)).toBe(110);
+    let speed = 0;
+    for (let step = 0; step < 160; step += 1) {
+      speed = speedAfterAccel(speed, ACCEL_MPS2, 0.05, 115 / 3.6);
+    }
+    expect(speed * 3.6).toBeGreaterThan(100);
+    expect(displayedSpeedKmh(speed)).toBeGreaterThan(100);
   });
 });

@@ -125,7 +125,7 @@ describe("parseOverpassRoads", () => {
           type: "way",
           id: 20,
           nodes: [1, 2],
-          tags: { highway: "residential", width: "8.5 m", lanes: "2" },
+          tags: { highway: "residential", width: "8.5 m", lanes: "2", maxspeed: "50" },
           geometry: [
             { lat: 65.258, lon: 19.654 },
             { lat: 65.2582, lon: 19.654 },
@@ -143,8 +143,8 @@ describe("parseOverpassRoads", () => {
         },
       ],
     });
-    expect(roads[0]).toMatchObject({ widthMeters: 8.5, lanes: 2 });
-    expect(roads[1]).toMatchObject({ widthMeters: null, lanes: 3 });
+    expect(roads[0]).toMatchObject({ widthMeters: 8.5, lanes: 2, maxspeedKmh: 50 });
+    expect(roads[1]).toMatchObject({ widthMeters: null, lanes: 3, maxspeedKmh: null });
   });
 
   it("reads a reliable oneway tag and leaves stop, yield and signals unknown", () => {
