@@ -15,9 +15,11 @@ import {
   streetLevelRange,
   cameraLookAltitude,
   chaseAim,
+  chaseCameraPosition,
   followCameraFromView,
   followCameraStep,
   settledChase,
+  settledFollow,
   smoothAltitude,
 } from "./followCamera";
 
@@ -199,5 +201,25 @@ describe("followCameraStep", () => {
     const offset = distanceMeters(pose, car);
     expect(offset).toBeGreaterThan(2);
     expect(offset).toBeLessThan(8);
+  });
+
+  it("cuts the driver camera to the seat instead of easing in from the sky", () => {
+    const car = { lat: 59.33, lng: 18.07, headingDegrees: 0 };
+    const chase = settledFollow(car, "chase");
+    const seat = settledFollow(car, "driver");
+    const drop = DRIVER_EYE_HEIGHT_METERS - DRIVER_LOOK_ABOVE_GROUND_METERS;
+    const back = DRIVER_LOOKAHEAD_METERS - DRIVER_FORWARD_METERS;
+    expect(chase.rangeMeters).toBeCloseTo(FOLLOW_RANGE_METERS, 5);
+    expect(seat.rangeMeters).toBeCloseTo(Math.hypot(back, drop), 5);
+    expect(seat.tiltDegrees).toBeGreaterThan(79);
+    expect(seat.tiltDegrees).toBeLessThan(85);
+  });
+
+  it("puts the chase camera a few metres above the road behind the look point", () => {
+    const pose = settledChase({ lat: 59.33, lng: 18.07, headingDegrees: 0 });
+    const camera = chaseCameraPosition(pose, 20);
+    expect(camera.altitude - 20).toBeGreaterThan(1.5);
+    expect(camera.altitude - 20).toBeLessThan(6);
+    expect(camera.lat).toBeLessThan(pose.lat);
   });
 });

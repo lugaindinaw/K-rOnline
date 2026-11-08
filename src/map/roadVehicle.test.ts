@@ -6,23 +6,28 @@ import { CAR_HEIGHT_METERS, CAR_LENGTH_METERS, CAR_SCALE, CAR_WIDTH_METERS, moun
 import { TIRE_CONTACT_LOCAL_Y, VEHICLE_ALTITUDE_MODE, vehicleAltitudeMeters } from "./vehicleContact";
 import type { Model3DOptions, Model3DView } from "./maps3dTypes";
 
-function lowestPositionY(glb: Uint8Array): number {
+function lowestTireY(glb: Uint8Array): number {
   const view = new DataView(glb.buffer, glb.byteOffset, glb.byteLength);
   const jsonLength = view.getUint32(12, true);
   const gltf = JSON.parse(new TextDecoder().decode(glb.subarray(20, 20 + jsonLength))) as {
-    asset?: { copyright?: string };
     accessors: Array<{ min?: number[] }>;
     meshes?: Array<{ primitives: Array<{ attributes: { POSITION?: number } }> }>;
+    nodes?: Array<{ name?: string; mesh?: number; translation?: number[] }>;
   };
-  expect(gltf.asset?.copyright ?? "").toContain("sedan-sports");
+  const names = (gltf.nodes ?? []).map((node) => node.name ?? "");
+  expect(names.some((name) => name.includes("wheel"))).toBe(true);
+  expect(names.some((name) => name.includes("body") || name.includes("windows"))).toBe(true);
   let lowest = Number.POSITIVE_INFINITY;
-  for (const mesh of gltf.meshes ?? []) {
-    for (const primitive of mesh.primitives) {
+  for (const node of gltf.nodes ?? []) {
+    if (!node.name?.includes("wheel") || node.mesh == null) {
+      continue;
+    }
+    const lift = node.translation?.[1] ?? 0;
+    for (const primitive of gltf.meshes?.[node.mesh]?.primitives ?? []) {
       const index = primitive.attributes.POSITION;
-      const accessor = index == null ? undefined : gltf.accessors[index];
-      const y = accessor?.min?.[1];
+      const y = index == null ? undefined : gltf.accessors[index]?.min?.[1];
       if (typeof y === "number") {
-        lowest = Math.min(lowest, y);
+        lowest = Math.min(lowest, y + lift);
       }
     }
   }
@@ -42,7 +47,7 @@ describe("car scale", () => {
   });
 
   it("places the model origin on the visible street at the tire contact", () => {
-    const contact = lowestPositionY(readFileSync(new URL("../../public/car.glb", import.meta.url)));
+    const contact = lowestTireY(readFileSync(new URL("../../public/car.glb", import.meta.url)));
     expect(contact).toBeCloseTo(TIRE_CONTACT_LOCAL_Y, 3);
     expect(vehicleAltitudeMeters(contact)).toBeCloseTo(0, 3);
     expect(VEHICLE_ALTITUDE_MODE).toBe("RELATIVE_TO_MESH");

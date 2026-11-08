@@ -2,16 +2,19 @@ import type { Maps3dLibrary, Marker3DView, Model3DOptions, Model3DView } from ".
 import { VEHICLE_ALTITUDE_MODE, vehicleAltitudeMeters } from "./vehicleContact";
 
 export const CAR_MODEL_URL = "/car.glb";
+export const CABIN_MODEL_URL = "/cabin.glb";
+export const TRAFFIC_MODEL_URL = "/traffic.glb";
 /**
- * Kenney Car Kit "sedan-sports", CC0, packed by scripts/pack-kenney-car.py.
- * The file embeds the colormap, bakes the wheel nodes into the body, and is
- * already about 4.2 m long. Scale 1 keeps that size. Traffic gaps are measured
- * between road positions, not mesh bounds.
+ * Grab3D electric car, CC0. About 4.53 m long, four separate wheels whose
+ * bottoms sit on local Y 0, glass roof, and a hollow cabin. The driver mesh
+ * is the Grab3D modern interior, mirrored so the wheel is on the left.
+ * Traffic uses the Grab3D compact car so the street is not one repeated body.
+ * Scale 1 keeps the authored metres. Gaps are measured between road positions.
  */
-export const CAR_MODEL_NAME = "Kenney Car Kit sedan-sports";
-export const CAR_LENGTH_METERS = 4.21;
-export const CAR_WIDTH_METERS = 2.15;
-export const CAR_HEIGHT_METERS = 1.82;
+export const CAR_MODEL_NAME = "Grab3D electric car";
+export const CAR_LENGTH_METERS = 4.53;
+export const CAR_WIDTH_METERS = 1.92;
+export const CAR_HEIGHT_METERS = 1.45;
 export const CAR_SCALE = 1;
 export const TRAFFIC_SCALE = 1;
 export const CAR_TILT_DEGREES = 270;
@@ -36,9 +39,10 @@ function mountModel(
   parent: { append: (child: HTMLElement) => void },
   Model: new (options?: Model3DOptions) => Model3DView,
   scale = CAR_SCALE,
+  src = CAR_MODEL_URL,
 ): RoadVehicle {
   const model = new Model({
-    src: CAR_MODEL_URL,
+    src,
     scale,
     altitudeMode: VEHICLE_ALTITUDE_MODE,
   });
@@ -109,11 +113,12 @@ function mountVehicle(
   library: Maps3dLibrary,
   scale: number,
   label: string,
+  src = CAR_MODEL_URL,
 ): RoadVehicle | null {
   const parts: RoadVehicle[] = [];
   if (typeof library.Model3DElement === "function") {
     try {
-      parts.push(mountModel(parent, library.Model3DElement, scale));
+      parts.push(mountModel(parent, library.Model3DElement, scale, src));
     } catch {
       // A pin still shows the same road position when the model cannot be constructed.
     }
@@ -163,7 +168,15 @@ export function mountTrafficVehicle(
   parent: { append: (child: HTMLElement) => void },
   library: Maps3dLibrary,
 ): RoadVehicle | null {
-  return mountVehicle(parent, library, TRAFFIC_SCALE, "Trafik");
+  return mountVehicle(parent, library, TRAFFIC_SCALE, "Trafik", TRAFFIC_MODEL_URL);
+}
+
+/** The driver's cabin. Shown only from the seat, on the same road pose as the body. */
+export function mountCabin(
+  parent: { append: (child: HTMLElement) => void },
+  library: Maps3dLibrary,
+): RoadVehicle | null {
+  return mountVehicle(parent, library, CAR_SCALE, "Hytt", CABIN_MODEL_URL);
 }
 
 /** A labelled pin for a practice figure. It is not a second car model. */

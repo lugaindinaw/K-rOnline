@@ -10,9 +10,38 @@ export function gearOf(value: string | undefined | null): Gear {
   return "D";
 }
 
-export function cycleGear(current: Gear): Gear {
-  const index = GEAR_ORDER.indexOf(gearOf(current));
-  return GEAR_ORDER[(index + 1) % GEAR_ORDER.length] ?? "D";
+export type Transmission = "auto" | "manual";
+
+const AUTO_GEARS: readonly Gear[] = ["P", "R", "N", "D"];
+const MANUAL_GEARS: readonly Gear[] = ["P", "R", "N", "1", "2", "3"];
+
+export function gearChoices(transmission: Transmission): readonly Gear[] {
+  return transmission === "manual" ? MANUAL_GEARS : AUTO_GEARS;
+}
+
+export function cycleGear(current: Gear, transmission?: Transmission): Gear {
+  const order = transmission === "manual" ? MANUAL_GEARS : transmission === "auto" ? AUTO_GEARS : GEAR_ORDER;
+  const index = order.indexOf(gearOf(current));
+  return order[(index + 1) % order.length] ?? "D";
+}
+
+/** The gear an automatic box would be in. Drive physics stay on D. */
+export function automaticGear(speedMps: number): "1" | "2" | "3" {
+  const speed = Math.max(0, Number.isFinite(speedMps) ? speedMps : 0);
+  if (speed < 4) {
+    return "1";
+  }
+  if (speed < 9) {
+    return "2";
+  }
+  return "3";
+}
+
+export function shownGear(transmission: Transmission, gear: Gear, speedMps: number): string {
+  if (transmission === "auto" && gear === "D") {
+    return `D·${automaticGear(speedMps)}`;
+  }
+  return gear;
 }
 
 export type GearMotion = {

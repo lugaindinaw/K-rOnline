@@ -652,6 +652,17 @@ summary {
   right: 1.6%;
 }
 
+.cockpit-live .cockpit-header,
+.cockpit-live .cockpit-pillar,
+.cockpit-live .cockpit-hood,
+.cockpit-live .cockpit-door,
+.cockpit-live .cockpit-dash,
+.cockpit-live .cockpit-wheel,
+.cockpit-live .cockpit-cluster,
+.cockpit-live .cockpit-pedals {
+  display: none;
+}
+
 .cockpit-world .cockpit-header,
 .cockpit-world .cockpit-pillar,
 .cockpit-world .cockpit-hood,

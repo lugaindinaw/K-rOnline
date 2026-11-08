@@ -13,12 +13,14 @@ export type Map3DViewElement = HTMLElement & {
   heading?: number;
   /** Vertical field of view in degrees. The Maps default is 35. */
   fov?: number;
+  cameraPosition?: { lat: number; lng: number; altitude?: number };
   flyCameraTo?: (options: {
     endCamera: {
       center: { lat: number; lng: number; altitude: number };
       range: number;
       tilt: number;
       heading: number;
+      cameraPosition?: { lat: number; lng: number; altitude: number };
     };
     durationMillis?: number;
   }) => void;
