@@ -1,4 +1,5 @@
 import { ACCEL_MPS2, BRAKE_MPS2, COAST_MPS2, MAX_SPEED_MPS, type DriveInput } from "./drive";
+import { gearMotion, gearOf } from "./gears";
 
 /** How fast the front wheels catch the key. Full lock takes about half a second. */
 export const STEER_RESPONSE_PER_SECOND = 5.5;
@@ -34,7 +35,12 @@ function finiteDt(dtSeconds: number): number {
  * Full lock only fits at low speed. Above walking pace the steer angle is
  * reduced so the turn stays inside a passenger car's sideways grip.
  */
-export function gripLimitedSteerDegrees(speedMps: number, steerDegrees: number, wheelbaseMeters: number): number {
+export function gripLimitedSteerDegrees(
+  speedMps: number,
+  steerDegrees: number,
+  wheelbaseMeters: number,
+  grip = 1,
+): number {
   if (!Number.isFinite(steerDegrees) || steerDegrees === 0) {
     return 0;
   }
@@ -43,7 +49,8 @@ export function gripLimitedSteerDegrees(speedMps: number, steerDegrees: number, 
   if (speed < 1) {
     return steerDegrees;
   }
-  const maxTan = (MAX_LATERAL_ACCEL_MPS2 * wheelbase) / (speed * speed);
+  const hold = clamp(Number.isFinite(grip) ? grip : 1, 0.2, 1);
+  const maxTan = (MAX_LATERAL_ACCEL_MPS2 * hold * wheelbase) / (speed * speed);
   const maxAngle = (Math.atan(Math.max(0, maxTan)) * 180) / Math.PI;
   return clamp(steerDegrees, -maxAngle, maxAngle);
 }
@@ -65,13 +72,24 @@ export function easeSteer(current: number, target: number, dtSeconds: number): n
 }
 
 export function targetAccelMps2(input: DriveInput): number {
-  if (input.brake) {
-    return -BRAKE_MPS2;
+  const motion = gearMotion(input.gear);
+  if (gearOf(input.gear) === "P") {
+    return -BRAKE_MPS2 * 0.6;
   }
-  if (input.accelerate) {
-    return ACCEL_MPS2;
+  if (input.brake) {
+    return -BRAKE_MPS2 * brakeScaleOf(input.brakeScale);
+  }
+  if (input.accelerate && motion.powered) {
+    return ACCEL_MPS2 * motion.accelScale;
   }
   return -COAST_MPS2;
+}
+
+function brakeScaleOf(scale: number | undefined): number {
+  if (scale == null || !Number.isFinite(scale)) {
+    return 1;
+  }
+  return clamp(scale, 0.2, 1);
 }
 
 /** Gas and brake build up. A stopped car does not keep a stored brake force. */

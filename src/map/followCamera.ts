@@ -4,12 +4,14 @@ import { distanceMeters, type RoadPoint } from "../roads/drivingRoads";
 export type CameraView = "chase" | "driver";
 
 /**
- * Look a short distance ahead and stay far enough back that the whole car
- * sits in the lower part of the frame instead of under the camera.
+ * Outside follow from above the street. Close enough that the whole car and
+ * the road under it stay in frame, far enough that the camera stays out of
+ * the building mesh. Tilt 0 is straight down and 90 is the horizon.
  */
-export const CHASE_RANGE_METERS = 18;
-export const CHASE_TILT_DEGREES = 70;
-export const CHASE_LOOKAHEAD_METERS = 10;
+export const CHASE_RANGE_METERS = 28;
+export const CHASE_TILT_DEGREES = 60;
+/** Near the car, so the body stays in the middle of the frame rather than under the controls. */
+export const CHASE_LOOKAHEAD_METERS = 1;
 export const FOLLOW_RANGE_METERS = CHASE_RANGE_METERS;
 export const FOLLOW_TILT_DEGREES = CHASE_TILT_DEGREES;
 export const CAMERA_LOOKAHEAD_METERS = CHASE_LOOKAHEAD_METERS;
@@ -149,6 +151,41 @@ export function claimCameraJob(ownedJob: number, activeJob: number): { ownedJob:
     return { ownedJob, interrupt: false };
   }
   return { ownedJob: activeJob + 1, interrupt: true };
+}
+
+/**
+ * Chase aims at the road surface the tires use. Driver aims just above it.
+ * `heldMeters` is the last altitude the map was already using when no ground
+ * sample has arrived yet.
+ */
+export function cameraLookAltitude(
+  view: CameraView,
+  groundMeters: number | null,
+  heldMeters: number,
+  lookOnRoad: boolean,
+): number {
+  const surface = groundMeters ?? heldMeters;
+  if (view === "driver") {
+    return surface + (lookOnRoad ? 0.35 : DRIVER_LOOK_ABOVE_GROUND_METERS);
+  }
+  return surface;
+}
+
+/** Ease camera altitude. A late elevation sample must not jump the view. */
+export function smoothAltitude(
+  current: number,
+  target: number,
+  dtSeconds: number,
+  responsePerSecond = 2.2,
+): number {
+  if (!Number.isFinite(target)) {
+    return Number.isFinite(current) ? current : 0;
+  }
+  if (!Number.isFinite(current)) {
+    return target;
+  }
+  const blend = 1 - Math.exp(-responsePerSecond * Math.max(0, dtSeconds));
+  return current + (target - current) * blend;
 }
 
 export function followCameraFromView(view: FollowView, car: RoadPoint & { headingDegrees: number }): FollowCamera {

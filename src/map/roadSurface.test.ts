@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RoadSegment } from "../roads/drivingRoads";
 import { distanceMeters } from "../roads/drivingRoads";
-import { carriagewayRing, roadSurfaces, visualCarriagewayMeters } from "./roadSurface";
+import { carriagewayRing, mountRoadSurfaces, ROAD_SURFACE_ALTITUDE_MODE, roadSurfaces, visualCarriagewayMeters } from "./roadSurface";
 
 const origin = { lat: 59.33, lng: 18.07 };
 
@@ -53,5 +53,32 @@ describe("visual carriageway", () => {
     const pad = surfaces.find((surface) => surface.roadId === "korsning:kors" && surface.kind === "asphalt");
     expect(pad).toBeTruthy();
     expect(pad!.path.length).toBeGreaterThan(8);
+  });
+
+  it("draws the carriageway on the same visible mesh as the tires", () => {
+    expect(ROAD_SURFACE_ALTITUDE_MODE).toBe("RELATIVE_TO_MESH");
+    const modes: string[] = [];
+    const Polygon = class {
+      path: Array<{ lat: number; lng: number }> = [];
+      constructor(options: { altitudeMode: string }) {
+        modes.push(options.altitudeMode);
+      }
+      remove() {}
+    };
+    const mounted = mountRoadSurfaces(
+      { append() {} },
+      Polygon as unknown as new (options: {
+        fillColor: string;
+        strokeColor: string;
+        strokeWidth: number;
+        altitudeMode: typeof ROAD_SURFACE_ALTITUDE_MODE;
+        drawsOccludedSegments: boolean;
+        geodesic: boolean;
+        zIndex: number;
+      }) => HTMLElement & { path?: Array<{ lat: number; lng: number }>; remove: () => void },
+      roadSurfaces([road({ id: "gata" })]).slice(0, 1),
+    );
+    expect(mounted).toHaveLength(1);
+    expect(modes).toEqual(["RELATIVE_TO_MESH"]);
   });
 });

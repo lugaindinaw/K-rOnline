@@ -7,6 +7,8 @@ import {
   type RoadPlacement,
 } from "../roads/roadNetwork";
 import type { RoadPoint } from "../roads/drivingRoads";
+import type { Gear } from "./gears";
+import type { Surface } from "./surface";
 
 export const MAX_SPEED_MPS = 12;
 export const ACCEL_MPS2 = 4.5;
@@ -27,6 +29,14 @@ export type DriveInput = {
   brake: boolean;
   /** -1 is left, +1 is right. Omitted means straight. */
   steer?: number;
+  /** Omitted means drive, so existing calls keep the same motion. */
+  gear?: Gear;
+  /** Simulated uphill pull in m/s². Omitted means a flat road. */
+  gradeMps2?: number;
+  /** Tyre grip scale. Omitted means dry asphalt. */
+  grip?: number;
+  /** Multiplies braking. Omitted means full brakes. */
+  brakeScale?: number;
 };
 
 export type DriveChoice = {
@@ -59,6 +69,8 @@ export type VehicleState = {
   steerApplied?: number;
   /** Smoothed longitudinal acceleration in m/s². Positive is the throttle. */
   accelMps2?: number;
+  /** Speed of the simulated hill roll, backward along the nose. */
+  rollMps?: number;
 };
 
 export type VehicleStatus = {
@@ -74,6 +86,10 @@ export type VehicleStatus = {
   yieldNote?: string | null;
   /** Recorded driving facts. Empty until the car moves. Not a test result. */
   driveFactLines?: readonly string[];
+  /** Selected gear. Absent until the car has been driven in this session. */
+  gear?: Gear;
+  /** Road surface for this drive. Absent means dry. */
+  surface?: Surface;
 };
 
 export const IDLE_VEHICLE: VehicleStatus = {

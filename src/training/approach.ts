@@ -47,6 +47,14 @@ export type DriveSample = {
   headingDegrees?: number;
   offsetMeters?: number;
   highway?: string | null;
+  gear?: string;
+  rollMps?: number;
+  dtSeconds?: number;
+  brake?: boolean;
+  indicator?: "off" | "left" | "right";
+  signal?: "red" | "green" | null;
+  roadName?: string | null;
+  actors?: { kind: string; gapMeters: number; ahead: boolean }[];
   /** Live network after a refetch. Absent samples keep the original edge. */
   network?: RoadNetwork | null;
   /**

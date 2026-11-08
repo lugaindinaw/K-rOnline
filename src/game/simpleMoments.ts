@@ -1,7 +1,27 @@
 import { finishCityReview, reviewCityDrive, type PracticeReview } from "./cityPractice";
 import { EMPTY_COURSE, courseComplete, reviewCourse, type CourseFacts } from "./courseDrive";
+import {
+  EMPTY_MANEUVER,
+  isManeuver,
+  maneuverJudged,
+  maneuverMission,
+  maneuverPassed,
+  maneuverTitle,
+  reviewManeuver,
+  type ManeuverFacts,
+  type ManeuverId,
+} from "./maneuvers";
 
-export type MomentId = "city" | "safety" | "parking" | "roundabout" | "rural" | "motorway" | "night" | "independent";
+export type MomentId =
+  | "city"
+  | "safety"
+  | "parking"
+  | "roundabout"
+  | "rural"
+  | "motorway"
+  | "night"
+  | "independent"
+  | ManeuverId;
 
 export type SafetyChecks = {
   left: boolean;
@@ -26,6 +46,7 @@ export type MomentSnapshot = {
   checks: SafetyChecks;
   targetRoad: string | null;
   course?: CourseFacts;
+  maneuver?: ManeuverFacts;
 };
 
 function lineValue(lines: readonly string[], prefix: string): string | null {
@@ -52,6 +73,9 @@ function point(title: string, ok: boolean, detail: string) {
 }
 
 export function momentTitle(moment: MomentId, goal: "left" | "right" | null): string {
+  if (isManeuver(moment)) {
+    return maneuverTitle(moment);
+  }
   if (moment === "city") {
     return goal === "left" ? "Sväng vänster" : goal === "right" ? "Sväng höger" : "Välj sväng";
   }
@@ -61,7 +85,8 @@ export function momentTitle(moment: MomentId, goal: "left" | "right" | null): st
   if (moment === "rural") return "Landsväg";
   if (moment === "motorway") return "Motorväg";
   if (moment === "independent") return "Körning mot mål";
-  return "Mörkerkörning";
+  if (moment === "night") return "Mörkerkörning";
+  return "Övning";
 }
 
 export function goalStreet(names: readonly (string | null | undefined)[]): string | null {
@@ -73,6 +98,9 @@ export function goalStreet(names: readonly (string | null | undefined)[]): strin
 }
 
 export function momentJudged(moment: MomentId): readonly string[] {
+  if (isManeuver(moment)) {
+    return maneuverJudged(moment);
+  }
   if (moment === "city" || moment === "roundabout") {
     return [
       "Fart: håll låg fart genom korsningen. För hög fart gör att du inte hinner stanna eller styra.",
@@ -118,6 +146,9 @@ export function momentJudged(moment: MomentId): readonly string[] {
 }
 
 export function momentMission(moment: MomentId, goal: "left" | "right" | null, targetRoad?: string | null): string {
+  if (isManeuver(moment)) {
+    return maneuverMission(moment);
+  }
   if (moment === "city") {
     if (goal === "left") {
       return "Kör fram till korsningen, stanna vid väjningsplikt och sväng vänster. Tänd blinkers med Q.";
@@ -146,7 +177,10 @@ export function momentMission(moment: MomentId, goal: "left" | "right" | null, t
     const target = targetRoad ?? "nästa gata";
     return `Kör till ${target}. Du startar på Regeringsgatan. Välj den anslutna gatan och håll dig på körbanan.`;
   }
-  return "Det är mörkt. Kör en kort bit och håll dig i körfältet.";
+  if (moment === "night") {
+    return "Det är mörkt. Kör en kort bit och håll dig i körfältet.";
+  }
+  return "Kör övningen och följ det som bedöms.";
 }
 
 const NIGHT_SPEED_KMH = 12;
@@ -193,6 +227,13 @@ function reviewNight(input: MomentSnapshot): PracticeReview {
 }
 
 export function reviewMoment(input: MomentSnapshot): PracticeReview {
+  if (isManeuver(input.moment)) {
+    return reviewManeuver(input.moment, input.maneuver ?? EMPTY_MANEUVER, {
+      speedKmh: input.speedKmh,
+      roadName: input.roadName,
+      startRoad: input.startRoad,
+    });
+  }
   if (input.moment === "city" || input.moment === "roundabout") {
     return reviewCityDrive({
       lines: input.lines,
@@ -301,6 +342,13 @@ export function reviewMoment(input: MomentSnapshot): PracticeReview {
 }
 
 export function momentComplete(input: MomentSnapshot): boolean {
+  if (isManeuver(input.moment)) {
+    return maneuverPassed(input.moment, input.maneuver ?? EMPTY_MANEUVER, {
+      speedKmh: input.speedKmh,
+      roadName: input.roadName,
+      startRoad: input.startRoad,
+    });
+  }
   if (input.moment === "city" || input.moment === "roundabout") {
     return Boolean(input.startRoad && input.roadName && input.roadName !== input.startRoad && maxSpeed(input.lines) > 0);
   }
