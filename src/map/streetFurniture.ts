@@ -141,15 +141,15 @@ export function mountSignalLamp(parent: Parent, library: Maps3dLibrary, head: Si
     }
   }
   let marker: Marker3DView | null = null;
-  if (typeof library.Marker3DElement === "function") {
+  if (models.size === 0 && typeof library.Marker3DElement === "function") {
     try {
       marker = new library.Marker3DElement({
         label: "SIGNAL",
-        altitudeMode: "RELATIVE_TO_GROUND",
-        extruded: true,
-        sizePreserved: true,
-      });
-      marker.position = { lat: head.position.lat, lng: head.position.lng, altitude: 4.2 };
+      altitudeMode: "RELATIVE_TO_GROUND",
+      extruded: false,
+      sizePreserved: false,
+    });
+    marker.position = { lat: head.position.lat, lng: head.position.lng, altitude: 4.2 };
       parent.append(marker);
     } catch {
       marker = null;
@@ -187,8 +187,8 @@ export function mountSignBoard(parent: Parent, library: Maps3dLibrary, sign: Roa
     const marker = new library.Marker3DElement({
       label: sign.label,
       altitudeMode: "RELATIVE_TO_GROUND",
-      extruded: true,
-      sizePreserved: true,
+      extruded: false,
+      sizePreserved: false,
     });
     marker.position = { lat: sign.position.lat, lng: sign.position.lng, altitude: 2.4 };
     parent.append(marker);

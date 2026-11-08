@@ -130,7 +130,8 @@ export function SwedenPanel({
         hämtas för området runt den valda punkten. När vägarna har laddats står
         bilen på en väg och du kan köra direkt.
       </p>
-      <h2>Så börjar du</h2>
+      <details>
+      <summary>Så börjar du</summary>
       <ol className="start-steps">
         <li>Sök en ort i Sverige, eller stanna kvar i Stockholm.</li>
         <li>Gasa med W, pil upp eller Gas. Bromsa med S, pil ned eller Broms.</li>
@@ -144,6 +145,7 @@ export function SwedenPanel({
         </li>
         <li>C eller knappen växlar mellan förarvy och vy bakifrån.</li>
       </ol>
+      </details>
       <form
         className="place-search"
         onSubmit={(event) => {
@@ -185,7 +187,8 @@ export function SwedenPanel({
         </ul>
       ) : null}
       <div className="drive-block">
-        <h2>Köra</h2>
+        <details>
+        <summary>Köra</summary>
         <p>
           Håll W eller pil upp för att gasa, och S eller pil ned för att bromsa. Knapparna Gas och
           Broms ligger kvar tills du byter. Håll A, pil vänster eller Vänster för att svänga
@@ -200,9 +203,10 @@ export function SwedenPanel({
           växlar kameran. Q eller Blinkers vänster, och E eller Blinkers höger, tänder blinkersen.
           Den slocknar när ratten har vridits åt det hållet och sedan rätats. Väjningsplikt visas bara
           där OpenStreetMap har en give_way-nod, och ett stopp där registreras som fakta, inte som ett
-          förarprov. Förarvyn sitter i förarens ögonhöjd, med ratt, instrument och backspegel runt den riktiga gatan. På mobil, surfplatta och dator finns knapparna på kartan, och på mobil kan du välja att styra genom att luta enheten. Körbanan ritas som en yta när vägdata finns. Knappen utanför bilen visar bilen utifrån. Några andra bilar märkta Trafik följer samma vägar, saktar in
+          förarprov. Förarvyn sitter i förarens ögonhöjd, med ratt, instrument och backspegel runt den riktiga gatan. På mobil, surfplatta och dator finns knapparna på kartan, och på mobil kan du välja att styra genom att luta enheten. Gatan är kartans egen 3D-bild. Knappen utanför bilen visar bilen utifrån. Några andra bilar märkta Trafik följer samma vägar, saktar in
           där vägen delar sig och håller avstånd.
         </p>
+        </details>
         <div className="drive-pedals">
           <button
             type="button"
@@ -285,15 +289,15 @@ export function SwedenPanel({
         ) : null}
         {vehicle.yieldNote ? <p role="status">{vehicle.yieldNote}</p> : null}
         {vehicle.driveFactLines && vehicle.driveFactLines.length > 0 ? (
-          <div className="drive-facts">
-            <h3>Registrerat</h3>
+          <details className="drive-facts">
+            <summary>Registrerat ({vehicle.driveFactLines.length})</summary>
             <p>Fakta för en senare bedömning. Inget förarprov.</p>
             <ul>
               {vehicle.driveFactLines.map((line) => (
                 <li key={line}>{line}</li>
               ))}
             </ul>
-          </div>
+          </details>
         ) : null}
         {extendNote ? <p role="status">{extendNote}</p> : null}
         {vehicle.message ? <p role="status">{vehicle.message}</p> : null}
@@ -433,6 +437,8 @@ export function SwedenPanel({
               : "Källa: OpenStreetMap."}
           </p>
         ) : null}
+        <details>
+          <summary>Väglista och skyltar</summary>
         {signalNote ? <p>{signalNote}</p> : null}
         {signNote ? <p>{signNote}</p> : null}
         {visibleNames.length > 0 ? (
@@ -450,6 +456,7 @@ export function SwedenPanel({
         ) : null}
         {hiddenNames > 0 ? <p>Och {hiddenNames} namngivna vägar till.</p> : null}
         {summary.unnamed > 0 ? <p>{summary.unnamed} vägsträckor saknar namn.</p> : null}
+        </details>
         <button type="button" onClick={onLoadAtCamera} disabled={!cameraAvailable || loadingRoads}>
           Hämta vägar vid kameran
         </button>
@@ -457,7 +464,7 @@ export function SwedenPanel({
       <p>
         Startvyn över Stockholm visade fotorealistisk 3D{" "}
         {STOCKHOLM_CANDIDATE.viewObservation.checkedOn}. Täckningen varierar i landet.
-        Vägarna ritas ändå, eftersom de inte kommer från 3D-bilderna.
+        Vägnätet styr bilen även där 3D-bilden saknas. Gatan i vyn är kartans egen bild.
       </p>
       <details>
         <summary>Vad som saknas för körträning</summary>

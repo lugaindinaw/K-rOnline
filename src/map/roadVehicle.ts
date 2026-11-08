@@ -3,14 +3,15 @@ import { VEHICLE_ALTITUDE_MODE, vehicleAltitudeMeters } from "./vehicleContact";
 
 export const CAR_MODEL_URL = "/car.glb";
 /**
- * The glTF is already a passenger car: about 4.2 m long, 2.0 m wide and 1.7 m tall.
- * Scale 1 keeps that size in the map's meters. Traffic gaps are measured between
- * road positions, not between mesh bounds, so the scale must stay 1 for the cars
- * to match those distances.
+ * Kenney Car Kit "sedan-sports", CC0, packed by scripts/pack-kenney-car.py.
+ * The file embeds the colormap, bakes the wheel nodes into the body, and is
+ * already about 4.2 m long. Scale 1 keeps that size. Traffic gaps are measured
+ * between road positions, not mesh bounds.
  */
-export const CAR_LENGTH_METERS = 4.17;
-export const CAR_WIDTH_METERS = 1.96;
-export const CAR_HEIGHT_METERS = 1.68;
+export const CAR_MODEL_NAME = "Kenney Car Kit sedan-sports";
+export const CAR_LENGTH_METERS = 4.21;
+export const CAR_WIDTH_METERS = 2.15;
+export const CAR_HEIGHT_METERS = 1.82;
 export const CAR_SCALE = 1;
 export const TRAFFIC_SCALE = 1;
 export const CAR_TILT_DEGREES = 270;
@@ -54,7 +55,17 @@ function mountModel(
       };
     },
     setVisible(visible) {
+      // The map draws this in its own scene, so the HTML hidden flag does not
+      // take the body out of the driver view. Scale it away and detach it.
+      model.scale = visible ? scale : 0.00001;
       model.hidden = !visible;
+      if (visible) {
+        if (!model.isConnected) {
+          parent.append(model);
+        }
+      } else if (model.isConnected) {
+        model.remove();
+      }
     },
     remove() {
       model.remove();

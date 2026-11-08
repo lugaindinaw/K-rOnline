@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { Map3DViewElement, Maps3dLibrary } from "./maps3dTypes";
-import { mirrorCamera, needleDegrees, sideMirrorCamera, stepCockpit, type CockpitMotion, type CockpitPose } from "./cockpit";
+import { mirrorCamera, needleDegrees, sideMirrorCamera, stepCockpit, tachometerDegrees, type CockpitMotion, type CockpitPose } from "./cockpit";
 import { displayedSpeedKmh } from "../drive/driveFeel";
 
 type CarInteriorProps = {
@@ -13,7 +13,11 @@ export function CarInterior({ poseRef, library }: CarInteriorProps) {
   const wheelRef = useRef<HTMLDivElement>(null);
   const dashRef = useRef<HTMLDivElement>(null);
   const needleRef = useRef<SVGLineElement>(null);
+  const tachRef = useRef<SVGLineElement>(null);
   const speedRef = useRef<HTMLSpanElement>(null);
+  const gearRef = useRef<HTMLSpanElement>(null);
+  const gasRef = useRef<HTMLSpanElement>(null);
+  const brakeRef = useRef<HTMLSpanElement>(null);
   const clusterRef = useRef<HTMLDivElement>(null);
   const rearMirrorRef = useRef<HTMLDivElement>(null);
   const mirrorHostRef = useRef<HTMLDivElement>(null);
@@ -104,9 +108,17 @@ export function CarInterior({ poseRef, library }: CarInteriorProps) {
       if (needleRef.current) {
         needleRef.current.setAttribute("transform", `rotate(${motion.needleDegrees.toFixed(2)} 100 108)`);
       }
+      if (tachRef.current) {
+        tachRef.current.setAttribute("transform", `rotate(${tachometerDegrees(pose.speedKmh).toFixed(2)} 100 108)`);
+      }
       if (speedRef.current) {
         speedRef.current.textContent = String(displayedSpeedKmh(pose.speedKmh / 3.6));
       }
+      if (gearRef.current) {
+        gearRef.current.textContent = pose.gear ?? "D";
+      }
+      gasRef.current?.classList.toggle("pressed", pose.accelerating === true);
+      brakeRef.current?.classList.toggle("pressed", pose.braking === true);
       const mirror = mirrorRef.current;
       if (mirror) {
         const view = mirrorCamera(pose);
@@ -203,6 +215,37 @@ export function CarInterior({ poseRef, library }: CarInteriorProps) {
               km/h
             </text>
           </svg>
+          <svg className="cockpit-speedo cockpit-tach" viewBox="0 0 200 150" role="img">
+            <title>Varvräknare</title>
+            <path d="M28 118 A72 72 0 1 1 172 118" fill="none" stroke="#2a3138" strokeWidth="14" strokeLinecap="round" />
+            <path d="M36 114 A64 64 0 1 1 164 114" fill="none" stroke="#e07a5f" strokeWidth="3" strokeLinecap="round" />
+            <line
+              ref={tachRef}
+              x1="100"
+              y1="108"
+              x2="100"
+              y2="48"
+              stroke="#f4d7c8"
+              strokeWidth="3"
+              strokeLinecap="round"
+              transform={`rotate(${tachometerDegrees(0)} 100 108)`}
+            />
+            <circle cx="100" cy="108" r="7" fill="#d7c4a3" />
+            <text x="100" y="136" textAnchor="middle" fill="#c8d5ce" fontSize="12" fontFamily="Segoe UI, sans-serif">
+              x1000
+            </text>
+          </svg>
+          <span ref={gearRef} className="cockpit-gear">
+            D
+          </span>
+      </div>
+      <div className="cockpit-pedals">
+        <span ref={brakeRef} className="cockpit-pedal">
+          Broms
+        </span>
+        <span ref={gasRef} className="cockpit-pedal cockpit-pedal-gas">
+          Gas
+        </span>
       </div>
     </div>
   );

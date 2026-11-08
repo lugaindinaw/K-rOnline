@@ -25,6 +25,9 @@ export type CockpitPose = {
   viewTiltDegrees: number;
   /** Lit turn indicator. Absent means off. */
   indicator?: "off" | "left" | "right";
+  gear?: string;
+  accelerating?: boolean;
+  braking?: boolean;
 };
 
 export type CockpitMotion = {
@@ -63,6 +66,12 @@ export function wheelRotationDegrees(steer: number): number {
 export function needleDegrees(speedKmh: number): number {
   const span = clamp(speedKmh, 0, SPEEDO_MAX_KMH) / SPEEDO_MAX_KMH;
   return NEEDLE_START_DEGREES + span * NEEDLE_SWEEP_DEGREES;
+}
+
+/** A display tachometer. It follows road speed, not a measured engine. */
+export function tachometerDegrees(speedKmh: number): number {
+  const rpm = clamp(800 + speedKmh * 42, 0, 7000) / 7000;
+  return NEEDLE_START_DEGREES + rpm * NEEDLE_SWEEP_DEGREES;
 }
 
 function ease(current: number, target: number, dtSeconds: number, responsePerSecond: number): number {

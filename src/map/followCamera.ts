@@ -4,14 +4,15 @@ import { distanceMeters, type RoadPoint } from "../roads/drivingRoads";
 export type CameraView = "chase" | "driver";
 
 /**
- * Outside follow from above the street. Close enough that the whole car and
- * the road under it stay in frame, far enough that the camera stays out of
- * the building mesh. Tilt 0 is straight down and 90 is the horizon.
+ * Low rear follow, the kind a driving game uses. Tilt 0 is straight down and
+ * 90 is the horizon, so 72 sits a few metres above the trunk and looks along
+ * the road. The whole car stays in frame and the street ahead stays visible.
  */
-export const CHASE_RANGE_METERS = 28;
-export const CHASE_TILT_DEGREES = 60;
-/** Near the car, so the body stays in the middle of the frame rather than under the controls. */
-export const CHASE_LOOKAHEAD_METERS = 1;
+export const CHASE_RANGE_METERS = 12;
+export const CHASE_TILT_DEGREES = 72;
+export const CHASE_LOOKAHEAD_METERS = 2.4;
+/** Puts the chase camera on the driver's side so the body and both near wheels read. */
+export const CHASE_LEFT_METERS = 1.2;
 export const FOLLOW_RANGE_METERS = CHASE_RANGE_METERS;
 export const FOLLOW_TILT_DEGREES = CHASE_TILT_DEGREES;
 export const CAMERA_LOOKAHEAD_METERS = CHASE_LOOKAHEAD_METERS;
@@ -28,7 +29,7 @@ export const DRIVER_LOOK_ABOVE_GROUND_METERS = 0.1;
 export const DRIVER_LOOKAHEAD_METERS = 8;
 /** Wide enough for the road ahead, narrow enough that the hood stays in the lower windshield. */
 export const DRIVER_VERTICAL_FOV_DEGREES = 50;
-export const CHASE_VERTICAL_FOV_DEGREES = 35;
+export const CHASE_VERTICAL_FOV_DEGREES = 48;
 export const DRIVER_FORWARD_METERS = 0.2;
 export const DRIVER_LEFT_METERS = 0.38;
 export const CAMERA_YAW_DEGREES_PER_SECOND = 110;
@@ -48,7 +49,25 @@ export type CameraProfile = {
   responsePerSecond: number;
 };
 
-export function cameraProfile(view: CameraView): CameraProfile {
+/** Distance multiplies the chase range. Positive height raises the camera. */
+export type ChaseTune = {
+  distance: number;
+  heightDegrees: number;
+};
+
+export function chaseAim(tune: ChaseTune = { distance: 1, heightDegrees: 0 }): {
+  rangeMeters: number;
+  tiltDegrees: number;
+} {
+  const distance = Math.min(1.8, Math.max(0.65, Number.isFinite(tune.distance) ? tune.distance : 1));
+  const height = Math.min(12, Math.max(-8, Number.isFinite(tune.heightDegrees) ? tune.heightDegrees : 0));
+  return {
+    rangeMeters: CHASE_RANGE_METERS * distance,
+    tiltDegrees: Math.min(82, Math.max(64, CHASE_TILT_DEGREES - height)),
+  };
+}
+
+export function cameraProfile(view: CameraView, tune?: ChaseTune): CameraProfile {
   if (view === "driver") {
     const back = DRIVER_LOOKAHEAD_METERS - DRIVER_FORWARD_METERS;
     const drop = DRIVER_EYE_HEIGHT_METERS - DRIVER_LOOK_ABOVE_GROUND_METERS;
@@ -60,11 +79,12 @@ export function cameraProfile(view: CameraView): CameraProfile {
       responsePerSecond: DRIVER_RESPONSE_PER_SECOND,
     };
   }
+  const aim = chaseAim(tune);
   return {
-    rangeMeters: CHASE_RANGE_METERS,
-    tiltDegrees: CHASE_TILT_DEGREES,
+    rangeMeters: aim.rangeMeters,
+    tiltDegrees: aim.tiltDegrees,
     lookaheadMeters: CHASE_LOOKAHEAD_METERS,
-    leftMeters: 0,
+    leftMeters: CHASE_LEFT_METERS,
     responsePerSecond: CHASE_RESPONSE_PER_SECOND,
   };
 }
@@ -188,6 +208,22 @@ export function smoothAltitude(
   return current + (target - current) * blend;
 }
 
+/** The chase pose a driving game would cut to: behind the car, offset to one side. */
+export function settledChase(
+  car: RoadPoint & { headingDegrees: number },
+  tune?: ChaseTune,
+): FollowCamera {
+  const profile = cameraProfile("chase", tune);
+  const target = viewTarget(car, profile);
+  return {
+    lat: target.lat,
+    lng: target.lng,
+    headingDegrees: car.headingDegrees,
+    rangeMeters: profile.rangeMeters,
+    tiltDegrees: profile.tiltDegrees,
+  };
+}
+
 export function followCameraFromView(view: FollowView, car: RoadPoint & { headingDegrees: number }): FollowCamera {
   return {
     lat: typeof view.center?.lat === "number" ? view.center.lat : car.lat,
@@ -211,8 +247,9 @@ export function followCameraStep(
   car: RoadPoint & { headingDegrees: number },
   dtSeconds: number,
   view: CameraView = "chase",
+  tune?: ChaseTune,
 ): FollowCamera {
-  const profile = cameraProfile(view);
+  const profile = cameraProfile(view, tune);
   const yawCap = view === "driver" ? DRIVER_YAW_DEGREES_PER_SECOND : CAMERA_YAW_DEGREES_PER_SECOND;
   const headingDegrees = turnToward(previous.headingDegrees, car.headingDegrees, dtSeconds, yawCap);
   const aim = view === "driver" ? { ...car, headingDegrees } : car;

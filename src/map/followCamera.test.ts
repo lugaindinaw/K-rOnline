@@ -14,8 +14,10 @@ import {
   claimCameraJob,
   streetLevelRange,
   cameraLookAltitude,
+  chaseAim,
   followCameraFromView,
   followCameraStep,
+  settledChase,
   smoothAltitude,
 } from "./followCamera";
 
@@ -109,7 +111,9 @@ describe("followCameraStep", () => {
       const switched = followCameraStep(camera, car, 0.05, "driver");
       expect(Math.abs(switched.rangeMeters - before.rangeMeters)).toBeLessThan(6);
       expect(Math.abs(switched.tiltDegrees - before.tiltDegrees)).toBeLessThan(16);
-      expect(Math.abs(driver.tiltDegrees - before.tiltDegrees)).toBeGreaterThan(8);
+      expect(before.tiltDegrees).toBeGreaterThan(68);
+      expect(before.tiltDegrees).toBeLessThan(driver.tiltDegrees);
+      expect(before.rangeMeters).toBeGreaterThan(driver.rangeMeters);
       expect(headingDelta(switched.headingDegrees, before.headingDegrees)).toBeLessThanOrEqual(
         CAMERA_YAW_DEGREES_PER_SECOND * 0.05 + 0.001,
       );
@@ -169,5 +173,31 @@ describe("followCameraStep", () => {
       altitude = smoothAltitude(altitude, 12, 0.05);
     }
     expect(altitude).toBeCloseTo(12, 1);
+  });
+
+  it("raises and lengthens the chase camera without turning it into a top-down view", () => {
+    const base = chaseAim();
+    expect(base.tiltDegrees).toBeGreaterThan(68);
+    expect(base.tiltDegrees).toBeLessThan(80);
+    expect(base.rangeMeters).toBeGreaterThan(8);
+    expect(base.rangeMeters).toBeLessThan(16);
+    const higher = chaseAim({ distance: 1, heightDegrees: 6 });
+    const closer = chaseAim({ distance: 0.7, heightDegrees: 0 });
+    expect(higher.tiltDegrees).toBeLessThan(base.tiltDegrees);
+    expect(higher.tiltDegrees).toBeGreaterThan(60);
+    expect(closer.rangeMeters).toBeLessThan(base.rangeMeters);
+  });
+
+  it("cuts the outside camera to a low rear three-quarter view of the car", () => {
+    const car = { lat: 59.33, lng: 18.07, headingDegrees: 20 };
+    const pose = settledChase(car);
+    expect(pose.rangeMeters).toBeGreaterThan(8);
+    expect(pose.rangeMeters).toBeLessThan(16);
+    expect(pose.tiltDegrees).toBeGreaterThan(68);
+    expect(pose.tiltDegrees).toBeLessThan(80);
+    expect(pose.headingDegrees).toBe(20);
+    const offset = distanceMeters(pose, car);
+    expect(offset).toBeGreaterThan(2);
+    expect(offset).toBeLessThan(8);
   });
 });

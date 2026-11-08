@@ -16,6 +16,8 @@ type DrivePadProps = {
   onIndicator: (side: "left" | "right") => void;
   onCamera: () => void;
   onTilt: () => void;
+  onCameraDistance?: (direction: -1 | 1) => void;
+  onCameraHeight?: (direction: -1 | 1) => void;
 };
 
 function hold(onChange: (pressed: boolean) => void) {
@@ -52,6 +54,8 @@ export function DrivePad({
   onIndicator,
   onCamera,
   onTilt,
+  onCameraDistance,
+  onCameraHeight,
 }: DrivePadProps) {
   return (
     <div className="drive-pad">
@@ -80,6 +84,22 @@ export function DrivePad({
         <button type="button" onClick={onCamera}>
           {cameraView === "driver" ? "Utanför bilen" : "I bilen"}
         </button>
+        {cameraView === "chase" && onCameraDistance && onCameraHeight ? (
+          <div className="drive-pad-camera">
+            <button type="button" onClick={() => onCameraDistance(-1)}>
+              Närmare
+            </button>
+            <button type="button" onClick={() => onCameraDistance(1)}>
+              Längre
+            </button>
+            <button type="button" onClick={() => onCameraHeight(-1)}>
+              Lägre
+            </button>
+            <button type="button" onClick={() => onCameraHeight(1)}>
+              Högre
+            </button>
+          </div>
+        ) : null}
         <button type="button" aria-pressed={tiltOn} onClick={onTilt}>
           {tiltOn ? "Lutning på" : "Styr med lutning"}
         </button>
