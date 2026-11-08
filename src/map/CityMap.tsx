@@ -48,15 +48,18 @@ import { loadMaps3dLibrary } from "./loadMaps3d";
 import { publicMapError, resolveMapScreen, type MapPhase } from "./mapScreen";
 import type { Map3DViewElement, Maps3dLibrary } from "./maps3dTypes";
 import {
+  CHASE_RANGE_METERS,
   CHASE_TILT_DEGREES,
   CHASE_VERTICAL_FOV_DEGREES,
   DRIVER_LOOK_ABOVE_GROUND_METERS,
   DRIVER_VERTICAL_FOV_DEGREES,
   approachDriverPose,
+  cameraLookAltitude,
   claimCameraJob,
   followCameraFromView,
   followCameraStep,
   framedDriverCamera,
+  smoothAltitude,
   type CameraView,
   type FollowCamera,
 } from "./followCamera";
@@ -218,6 +221,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
   const followJobRef = useRef(0);
   const lookAltitudeRef = useRef(25);
   const groundAltitudeRef = useRef<number | null>(null);
+  const smoothedAltitudeRef = useRef<number | null>(null);
   const overviewRef = useRef<{
     lat: number;
     lng: number;
@@ -442,6 +446,28 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     };
   }, [tiltSteer]);
 
+  const beginOutsideView = () => {
+    const vehicle = vehicleRef.current;
+    const map = mapRef.current;
+    if (!vehicle || !map) {
+      restoreOverview();
+      return;
+    }
+    followRef.current = true;
+    followCameraRef.current = {
+      lat: vehicle.position.lat,
+      lng: vehicle.position.lng,
+      headingDegrees: vehicle.headingDegrees,
+      rangeMeters: CHASE_RANGE_METERS,
+      tiltDegrees: CHASE_TILT_DEGREES,
+    };
+    const altitude = smoothedAltitudeRef.current ?? groundAltitudeRef.current ?? lookAltitudeRef.current;
+    map.center = { lat: vehicle.position.lat, lng: vehicle.position.lng, altitude };
+    map.range = CHASE_RANGE_METERS;
+    map.tilt = CHASE_TILT_DEGREES;
+    map.heading = vehicle.headingDegrees;
+  };
+
   const restoreOverview = () => {
     const saved = overviewRef.current;
     const map = mapRef.current;
@@ -463,12 +489,15 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     }
     const job = cameraJobRef.current + 1;
     cameraJobRef.current = job;
-    const currentAltitude = typeof map.center?.altitude === "number" ? map.center.altitude : lookAltitudeRef.current;
+    const currentAltitude =
+      groundAltitudeRef.current ??
+      (typeof map.center?.altitude === "number" ? map.center.altitude : lookAltitudeRef.current);
     lookAltitudeRef.current = currentAltitude;
+    smoothedAltitudeRef.current = currentAltitude;
     const show = (altitude: number, carLat: number, carLng: number, carHeading: number) => {
       const endCamera = {
         center: { lat: carLat, lng: carLng, altitude },
-        range: 42,
+        range: CHASE_RANGE_METERS,
         tilt: CHASE_TILT_DEGREES,
         heading: carHeading,
       };
@@ -486,14 +515,23 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       if (mapRef.current !== map || ground == null) {
         return;
       }
-      groundAltitudeRef.current = ground;
-      lookAltitudeRef.current = ground + 2;
       if (job !== cameraJobRef.current) {
+        return;
+      }
+      groundAltitudeRef.current = ground;
+      lookAltitudeRef.current = ground;
+      // A second fly resets range and heading. Only drop the orbit point onto
+      // the road while the chase is not already following the car.
+      if (followRef.current) {
         return;
       }
       const position = vehicleRef.current?.position ?? { lat, lng };
       const carHeading = vehicleRef.current?.headingDegrees ?? heading;
-      show(lookAltitudeRef.current, position.lat, position.lng, carHeading);
+      smoothedAltitudeRef.current = ground;
+      map.center = { lat: position.lat, lng: position.lng, altitude: ground };
+      map.range = CHASE_RANGE_METERS;
+      map.tilt = CHASE_TILT_DEGREES;
+      map.heading = carHeading;
     });
   };
 
@@ -527,7 +565,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       if (view === "driver") {
         rememberStreetGround();
       } else {
-        restoreOverview();
+        beginOutsideView();
       }
     },
     placeAlong(edgeId, distanceMeters) {
@@ -630,7 +668,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
           if (next === "driver") {
             rememberStreetGround();
           } else {
-            restoreOverview();
+            beginOutsideView();
           }
         }
         return;
@@ -1071,10 +1109,18 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
           const framed = driverView
             ? framedDriverCamera(camera, camera.tiltDegrees)
             : { rangeMeters: camera.rangeMeters, tiltDegrees: camera.tiltDegrees, lookOnRoad: false };
-          const ground = groundAltitudeRef.current;
-          const altitude = driverView
-            ? (ground ?? 20) + (framed.lookOnRoad ? 0.35 : DRIVER_LOOK_ABOVE_GROUND_METERS)
-            : lookAltitudeRef.current;
+          const frameDt = Math.min(Math.max(dt, 0), MAX_FRAME_SECONDS);
+          const targetAltitude = cameraLookAltitude(
+            driverView ? "driver" : "chase",
+            groundAltitudeRef.current,
+            lookAltitudeRef.current,
+            framed.lookOnRoad,
+          );
+          const previousAltitude =
+            smoothedAltitudeRef.current ??
+            (typeof map.center?.altitude === "number" ? map.center.altitude : targetAltitude);
+          const altitude = smoothAltitude(previousAltitude, targetAltitude, frameDt);
+          smoothedAltitudeRef.current = altitude;
           const endCamera = {
             center: {
               lat: camera.lat,
@@ -1099,10 +1145,13 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
             : { rangeMeters: endCamera.range, tiltDegrees: appliedTilt, lookOnRoad: false };
           map.range = settled.rangeMeters;
           if (driverView && settled.lookOnRoad && map.center) {
+            const planted = cameraLookAltitude("driver", groundAltitudeRef.current, lookAltitudeRef.current, true);
+            const eased = smoothAltitude(altitude, planted, frameDt);
+            smoothedAltitudeRef.current = eased;
             map.center = {
               lat: endCamera.center.lat,
               lng: endCamera.center.lng,
-              altitude: (groundAltitudeRef.current ?? 20) + 0.35,
+              altitude: eased,
             };
           }
           map.heading = endCamera.heading;
@@ -1289,7 +1338,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
             if (next === "driver") {
               rememberStreetGround();
             } else {
-              restoreOverview();
+              beginOutsideView();
             }
           }}
           onTilt={() => onToggleTilt?.()}

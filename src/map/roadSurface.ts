@@ -210,6 +210,13 @@ function circleRing(center: RoadPoint, radius: number): RoadPoint[] | null {
   return ring;
 }
 
+/**
+ * Same surface as the car. The ribbon is only the carriageway wide, so its
+ * vertices stay on the street mesh. A vertex that lands on a roof is lifted
+ * with that roof; the mode is still the visible road, not a vertical nudge.
+ */
+export const ROAD_SURFACE_ALTITUDE_MODE = "RELATIVE_TO_MESH" as const;
+
 export type SurfacePolygon = {
   path?: Array<{ lat: number; lng: number }>;
   remove: () => void;
@@ -221,7 +228,7 @@ export function mountRoadSurfaces(
     fillColor: string;
     strokeColor: string;
     strokeWidth: number;
-    altitudeMode: "CLAMP_TO_GROUND";
+    altitudeMode: typeof ROAD_SURFACE_ALTITUDE_MODE;
     drawsOccludedSegments: boolean;
     geodesic: boolean;
     zIndex: number;
@@ -234,7 +241,7 @@ export function mountRoadSurfaces(
       fillColor: surface.fillColor,
       strokeColor: surface.fillColor,
       strokeWidth: 1,
-      altitudeMode: "CLAMP_TO_GROUND",
+      altitudeMode: ROAD_SURFACE_ALTITUDE_MODE,
       drawsOccludedSegments: true,
       geodesic: true,
       zIndex: surface.zIndex,

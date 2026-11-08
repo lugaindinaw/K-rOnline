@@ -1,4 +1,5 @@
-import type { Maps3dLibrary, Marker3DView, Model3DView } from "./maps3dTypes";
+import type { Maps3dLibrary, Marker3DView, Model3DOptions, Model3DView } from "./maps3dTypes";
+import { VEHICLE_ALTITUDE_MODE, vehicleAltitudeMeters } from "./vehicleContact";
 
 export const CAR_MODEL_URL = "/car.glb";
 /**
@@ -32,19 +33,20 @@ export type RoadVehicle = {
 
 function mountModel(
   parent: { append: (child: HTMLElement) => void },
-  Model: new (options?: { src?: string; scale?: number; altitudeMode?: "CLAMP_TO_GROUND" }) => Model3DView,
+  Model: new (options?: Model3DOptions) => Model3DView,
   scale = CAR_SCALE,
 ): RoadVehicle {
   const model = new Model({
     src: CAR_MODEL_URL,
     scale,
-    altitudeMode: "CLAMP_TO_GROUND",
+    altitudeMode: VEHICLE_ALTITUDE_MODE,
   });
   parent.append(model);
+  const contactAltitude = vehicleAltitudeMeters();
   return {
     kind: "model",
     update(pose) {
-      model.position = { lat: pose.lat, lng: pose.lng, altitude: 0 };
+      model.position = { lat: pose.lat, lng: pose.lng, altitude: contactAltitude };
       model.orientation = {
         heading: (pose.headingDegrees + CAR_HEADING_OFFSET) % 360,
         tilt: CAR_TILT_DEGREES + (pose.pitchDegrees ?? 0),
@@ -105,11 +107,14 @@ function mountVehicle(
       // A pin still shows the same road position when the model cannot be constructed.
     }
   }
-  if (typeof library.Marker3DElement === "function") {
+  // The size-preserved pin stays screen-sized while the car scales with the
+  // street, so it reads as a marker floating over the roadway. It is only the
+  // fallback when the model itself cannot be mounted.
+  if (parts.length === 0 && typeof library.Marker3DElement === "function") {
     try {
       parts.push(mountMarker(parent, library.Marker3DElement, label));
     } catch {
-      // The model remains if the pin cannot be constructed.
+      // Nothing else can show this vehicle.
     }
   }
   const first = parts[0];

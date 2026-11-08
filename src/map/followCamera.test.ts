@@ -13,8 +13,10 @@ import {
   cameraProfile,
   claimCameraJob,
   streetLevelRange,
+  cameraLookAltitude,
   followCameraFromView,
   followCameraStep,
+  smoothAltitude,
 } from "./followCamera";
 
 const places = [
@@ -152,5 +154,20 @@ describe("followCameraStep", () => {
     expect(Math.abs(pose.rangeMeters - driver.rangeMeters)).toBeLessThan(1);
     expect(streetLevelRange(67.5)).toBeLessThan(6);
     expect(streetLevelRange(88)).toBeLessThanOrEqual(driver.rangeMeters + 0.01);
+  });
+
+  it("aims the chase camera at the road and eases altitude instead of snapping", () => {
+    expect(cameraLookAltitude("chase", 12, 40, false)).toBe(12);
+    expect(cameraLookAltitude("chase", null, 40, false)).toBe(40);
+    expect(cameraLookAltitude("driver", 12, 40, false)).toBeCloseTo(12 + DRIVER_LOOK_ABOVE_GROUND_METERS, 5);
+    const first = smoothAltitude(40, 12, 0.05);
+    expect(first).toBeLessThan(40);
+    expect(first).toBeGreaterThan(30);
+    expect(smoothAltitude(first, 12, 0)).toBe(first);
+    let altitude = 40;
+    for (let step = 0; step < 80; step += 1) {
+      altitude = smoothAltitude(altitude, 12, 0.05);
+    }
+    expect(altitude).toBeCloseTo(12, 1);
   });
 });
