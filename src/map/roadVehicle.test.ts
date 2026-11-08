@@ -10,12 +10,20 @@ function lowestPositionY(glb: Uint8Array): number {
   const view = new DataView(glb.buffer, glb.byteOffset, glb.byteLength);
   const jsonLength = view.getUint32(12, true);
   const gltf = JSON.parse(new TextDecoder().decode(glb.subarray(20, 20 + jsonLength))) as {
-    accessors: Array<{ min?: number[]; count: number; type: string }>;
+    asset?: { copyright?: string };
+    accessors: Array<{ min?: number[] }>;
+    meshes?: Array<{ primitives: Array<{ attributes: { POSITION?: number } }> }>;
   };
+  expect(gltf.asset?.copyright ?? "").toContain("sedan-sports");
   let lowest = Number.POSITIVE_INFINITY;
-  for (const accessor of gltf.accessors) {
-    if (accessor.type === "VEC3" && accessor.min && accessor.min.length === 3) {
-      lowest = Math.min(lowest, accessor.min[1] ?? lowest);
+  for (const mesh of gltf.meshes ?? []) {
+    for (const primitive of mesh.primitives) {
+      const index = primitive.attributes.POSITION;
+      const accessor = index == null ? undefined : gltf.accessors[index];
+      const y = accessor?.min?.[1];
+      if (typeof y === "number") {
+        lowest = Math.min(lowest, y);
+      }
     }
   }
   return lowest;

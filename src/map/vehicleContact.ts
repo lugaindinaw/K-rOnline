@@ -1,9 +1,9 @@
 /**
- * car.glb is Y-up. The four tire boxes start at local Y = 0 and the body
- * sits above them, so the model origin is the tire contact, not the cabin.
- * Maps anchors that origin. Altitude 0 keeps the tires on the chosen surface.
- * A non-zero value is only the measured contact height, negated, if the mesh
- * origin ever moves off the tires.
+ * public/car.glb is the packed Kenney sedan. It is Y-up, and the tire
+ * bottoms are at local Y = 0 after the wheel nodes are baked in. Maps
+ * anchors that origin. Altitude 0 keeps the tires on the chosen surface.
+ * A non-zero value is only the measured contact height, negated, if the
+ * mesh origin ever moves off the tires.
  */
 export const TIRE_CONTACT_LOCAL_Y = 0;
 

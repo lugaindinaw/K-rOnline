@@ -437,8 +437,8 @@ summary {
   position: absolute;
   top: 14px;
   bottom: -2px;
-  width: 46px;
-  background: linear-gradient(90deg, #12100e, #4a433a 42%, #1a1714);
+  width: 72px;
+  background: linear-gradient(90deg, #12100e, #6a6258 38%, #1a1714);
 }
 
 .cockpit-pillar-left {
@@ -480,13 +480,15 @@ summary {
 
 .cockpit-hood {
   position: absolute;
-  left: 8%;
-  right: 8%;
-  bottom: -8px;
-  height: 92px;
-  background: linear-gradient(#8b97a3, #3c4650 68%);
-  clip-path: polygon(8% 100%, 24% 0, 76% 0, 92% 100%);
-  box-shadow: 0 -12px 20px rgba(0, 0, 0, 0.25);
+  left: 6%;
+  right: 6%;
+  bottom: -18px;
+  height: 150px;
+  background:
+    linear-gradient(180deg, rgba(196, 36, 42, 0.15), transparent 28%),
+    linear-gradient(#c8d0d8, #6d7884 42%, #2c343c 100%);
+  clip-path: polygon(4% 100%, 18% 8%, 34% 0, 66% 0, 82% 8%, 96% 100%);
+  box-shadow: inset 0 18px 0 rgba(255, 255, 255, 0.18), 0 -12px 20px rgba(0, 0, 0, 0.25);
 }
 
 .cockpit-door {
@@ -545,10 +547,12 @@ summary {
 .cockpit-cluster {
   position: absolute;
   left: 50%;
-  bottom: 22%;
-  width: 168px;
-  height: 128px;
-  margin-left: -84px;
+  bottom: 18%;
+  display: flex;
+  gap: 8px;
+  width: 280px;
+  height: 112px;
+  margin-left: -140px;
 }
 
 .cockpit-speed {
@@ -567,8 +571,50 @@ summary {
 }
 
 .cockpit-speedo {
-  width: 100%;
+  width: 46%;
   height: 100%;
+}
+
+.cockpit-gear {
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  transform: translateX(-50%);
+  min-width: 28px;
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: #111;
+  color: #f7f4ee;
+  text-align: center;
+  font-weight: 700;
+}
+
+.cockpit-pedals {
+  position: absolute;
+  right: 9%;
+  bottom: 7%;
+  z-index: 3;
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.cockpit-pedal {
+  width: 28px;
+  height: 52px;
+  border-radius: 6px 6px 3px 3px;
+  background: linear-gradient(#4a4036, #1a1714);
+  color: transparent;
+  transform-origin: 50% 100%;
+}
+
+.cockpit-pedal.pressed {
+  transform: rotateX(28deg) scaleY(0.72);
+  background: #8a3a32;
+}
+
+.cockpit-pedal-gas.pressed {
+  background: #2f6b4f;
 }
 
 .cockpit-wheel {
@@ -757,14 +803,21 @@ summary {
 .game-hud {
   position: fixed;
   z-index: 20;
-  top: 16px;
-  left: 384px;
-  right: 16px;
-  max-width: 520px;
-  padding: 14px 16px;
-  border-radius: 14px;
-  background: rgba(247, 244, 238, 0.94);
+  top: 12px;
+  right: 12px;
+  left: auto;
+  width: min(280px, calc(100% - 24px));
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(247, 244, 238, 0.88);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+.game-mission {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .game-hud h2,
@@ -869,9 +922,11 @@ summary {
   z-index: 6;
   left: 10px;
   right: 10px;
+  top: 8px;
   bottom: 10px;
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-rows: auto 1fr auto;
   align-items: end;
   gap: 8px;
   pointer-events: none;
@@ -894,15 +949,35 @@ summary {
   gap: 8px;
 }
 
+.drive-pad-steer {
+  grid-column: 1;
+  grid-row: 3;
+}
+
+.drive-pad-pedals {
+  grid-column: 3;
+  grid-row: 3;
+}
+
 .drive-pad-pedals button:last-child {
   background: #1f4d3a;
 }
 
 .drive-pad-center {
+  grid-column: 3;
+  grid-row: 1;
+  justify-self: end;
+  align-self: start;
   display: grid;
   justify-items: center;
-  gap: 6px;
-  max-width: 280px;
+  gap: 4px;
+  max-width: 240px;
+}
+
+.drive-pad-center button {
+  min-height: 34px;
+  padding: 4px 8px;
+  font-size: 0.82rem;
 }
 
 .drive-pad-center p {
@@ -916,14 +991,28 @@ summary {
 
 @media (max-width: 800px) {
   .drive-pad {
-    flex-wrap: wrap;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto auto;
   }
 
   .drive-pad-center {
-    order: -1;
+    grid-column: 1 / -1;
+    grid-row: 1;
     width: 100%;
     max-width: none;
+    justify-self: stretch;
     grid-template-columns: 1fr 1fr;
+  }
+
+  .drive-pad-steer {
+    grid-column: 1;
+    grid-row: 3;
+  }
+
+  .drive-pad-pedals {
+    grid-column: 2;
+    grid-row: 3;
+    justify-self: end;
   }
 
   .drive-pad-center p,
@@ -956,5 +1045,6 @@ summary {
     left: 12px;
     right: 12px;
     top: 12px;
+    width: auto;
   }
 }
