@@ -117,6 +117,19 @@ code {
   min-height: 0;
 }
 
+.cabin-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.cabin-overlay canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 .map-host,
 .map-host gmp-map-3d {
   width: 100%;
@@ -650,6 +663,17 @@ summary {
 
 .cockpit-side-mirror-right {
   right: 1.6%;
+}
+
+.cockpit-live .cockpit-header,
+.cockpit-live .cockpit-pillar,
+.cockpit-live .cockpit-hood,
+.cockpit-live .cockpit-door,
+.cockpit-live .cockpit-dash,
+.cockpit-live .cockpit-wheel,
+.cockpit-live .cockpit-cluster,
+.cockpit-live .cockpit-pedals {
+  display: none;
 }
 
 .cockpit-world .cockpit-header,

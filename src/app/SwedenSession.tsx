@@ -298,8 +298,8 @@ export function SwedenSession({ apiKey }: { apiKey: string | null }) {
   function openFreeDrive() {
     ensureCityRoads();
     setPlayMode("free");
-    setCameraView("driver");
-    mapRef.current?.setCameraView("driver");
+    setCameraView("chase");
+    mapRef.current?.setCameraView("chase");
   }
 
   function chooseTarget(next: MomentId) {

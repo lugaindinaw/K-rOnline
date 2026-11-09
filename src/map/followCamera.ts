@@ -5,14 +5,14 @@ export type CameraView = "chase" | "driver";
 
 /**
  * Low rear follow, the kind a driving game uses. Tilt 0 is straight down and
- * 90 is the horizon, so 72 sits a few metres above the trunk and looks along
- * the road. The whole car stays in frame and the street ahead stays visible.
+ * 90 is the horizon, so 70 sits about five metres above the lane and looks
+ * along the road. The whole car stays in frame and the street ahead stays visible.
  */
-export const CHASE_RANGE_METERS = 12;
-export const CHASE_TILT_DEGREES = 72;
-export const CHASE_LOOKAHEAD_METERS = 2.4;
-/** Puts the chase camera on the driver's side so the body and both near wheels read. */
-export const CHASE_LEFT_METERS = 1.2;
+export const CHASE_RANGE_METERS = 24;
+export const CHASE_TILT_DEGREES = 67;
+export const CHASE_LOOKAHEAD_METERS = 2.2;
+/** Stay over the lane. A larger sideways offset puts the lens in the facade and the map zooms out. */
+export const CHASE_LEFT_METERS = 0.35;
 export const FOLLOW_RANGE_METERS = CHASE_RANGE_METERS;
 export const FOLLOW_TILT_DEGREES = CHASE_TILT_DEGREES;
 export const CAMERA_LOOKAHEAD_METERS = CHASE_LOOKAHEAD_METERS;
@@ -25,13 +25,13 @@ export const DRIVER_EYE_HEIGHT_METERS = 1.25;
  * The look sits just under the horizon so the road fills the lower windshield.
  * The cabin itself is drawn in front of the map, so this point is the road, not the hood.
  */
-export const DRIVER_LOOK_ABOVE_GROUND_METERS = 0.1;
+export const DRIVER_LOOK_ABOVE_GROUND_METERS = 0.18;
 export const DRIVER_LOOKAHEAD_METERS = 8;
 /** Wide enough for the road ahead, narrow enough that the hood stays in the lower windshield. */
 export const DRIVER_VERTICAL_FOV_DEGREES = 50;
-export const CHASE_VERTICAL_FOV_DEGREES = 48;
-export const DRIVER_FORWARD_METERS = 0.2;
-export const DRIVER_LEFT_METERS = 0.38;
+export const CHASE_VERTICAL_FOV_DEGREES = 46;
+export const DRIVER_FORWARD_METERS = 0.12;
+export const DRIVER_LEFT_METERS = 0.36;
 export const CAMERA_YAW_DEGREES_PER_SECOND = 110;
 /** Driver aim turns slower than the chase camera so the view does not twitch with the car. */
 export const DRIVER_YAW_DEGREES_PER_SECOND = 62;
@@ -63,7 +63,7 @@ export function chaseAim(tune: ChaseTune = { distance: 1, heightDegrees: 0 }): {
   const height = Math.min(12, Math.max(-8, Number.isFinite(tune.heightDegrees) ? tune.heightDegrees : 0));
   return {
     rangeMeters: CHASE_RANGE_METERS * distance,
-    tiltDegrees: Math.min(82, Math.max(64, CHASE_TILT_DEGREES - height)),
+    tiltDegrees: Math.min(82, Math.max(58, CHASE_TILT_DEGREES - height)),
   };
 }
 
@@ -208,12 +208,30 @@ export function smoothAltitude(
   return current + (target - current) * blend;
 }
 
-/** The chase pose a driving game would cut to: behind the car, offset to one side. */
-export function settledChase(
+/** Exact camera point for a settled pose. Maps keeps this when center and range disagree. */
+export function chaseCameraPosition(
+  pose: FollowCamera,
+  lookAltitude: number,
+): { lat: number; lng: number; altitude: number } {
+  const tilt = (pose.tiltDegrees * Math.PI) / 180;
+  const heading = (pose.headingDegrees * Math.PI) / 180;
+  const horizontal = pose.rangeMeters * Math.sin(tilt);
+  const vertical = pose.rangeMeters * Math.cos(tilt);
+  const cosine = Math.cos((pose.lat * Math.PI) / 180);
+  return {
+    lat: pose.lat - (horizontal * Math.cos(heading)) / 111320,
+    lng: pose.lng - (horizontal * Math.sin(heading)) / (111320 * Math.max(0.2, cosine)),
+    altitude: lookAltitude + vertical,
+  };
+}
+
+/** The pose a driving game would cut to, instead of easing in from an overview. */
+export function settledFollow(
   car: RoadPoint & { headingDegrees: number },
+  view: CameraView = "chase",
   tune?: ChaseTune,
 ): FollowCamera {
-  const profile = cameraProfile("chase", tune);
+  const profile = cameraProfile(view, tune);
   const target = viewTarget(car, profile);
   return {
     lat: target.lat,
@@ -222,6 +240,14 @@ export function settledChase(
     rangeMeters: profile.rangeMeters,
     tiltDegrees: profile.tiltDegrees,
   };
+}
+
+/** The chase pose a driving game would cut to: behind the car, offset to one side. */
+export function settledChase(
+  car: RoadPoint & { headingDegrees: number },
+  tune?: ChaseTune,
+): FollowCamera {
+  return settledFollow(car, "chase", tune);
 }
 
 export function followCameraFromView(view: FollowView, car: RoadPoint & { headingDegrees: number }): FollowCamera {

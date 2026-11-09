@@ -6,9 +6,11 @@ import { displayedSpeedKmh } from "../drive/driveFeel";
 type CarInteriorProps = {
   poseRef: { current: CockpitPose };
   library: Maps3dLibrary | null;
+  /** The seat, wheel and dash are the cabin model, so the flat overlay stays out of the way. */
+  liveMesh?: boolean;
 };
 
-export function CarInterior({ poseRef, library }: CarInteriorProps) {
+export function CarInterior({ poseRef, library, liveMesh = false }: CarInteriorProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const wheelRef = useRef<HTMLDivElement>(null);
   const dashRef = useRef<HTMLDivElement>(null);
@@ -153,7 +155,7 @@ export function CarInterior({ poseRef, library }: CarInteriorProps) {
   }, [poseRef]);
 
   return (
-    <div ref={rootRef} className="cockpit" aria-hidden="true">
+    <div ref={rootRef} className={liveMesh ? "cockpit cockpit-live" : "cockpit"} aria-hidden="true">
       <div ref={leftLampRef} className="cockpit-indicator cockpit-indicator-left" />
       <div ref={rightLampRef} className="cockpit-indicator cockpit-indicator-right" />
       <div className="cockpit-glass">

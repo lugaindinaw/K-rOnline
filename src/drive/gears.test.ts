@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cycleGear, gearFromKey, gearMotion } from "./gears";
+import { automaticGear, cycleGear, gearChoices, gearFromKey, gearMotion, shownGear } from "./gears";
 import { gripLimitedSteerDegrees } from "./driveFeel";
 import { stepFreeVehicle } from "./freeDrive";
 import { surfaceGrip } from "./surface";
@@ -45,6 +45,14 @@ describe("gears", () => {
     expect(gearFromKey("KeyF", "f")).toBe("D");
     expect(gearFromKey("Digit1", "1")).toBeNull();
     expect(cycleGear("D")).toBe("P");
+    expect(cycleGear("D", "auto")).toBe("P");
+    expect(cycleGear("3", "manual")).toBe("P");
+    expect(gearChoices("manual")).toEqual(["P", "R", "N", "1", "2", "3"]);
+    expect(automaticGear(0)).toBe("1");
+    expect(automaticGear(6)).toBe("2");
+    expect(automaticGear(12)).toBe("3");
+    expect(shownGear("auto", "D", 6)).toBe("D·2");
+    expect(shownGear("manual", "2", 6)).toBe("2");
   });
 });
 
