@@ -5,14 +5,14 @@ export type CameraView = "chase" | "driver";
 
 /**
  * Low rear follow, the kind a driving game uses. Tilt 0 is straight down and
- * 90 is the horizon, so 72 sits a few metres above the trunk and looks along
- * the road. The whole car stays in frame and the street ahead stays visible.
+ * 90 is the horizon, so 70 sits about five metres above the lane and looks
+ * along the road. The whole car stays in frame and the street ahead stays visible.
  */
-export const CHASE_RANGE_METERS = 10.5;
-export const CHASE_TILT_DEGREES = 76;
-export const CHASE_LOOKAHEAD_METERS = 2.6;
-/** A small offset shows the flank without putting the camera in the facade. */
-export const CHASE_LEFT_METERS = 0.55;
+export const CHASE_RANGE_METERS = 24;
+export const CHASE_TILT_DEGREES = 67;
+export const CHASE_LOOKAHEAD_METERS = 2.2;
+/** Stay over the lane. A larger sideways offset puts the lens in the facade and the map zooms out. */
+export const CHASE_LEFT_METERS = 0.35;
 export const FOLLOW_RANGE_METERS = CHASE_RANGE_METERS;
 export const FOLLOW_TILT_DEGREES = CHASE_TILT_DEGREES;
 export const CAMERA_LOOKAHEAD_METERS = CHASE_LOOKAHEAD_METERS;
@@ -29,7 +29,7 @@ export const DRIVER_LOOK_ABOVE_GROUND_METERS = 0.18;
 export const DRIVER_LOOKAHEAD_METERS = 8;
 /** Wide enough for the road ahead, narrow enough that the hood stays in the lower windshield. */
 export const DRIVER_VERTICAL_FOV_DEGREES = 50;
-export const CHASE_VERTICAL_FOV_DEGREES = 48;
+export const CHASE_VERTICAL_FOV_DEGREES = 46;
 export const DRIVER_FORWARD_METERS = 0.12;
 export const DRIVER_LEFT_METERS = 0.36;
 export const CAMERA_YAW_DEGREES_PER_SECOND = 110;
@@ -63,7 +63,7 @@ export function chaseAim(tune: ChaseTune = { distance: 1, heightDegrees: 0 }): {
   const height = Math.min(12, Math.max(-8, Number.isFinite(tune.heightDegrees) ? tune.heightDegrees : 0));
   return {
     rangeMeters: CHASE_RANGE_METERS * distance,
-    tiltDegrees: Math.min(82, Math.max(64, CHASE_TILT_DEGREES - height)),
+    tiltDegrees: Math.min(82, Math.max(58, CHASE_TILT_DEGREES - height)),
   };
 }
 

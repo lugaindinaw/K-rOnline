@@ -113,7 +113,7 @@ describe("followCameraStep", () => {
       const switched = followCameraStep(camera, car, 0.05, "driver");
       expect(Math.abs(switched.rangeMeters - before.rangeMeters)).toBeLessThan(6);
       expect(Math.abs(switched.tiltDegrees - before.tiltDegrees)).toBeLessThan(16);
-      expect(before.tiltDegrees).toBeGreaterThan(68);
+      expect(before.tiltDegrees).toBeGreaterThan(60);
       expect(before.tiltDegrees).toBeLessThan(driver.tiltDegrees);
       expect(before.rangeMeters).toBeGreaterThan(driver.rangeMeters);
       expect(headingDelta(switched.headingDegrees, before.headingDegrees)).toBeLessThanOrEqual(
@@ -179,10 +179,10 @@ describe("followCameraStep", () => {
 
   it("raises and lengthens the chase camera without turning it into a top-down view", () => {
     const base = chaseAim();
-    expect(base.tiltDegrees).toBeGreaterThan(68);
+    expect(base.tiltDegrees).toBeGreaterThan(58);
     expect(base.tiltDegrees).toBeLessThan(80);
     expect(base.rangeMeters).toBeGreaterThan(8);
-    expect(base.rangeMeters).toBeLessThan(16);
+    expect(base.rangeMeters).toBeLessThan(40);
     const higher = chaseAim({ distance: 1, heightDegrees: 6 });
     const closer = chaseAim({ distance: 0.7, heightDegrees: 0 });
     expect(higher.tiltDegrees).toBeLessThan(base.tiltDegrees);
@@ -194,8 +194,8 @@ describe("followCameraStep", () => {
     const car = { lat: 59.33, lng: 18.07, headingDegrees: 20 };
     const pose = settledChase(car);
     expect(pose.rangeMeters).toBeGreaterThan(8);
-    expect(pose.rangeMeters).toBeLessThan(16);
-    expect(pose.tiltDegrees).toBeGreaterThan(68);
+    expect(pose.rangeMeters).toBeLessThan(40);
+    expect(pose.tiltDegrees).toBeGreaterThan(58);
     expect(pose.tiltDegrees).toBeLessThan(80);
     expect(pose.headingDegrees).toBe(20);
     const offset = distanceMeters(pose, car);
@@ -219,7 +219,7 @@ describe("followCameraStep", () => {
     const pose = settledChase({ lat: 59.33, lng: 18.07, headingDegrees: 0 });
     const camera = chaseCameraPosition(pose, 20);
     expect(camera.altitude - 20).toBeGreaterThan(1.5);
-    expect(camera.altitude - 20).toBeLessThan(6);
+    expect(camera.altitude - 20).toBeLessThan(16);
     expect(camera.lat).toBeLessThan(pose.lat);
   });
 });

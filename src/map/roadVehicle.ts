@@ -45,6 +45,8 @@ function mountModel(
     src,
     scale,
     altitudeMode: VEHICLE_ALTITUDE_MODE,
+    position: { lat: 59.3293, lng: 18.0686, altitude: 0 },
+    orientation: { heading: 0, tilt: CAR_TILT_DEGREES, roll: 0 },
   });
   parent.append(model);
   const contactAltitude = vehicleAltitudeMeters();
@@ -59,10 +61,10 @@ function mountModel(
       };
     },
     setVisible(visible) {
-      // The map draws this in its own scene, so the HTML hidden flag does not
-      // take the body out of the driver view. Scale it away and detach it.
-      model.scale = visible ? scale : 0.00001;
-      model.hidden = !visible;
+      // Detach the mesh the driver should not see. The hidden flag is left
+      // alone: setting it keeps the map from drawing the model at all.
+      const size = visible ? scale : 0.00001;
+      model.scale = { x: size, y: size, z: size };
       if (visible) {
         if (!model.isConnected) {
           parent.append(model);
@@ -84,6 +86,7 @@ function mountMarker(
     altitudeMode?: "CLAMP_TO_GROUND";
     extruded?: boolean;
     sizePreserved?: boolean;
+    position?: { lat: number; lng: number; altitude?: number };
   }) => Marker3DView,
   label = "Bil",
 ): RoadVehicle {
@@ -92,6 +95,7 @@ function mountMarker(
     altitudeMode: "CLAMP_TO_GROUND",
     extruded: true,
     sizePreserved: true,
+    position: { lat: 59.3293, lng: 18.0686, altitude: 0 },
   });
   parent.append(marker);
   return {

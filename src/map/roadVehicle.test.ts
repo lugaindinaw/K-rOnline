@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { CAR_HEIGHT_METERS, CAR_LENGTH_METERS, CAR_SCALE, CAR_WIDTH_METERS, mountRoadVehicle, TRAFFIC_SCALE } from "./roadVehicle";
-import { TIRE_CONTACT_LOCAL_Y, VEHICLE_ALTITUDE_MODE, vehicleAltitudeMeters } from "./vehicleContact";
+import { ROAD_CLEARANCE_METERS, TIRE_CONTACT_LOCAL_Y, VEHICLE_ALTITUDE_MODE, vehicleAltitudeMeters } from "./vehicleContact";
 import type { Model3DOptions, Model3DView } from "./maps3dTypes";
 
 function lowestTireY(glb: Uint8Array): number {
@@ -49,7 +49,7 @@ describe("car scale", () => {
   it("places the model origin on the visible street at the tire contact", () => {
     const contact = lowestTireY(readFileSync(new URL("../../public/car.glb", import.meta.url)));
     expect(contact).toBeCloseTo(TIRE_CONTACT_LOCAL_Y, 3);
-    expect(vehicleAltitudeMeters(contact)).toBeCloseTo(0, 3);
+    expect(vehicleAltitudeMeters(contact)).toBeCloseTo(ROAD_CLEARANCE_METERS, 3);
     expect(VEHICLE_ALTITUDE_MODE).toBe("RELATIVE_TO_MESH");
     const created: Model3DOptions[] = [];
     let placedAltitude = Number.NaN;
@@ -78,6 +78,6 @@ describe("car scale", () => {
     expect(created).toHaveLength(1);
     expect(created[0]?.altitudeMode).toBe("RELATIVE_TO_MESH");
     expect(view?.kind).toBe("model");
-    expect(placedAltitude).toBe(0);
+    expect(placedAltitude).toBeCloseTo(ROAD_CLEARANCE_METERS, 3);
   });
 });

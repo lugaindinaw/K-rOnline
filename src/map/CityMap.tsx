@@ -54,7 +54,6 @@ import {
   approachDriverPose,
   cameraLookAltitude,
   chaseAim,
-  chaseCameraPosition,
   claimCameraJob,
   followCameraFromView,
   followCameraStep,
@@ -74,6 +73,7 @@ import { bodyAttitude } from "../drive/driveFeel";
 import { clearanceOf } from "../drive/roadGuide";
 import { steerFromTilt } from "../drive/tiltSteer";
 import { DrivePad } from "../ui/DrivePad";
+import { CabinOverlay } from "./CabinOverlay";
 import { CarInterior } from "./CarInterior";
 
 export type MapFocus = {
@@ -220,8 +220,8 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
   const tiltRef = useRef(0);
   const followRef = useRef(false);
   const followCameraRef = useRef<FollowCamera | null>(null);
-  const cameraHoldUntilRef = useRef(0);
   const lastCameraFlyRef = useRef(0);
+  const lastFlownPoseRef = useRef<FollowCamera | null>(null);
   const cameraViewRef = useRef<CameraView>(cameraView);
   const onCameraViewChangeRef = useRef(onCameraViewChange);
   cameraViewRef.current = cameraView;
@@ -464,7 +464,6 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     }
     followRef.current = true;
     cameraJobRef.current += 1;
-    cameraHoldUntilRef.current = performance.now() + 700;
     const pose = settledChase(
       {
         lat: vehicle.position.lat,
@@ -481,11 +480,9 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       tilt: pose.tiltDegrees,
       heading: pose.headingDegrees,
     };
-    lastCameraFlyRef.current = performance.now();
     if (typeof map.flyCameraTo === "function") {
       map.flyCameraTo({ endCamera, durationMillis: 0 });
     } else {
-      map.cameraPosition = chaseCameraPosition(pose, altitude);
       map.center = endCamera.center;
       map.range = endCamera.range;
       map.tilt = endCamera.tilt;
@@ -541,33 +538,20 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       map.tilt = endCamera.tilt;
       map.heading = carHeading;
     };
-    map.center = { lat, lng, altitude: currentAltitude };
-    map.range = chaseAim(chaseTuneRef.current).rangeMeters;
-    map.tilt = chaseAim(chaseTuneRef.current).tiltDegrees;
-    map.heading = heading;
     show(currentAltitude, lat, lng, heading);
     void readGroundElevation(lat, lng).then((ground) => {
       if (mapRef.current !== map || ground == null) {
         return;
       }
-      if (job !== cameraJobRef.current) {
-        return;
-      }
       groundAltitudeRef.current = ground;
       lookAltitudeRef.current = ground;
-      // A second fly resets range and heading. Only drop the orbit point onto
-      // the road while the chase is not already following the car.
-      if (followRef.current) {
+      smoothedAltitudeRef.current = ground;
+      if (job !== cameraJobRef.current) {
         return;
       }
       const position = vehicleRef.current?.position ?? { lat, lng };
       const carHeading = vehicleRef.current?.headingDegrees ?? heading;
-      smoothedAltitudeRef.current = ground;
-      map.center = { lat: position.lat, lng: position.lng, altitude: ground };
-      const aim = chaseAim(chaseTuneRef.current);
-      map.range = aim.rangeMeters;
-      map.tilt = aim.tiltDegrees;
-      map.heading = carHeading;
+      show(ground, position.lat, position.lng, carHeading);
     });
   };
 
@@ -820,9 +804,6 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       const steadyEvent = event as Event & { isSteady?: boolean };
       if (steadyEvent.isSteady === true) {
         setSteady(true);
-        if (vehicleRef.current) {
-          beginOutsideView();
-        }
       }
     };
 
@@ -888,6 +869,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
         });
         mapElement.addEventListener("gmp-error", onError);
         mapElement.addEventListener("gmp-steadychange", onSteady);
+        mapElement.addEventListener("gmp-steadystate", onSteady);
         mapElement.addEventListener("gmp-click", onClick);
         host.replaceChildren(mapElement);
         mapRef.current = mapElement;
@@ -909,6 +891,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       const mapElement = mapRef.current;
       mapElement?.removeEventListener("gmp-error", onError);
       mapElement?.removeEventListener("gmp-steadychange", onSteady);
+      mapElement?.removeEventListener("gmp-steadystate", onSteady);
       mapElement?.removeEventListener("gmp-click", onClick);
       for (const line of linesRef.current) {
         line.remove();
@@ -1219,14 +1202,22 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
             tilt: framed.tiltDegrees,
             heading: camera.headingDegrees,
           };
-          if (claim.interrupt) {
-            cameraJobRef.current = claim.ownedJob;
-          }
           const nowMs = performance.now();
-          const cameraMoved = distanceMeters(followCameraRef.current ?? camera, camera) > 0.4;
-          if (typeof map.flyCameraTo === "function" && (cameraMoved || claim.interrupt) && nowMs - lastCameraFlyRef.current > 160) {
+          const cameraMoved = distanceMeters(lastFlownPoseRef.current ?? camera, camera) > 1.2;
+          if (
+            (claim.interrupt || farView || cameraMoved) &&
+            typeof map.flyCameraTo === "function" &&
+            nowMs - lastCameraFlyRef.current > 250
+          ) {
+            cameraJobRef.current = claim.ownedJob;
             lastCameraFlyRef.current = nowMs;
-            map.flyCameraTo({ endCamera, durationMillis: 180 });
+            lastFlownPoseRef.current = camera;
+            const flyRange = driverView ? Math.max(endCamera.range, 22) : endCamera.range;
+            const flyTilt = driverView ? Math.min(endCamera.tilt, 74) : endCamera.tilt;
+            map.flyCameraTo({
+              endCamera: { ...endCamera, range: flyRange, tilt: flyTilt },
+              durationMillis: 0,
+            });
           }
           followCameraRef.current = camera;
         }
@@ -1365,7 +1356,10 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       <div className="map-view">
         <div ref={hostRef} className="map-host" />
         {cameraView === "driver" ? (
-          <CarInterior poseRef={cockpitRef} library={mapsLibrary} liveMesh={cabinReady} />
+          <>
+            <CabinOverlay active />
+            <CarInterior poseRef={cockpitRef} library={mapsLibrary} liveMesh={cabinReady} />
+          </>
         ) : null}
         <DrivePad
           cameraView={cameraView}
