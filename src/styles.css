@@ -41,6 +41,35 @@ summary:focus-visible {
   background: #f7f4ee;
 }
 
+.app:has(.panel-driving) {
+  grid-template-columns: 210px minmax(0, 1fr);
+}
+
+.panel-driving .eyebrow,
+.panel-driving h1,
+.panel-driving .training-block h2,
+.panel-driving .road-block,
+.panel-driving .start-copy,
+.panel-driving details,
+.panel-driving .examples,
+.panel-driving .place-search,
+.panel-driving .place-results,
+.panel-driving .drive-pedals,
+.panel-driving .drive-steering,
+.panel-driving .drive-indicator,
+.panel-driving .drive-block > p:not(.drive-speed) {
+  display: none;
+}
+
+.panel-driving {
+  padding: 14px 12px;
+}
+
+.drive-title {
+  margin-bottom: 8px;
+  font-size: 1.15rem;
+}
+
 .eyebrow {
   margin: 0 0 8px;
   color: #6d6458;
@@ -129,6 +158,7 @@ code {
   width: 100%;
   height: 100%;
 }
+
 
 .map-host,
 .map-host gmp-map-3d {
@@ -1002,6 +1032,31 @@ summary {
   min-height: 34px;
   padding: 4px 8px;
   font-size: 0.82rem;
+}
+
+.drive-pad-more {
+  justify-self: stretch;
+  width: 100%;
+}
+
+.drive-pad-more summary {
+  min-height: 34px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(20, 24, 28, 0.88);
+  color: #f7f4ee;
+  text-align: center;
+  list-style: none;
+}
+
+.drive-pad-more summary::-webkit-details-marker {
+  display: none;
+}
+
+.drive-pad-more[open] {
+  display: grid;
+  gap: 4px;
+  padding-top: 4px;
 }
 
 .drive-pad-center p {

@@ -16,7 +16,7 @@ export const TRAFFIC_GAP_METERS = 22;
 export const TRAFFIC_STOP_METERS = 8;
 /** How far ahead a traffic car notices the player and starts to slow. */
 export const PLAYER_NOTICE_METERS = 28;
-export const MAX_TRAFFIC = 8;
+export const MAX_TRAFFIC = 12;
 const TRAFFIC_ACCEL_MPS2 = 4;
 const JUNCTION_APPROACH_METERS = 30;
 const JUNCTION_CREEP_MPS = 3;
@@ -56,7 +56,7 @@ export function trafficCount(usableEdges: number): number {
   if (!Number.isFinite(usableEdges) || usableEdges <= 0) {
     return 0;
   }
-  return Math.min(MAX_TRAFFIC, Math.max(1, Math.floor(usableEdges / 10)));
+  return Math.min(MAX_TRAFFIC, Math.max(1, Math.floor(usableEdges / 6)));
 }
 
 function clampFrame(dtSeconds: number): number {

@@ -67,7 +67,7 @@ describe("trafficCount", () => {
     expect(trafficCount(0)).toBe(0);
     expect(trafficCount(Number.NaN)).toBe(0);
     expect(trafficCount(4)).toBe(1);
-    expect(trafficCount(25)).toBe(2);
+    expect(trafficCount(25)).toBe(4);
     expect(trafficCount(80)).toBe(MAX_TRAFFIC);
   });
 });

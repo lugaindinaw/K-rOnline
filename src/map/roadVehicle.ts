@@ -1,9 +1,15 @@
 import type { Maps3dLibrary, Marker3DView, Model3DOptions, Model3DView } from "./maps3dTypes";
 import { VEHICLE_ALTITUDE_MODE, vehicleAltitudeMeters } from "./vehicleContact";
 
-export const CAR_MODEL_URL = "/car.glb";
+export const CAR_MODEL_URL = "/car.glb?v=graphite";
 export const CABIN_MODEL_URL = "/cabin.glb";
 export const TRAFFIC_MODEL_URL = "/traffic.glb";
+/** Same CC0 compact car, repainted so the street is not one repeated colour. */
+export const TRAFFIC_MODEL_URLS = [
+  "/traffic.glb?v=livery",
+  "/traffic-silver.glb?v=livery",
+  "/traffic-dark.glb?v=livery",
+] as const;
 /**
  * Grab3D electric car, CC0. About 4.53 m long, four separate wheels whose
  * bottoms sit on local Y 0, glass roof, and a hollow cabin. The driver mesh
@@ -171,8 +177,10 @@ export function mountRoadVehicle(
 export function mountTrafficVehicle(
   parent: { append: (child: HTMLElement) => void },
   library: Maps3dLibrary,
+  variant = 0,
 ): RoadVehicle | null {
-  return mountVehicle(parent, library, TRAFFIC_SCALE, "Trafik", TRAFFIC_MODEL_URL);
+  const src = TRAFFIC_MODEL_URLS[Math.abs(variant) % TRAFFIC_MODEL_URLS.length] ?? TRAFFIC_MODEL_URL;
+  return mountVehicle(parent, library, TRAFFIC_SCALE, "Trafik", src);
 }
 
 /** The driver's cabin. Shown only from the seat, on the same road pose as the body. */

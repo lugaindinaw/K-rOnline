@@ -18,6 +18,10 @@ import {
   chaseCameraPosition,
   followCameraFromView,
   followCameraStep,
+  DRIVER_STREET_LOOKAHEAD_METERS,
+  DRIVER_STREET_RANGE_METERS,
+  DRIVER_STREET_TILT_DEGREES,
+  lookAhead,
   settledChase,
   settledFollow,
   smoothAltitude,
@@ -221,5 +225,15 @@ describe("followCameraStep", () => {
     expect(camera.altitude - 20).toBeGreaterThan(1.5);
     expect(camera.altitude - 20).toBeLessThan(16);
     expect(camera.lat).toBeLessThan(pose.lat);
+  });
+
+  it("aims the driver windshield down the street instead of into the roof", () => {
+    const car = { lat: 59.33, lng: 18.07, headingDegrees: 0 };
+    const look = lookAhead(car, car.headingDegrees, DRIVER_STREET_LOOKAHEAD_METERS);
+    expect(look.lat).toBeGreaterThan(car.lat);
+    expect(DRIVER_STREET_TILT_DEGREES).toBeGreaterThan(64);
+    expect(DRIVER_STREET_TILT_DEGREES).toBeLessThan(88);
+    expect(DRIVER_STREET_RANGE_METERS).toBeGreaterThan(20);
+    expect(DRIVER_STREET_RANGE_METERS).toBeLessThan(90);
   });
 });
