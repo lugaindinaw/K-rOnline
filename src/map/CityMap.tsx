@@ -77,6 +77,8 @@ import { clearanceOf } from "../drive/roadGuide";
 import { steerFromTilt } from "../drive/tiltSteer";
 import { DrivePad } from "../ui/DrivePad";
 import { CabinOverlay } from "./CabinOverlay";
+import { ChaseCarOverlay } from "./ChaseCarOverlay";
+import type { ChaseScenePose } from "./chaseCarMath";
 
 export type MapFocus = {
   token: number;
@@ -270,6 +272,8 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     rollDegrees: 0,
     viewTiltDegrees: 86,
   });
+  /** Three.js chase car. Kept in sync with the Maps chase camera. */
+  const chasePoseRef = useRef<ChaseScenePose | null>(null);
   const screen = resolveMapScreen({ apiKey, phase, errorMessage });
 
   onReadyChangeRef.current = onReadyChange;
@@ -483,14 +487,31 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     };
     if (typeof map.flyCameraTo === "function") {
       map.flyCameraTo({ endCamera, durationMillis: 0 });
-    } else {
-      map.center = endCamera.center;
-      map.range = endCamera.range;
-      map.tilt = endCamera.tilt;
-      map.heading = endCamera.heading;
     }
+    // flyCameraTo alone can leave an overview range. Pin the chase pose too.
+    map.center = endCamera.center;
+    map.range = endCamera.range;
+    map.tilt = endCamera.tilt;
+    map.heading = endCamera.heading;
+    chasePoseRef.current = {
+      lookLat: pose.lat,
+      lookLng: pose.lng,
+      lookAltitude: altitude,
+      carLat: vehicle.position.lat,
+      carLng: vehicle.position.lng,
+      headingDegrees: vehicle.headingDegrees,
+      rangeMeters: pose.rangeMeters,
+      tiltDegrees: pose.tiltDegrees,
+      fovDegrees: typeof map.fov === "number" && Number.isFinite(map.fov) ? map.fov : CHASE_VERTICAL_FOV_DEGREES,
+      steer: 0,
+      speedKmh: vehicle.speedMps * 3.6,
+      pitchDegrees: 0,
+      rollDegrees: 0,
+    };
     try {
-      vehicleViewRef.current?.setVisible(true);
+      // The chase overlay draws the player body. Keeping the Maps model too
+      // doubles a shattered mesh in software WebGL and fights the tire height.
+      vehicleViewRef.current?.setVisible(false);
       cabinViewRef.current?.setVisible(false);
     } catch {
       // A model that refuses to hide must not stop the chase.
@@ -524,15 +545,23 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     lookAltitudeRef.current = currentAltitude;
     smoothedAltitudeRef.current = currentAltitude;
     const show = (altitude: number, carLat: number, carLng: number, carHeading: number) => {
+      const aim = chaseAim(chaseTuneRef.current);
+      const pose: FollowCamera = {
+        lat: carLat,
+        lng: carLng,
+        headingDegrees: carHeading,
+        rangeMeters: aim.rangeMeters,
+        tiltDegrees: aim.tiltDegrees,
+      };
+      followCameraRef.current = pose;
       const endCamera = {
         center: { lat: carLat, lng: carLng, altitude },
-        range: chaseAim(chaseTuneRef.current).rangeMeters,
-        tilt: chaseAim(chaseTuneRef.current).tiltDegrees,
+        range: aim.rangeMeters,
+        tilt: aim.tiltDegrees,
         heading: carHeading,
       };
       if (typeof map.flyCameraTo === "function") {
         map.flyCameraTo({ endCamera, durationMillis: 0 });
-        return;
       }
       map.center = endCamera.center;
       map.range = endCamera.range;
@@ -1127,8 +1156,9 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
           viewTiltDegrees: cockpitRef.current.viewTiltDegrees,
         };
         try {
-          const driver = cameraViewRef.current === "driver";
-          vehicleViewRef.current?.setVisible(!driver);
+          // Player body is the Three.js chase overlay or the cabin frame.
+          // Maps Model3D stays off so the shattered mesh does not cover the road.
+          vehicleViewRef.current?.setVisible(false);
           cabinViewRef.current?.setVisible(false);
         } catch {
           // Hiding the body must not stop the driving loop.
@@ -1192,28 +1222,60 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
           };
           const nowMs = performance.now();
           const cameraMoved = distanceMeters(lastFlownPoseRef.current ?? camera, camera) > 1.2;
+          const mapStuckHigh = !driverView && typeof map.range === "number" && map.range > framed.rangeMeters + 12;
           if (
-            (claim.interrupt || farView || cameraMoved) &&
-            typeof map.flyCameraTo === "function" &&
+            (claim.interrupt || farView || cameraMoved || mapStuckHigh) &&
             nowMs - lastCameraFlyRef.current > 250
           ) {
             cameraJobRef.current = claim.ownedJob;
             lastCameraFlyRef.current = nowMs;
             lastFlownPoseRef.current = camera;
             const street = driverView ? lookAhead(car, car.headingDegrees, DRIVER_STREET_LOOKAHEAD_METERS) : null;
-            map.flyCameraTo({
-              endCamera: street
-                ? {
-                    center: { lat: street.lat, lng: street.lng, altitude },
-                    range: DRIVER_STREET_RANGE_METERS,
-                    tilt: DRIVER_STREET_TILT_DEGREES,
-                    heading: car.headingDegrees,
-                  }
-                : endCamera,
-              durationMillis: 0,
-            });
+            const target = street
+              ? {
+                  center: { lat: street.lat, lng: street.lng, altitude },
+                  range: DRIVER_STREET_RANGE_METERS,
+                  tilt: DRIVER_STREET_TILT_DEGREES,
+                  heading: car.headingDegrees,
+                }
+              : endCamera;
+            if (typeof map.flyCameraTo === "function") {
+              map.flyCameraTo({ endCamera: target, durationMillis: 0 });
+            }
+            map.center = target.center;
+            map.range = target.range;
+            map.tilt = target.tilt;
+            map.heading = target.heading;
           }
           followCameraRef.current = camera;
+          if (!driverView) {
+            // Match the lens Maps actually applied. A tighter Three.js camera
+            // than the map makes the body float beside the street instead of
+            // sitting on it. Clamp only the overview ranges we already escaped.
+            const mapRange =
+              typeof map.range === "number" && Number.isFinite(map.range) ? map.range : framed.rangeMeters;
+            const mapTilt =
+              typeof map.tilt === "number" && Number.isFinite(map.tilt) ? map.tilt : framed.tiltDegrees;
+            const mapFov =
+              typeof map.fov === "number" && Number.isFinite(map.fov) ? map.fov : CHASE_VERTICAL_FOV_DEGREES;
+            chasePoseRef.current = {
+              lookLat: camera.lat,
+              lookLng: camera.lng,
+              lookAltitude: altitude,
+              carLat: car.lat,
+              carLng: car.lng,
+              headingDegrees: car.headingDegrees,
+              rangeMeters: Math.min(Math.max(mapRange, 14), 70),
+              tiltDegrees: mapTilt,
+              fovDegrees: mapFov,
+              steer: next.steerApplied ?? 0,
+              speedKmh: next.speedMps * 3.6,
+              pitchDegrees: body.pitchDegrees,
+              rollDegrees: body.rollDegrees,
+            };
+          } else {
+            chasePoseRef.current = null;
+          }
         }
         const current = vehicleRef.current ?? next;
         trafficRef.current = stepTraffic(
@@ -1350,6 +1412,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       <div className="map-view">
         <div ref={hostRef} className="map-host" />
         {cameraView === "driver" ? <CabinOverlay active poseRef={cockpitRef} /> : null}
+        {cameraView === "chase" && hud.placed ? <ChaseCarOverlay active poseRef={chasePoseRef} /> : null}
         <DrivePad
           cameraView={cameraView}
           tiltOn={tiltSteer}

@@ -15,8 +15,13 @@ export const TIRE_CONTACT_LOCAL_Y = 0;
 export const VEHICLE_ALTITUDE_MODE = "RELATIVE_TO_MESH" as const;
 
 /**
- * The photographed street sits above the mesh anchor Maps uses for this
- * block. The lift keeps the tires on the asphalt the camera shows.
+ * Why this lift exists (Maps Model3DElement only):
+ * Tire bottoms in car.glb are at local Y 0, so altitude 0 is the authored
+ * contact. At Gustav Adolfs torg the photorealistic asphalt still sits about
+ * 8.2 m above the RELATIVE_TO_MESH anchor Maps uses for the block, so a model
+ * at altitude 0 sinks into the tile. The chase overlay draws the player car in
+ * Three.js on the look altitude and does not use this lift. Traffic and any
+ * remaining Maps Model3D bodies still need it.
  */
 export const ROAD_CLEARANCE_METERS = 8.2;
 

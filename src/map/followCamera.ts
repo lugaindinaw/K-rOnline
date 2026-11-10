@@ -5,14 +5,20 @@ export type CameraView = "chase" | "driver";
 
 /**
  * Low rear follow, the kind a driving game uses. Tilt 0 is straight down and
- * 90 is the horizon, so 70 sits about five metres above the lane and looks
- * along the road. The whole car stays in frame and the street ahead stays visible.
+ * 90 is the horizon, so ~67 sits a few metres above the lane and looks along
+ * the road. Aim close to the car: a look point far ahead or off to the side
+ * makes Maps push the range out into the facades and the body disappears.
  */
-export const CHASE_RANGE_METERS = 24;
-export const CHASE_TILT_DEGREES = 67;
-export const CHASE_LOOKAHEAD_METERS = 2.2;
+/**
+ * Aim near the car. Maps often refuses ranges under ~50 m around dense
+ * Stockholm blocks and settles higher; the Three.js chase body copies the
+ * applied map range/tilt so tires stay on the photographed street.
+ */
+export const CHASE_RANGE_METERS = 22;
+export const CHASE_TILT_DEGREES = 70;
+export const CHASE_LOOKAHEAD_METERS = 1.2;
 /** Stay over the lane. A larger sideways offset puts the lens in the facade and the map zooms out. */
-export const CHASE_LEFT_METERS = 0.35;
+export const CHASE_LEFT_METERS = 0;
 export const FOLLOW_RANGE_METERS = CHASE_RANGE_METERS;
 export const FOLLOW_TILT_DEGREES = CHASE_TILT_DEGREES;
 export const CAMERA_LOOKAHEAD_METERS = CHASE_LOOKAHEAD_METERS;

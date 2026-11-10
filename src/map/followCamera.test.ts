@@ -190,11 +190,12 @@ describe("followCameraStep", () => {
     const higher = chaseAim({ distance: 1, heightDegrees: 6 });
     const closer = chaseAim({ distance: 0.7, heightDegrees: 0 });
     expect(higher.tiltDegrees).toBeLessThan(base.tiltDegrees);
-    expect(higher.tiltDegrees).toBeGreaterThan(60);
+    expect(higher.tiltDegrees).toBeGreaterThanOrEqual(58);
+    expect(higher.tiltDegrees).toBeLessThan(80);
     expect(closer.rangeMeters).toBeLessThan(base.rangeMeters);
   });
 
-  it("cuts the outside camera to a low rear three-quarter view of the car", () => {
+  it("cuts the outside camera to a low rear view close behind the car", () => {
     const car = { lat: 59.33, lng: 18.07, headingDegrees: 20 };
     const pose = settledChase(car);
     expect(pose.rangeMeters).toBeGreaterThan(8);
@@ -203,8 +204,8 @@ describe("followCameraStep", () => {
     expect(pose.tiltDegrees).toBeLessThan(80);
     expect(pose.headingDegrees).toBe(20);
     const offset = distanceMeters(pose, car);
-    expect(offset).toBeGreaterThan(2);
-    expect(offset).toBeLessThan(8);
+    expect(offset).toBeGreaterThan(0.2);
+    expect(offset).toBeLessThan(3);
   });
 
   it("cuts the driver camera to the seat instead of easing in from the sky", () => {
