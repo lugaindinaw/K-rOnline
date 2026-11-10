@@ -154,6 +154,7 @@ function poseOf(state: VehicleState) {
     headingDegrees: state.headingDegrees,
     pitchDegrees: body.pitchDegrees,
     rollDegrees: body.rollDegrees,
+    steer: state.steerApplied ?? 0,
   };
 }
 
