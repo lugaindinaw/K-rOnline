@@ -7,6 +7,7 @@ const CHASE_BACK_METERS = 7;
 const CHASE_UP_METERS = 2;
 const DRIVER_LEFT_METERS = 0.38;
 const DRIVER_FORWARD_METERS = 0.45;
+const DRIVER_LOOKAHEAD_METERS = 14;
 
 const input = { gas: false, brake: false, left: false, right: false };
 let mode = "chase";
@@ -155,8 +156,8 @@ function frameCamera(lat, lng, headingRadians) {
     const target = place(
       lat,
       lng,
-      axes.rightEast * -DRIVER_LEFT_METERS + axes.east * 16,
-      axes.rightNorth * -DRIVER_LEFT_METERS + axes.north * 14,
+      axes.rightEast * -DRIVER_LEFT_METERS + axes.east * DRIVER_LOOKAHEAD_METERS,
+      axes.rightNorth * -DRIVER_LEFT_METERS + axes.north * DRIVER_LOOKAHEAD_METERS,
       0.85,
     );
     look(eye, target);
@@ -218,7 +219,7 @@ function updateCar(lat, lng) {
 
 let last = performance.now();
 function tick(now) {
-  const dt = Math.min(0.25, Math.max(0.016, (now - last) / 1000));
+  const dt = Math.min(0.25, Math.max(0, (now - last) / 1000));
   last = now;
   step(dt);
   const { lat, lng } = metersToLatLng(north, east);
