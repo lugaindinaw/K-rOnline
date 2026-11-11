@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="sv">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KörOnline kameraprov</title>
+  </head>
+  <body>
+    <div id="cesium"></div>
+    <div id="hud">
+      <p id="mode">Bakifrån</p>
+      <p id="readout">kameran mäts …</p>
+      <p id="street"></p>
+    </div>
+    <div id="bar">
+      <button type="button" id="driver">Förarvy</button>
+      <button type="button" id="chase">Bakifrån</button>
+      <button type="button" id="left">Vänster</button>
+      <button type="button" id="right">Höger</button>
+      <button type="button" id="brake">Broms</button>
+      <button type="button" id="gas">Gas</button>
+      <button type="button" id="demo">Kör en sväng</button>
+    </div>
+    <p id="credit">
+      Kameraprov, separat från spelet. Byggnader och vägar: © OpenStreetMap-bidragsgivare, ODbL.
+      Tillfällig bil: Grab3D, CC0. Google Photorealistic 3D Tiles används inte.
+    </p>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
