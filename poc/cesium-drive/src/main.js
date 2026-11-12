@@ -88,7 +88,9 @@ hold("#left", "left");
 hold("#right", "right");
 document.querySelector("#driver").addEventListener("click", () => setMode("driver"));
 document.querySelector("#chase").addEventListener("click", () => setMode("chase"));
-document.querySelector("#demo").addEventListener("click", () => runDemo());
+const demoButton = document.querySelector("#demo");
+demoButton.disabled = true;
+demoButton.addEventListener("click", () => runDemo());
 
 window.addEventListener("keydown", (event) => {
   if (event.code === "KeyW") input.gas = true;
@@ -157,6 +159,13 @@ async function meshHits(lat, lng) {
 }
 
 async function measureRoadPoint(point, terrainProvider) {
+  if (!meshActive) {
+    point.height = 0;
+    point.source = "schematisk mark";
+    point.terrain = Number.NaN;
+    point.mesh = [];
+    return point;
+  }
   let terrain = Number.NaN;
   if (terrainProvider) {
     try {
@@ -369,25 +378,28 @@ function placeOnRoute(index) {
 }
 
 async function runDemo() {
-  if (demoRunning) return;
+  if (demoRunning || route.length < 2) return;
   demoRunning = true;
-  placeOnRoute(0);
-  routeDone = false;
-  setMode("chase");
-  followRoute = true;
-  input.left = false;
-  input.right = false;
-  input.gas = false;
-  input.brake = false;
-  while (!routeDone && Math.hypot(north, east) < 35) await wait(200);
-  setMode("driver");
-  while (!routeDone && routeIndex < Math.max(1, route.length - 4)) await wait(200);
-  setMode("chase");
-  while (!routeDone) await wait(200);
-  followRoute = false;
-  input.gas = false;
-  input.brake = false;
-  demoRunning = false;
+  try {
+    placeOnRoute(0);
+    routeDone = false;
+    setMode("chase");
+    followRoute = true;
+    input.left = false;
+    input.right = false;
+    input.gas = false;
+    input.brake = false;
+    while (!routeDone && Math.hypot(north, east) < 35) await wait(200);
+    setMode("driver");
+    while (!routeDone && routeIndex < Math.max(1, route.length - 4)) await wait(200);
+    setMode("chase");
+    while (!routeDone) await wait(200);
+  } finally {
+    followRoute = false;
+    input.gas = false;
+    input.brake = false;
+    demoRunning = false;
+  }
 }
 
 function wait(ms) {
@@ -638,6 +650,7 @@ for (let index = 1; index < drive.way.length - 1; index += 1) {
 }
 console.info(measured.map((point) => `${point.name} ${point.height.toFixed(1)} ${point.source} terräng ${Number.isFinite(point.terrain) ? point.terrain.toFixed(1) : "-"} mesh ${point.mesh.join("/")}`).join(" || "));
 startOn(drive.way);
+demoButton.disabled = false;
 addRoadSurface(route);
 groundHeight = route[0].height ?? 0;
 try {
