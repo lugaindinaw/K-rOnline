@@ -21,6 +21,8 @@ let route = [];
 let routeIndex = 0;
 let followRoute = false;
 let demoRunning = false;
+let groundHeight = 0;
+let meshActive = false;
 // Cesium treats the corrected glTF +X axis as forward. Grab3D's nose is glTF +Z.
 const MODEL_HEADING_OFFSET = -Math.PI / 2;
 
@@ -114,12 +116,20 @@ function metersToLatLng(northMeters, eastMeters) {
 }
 
 function place(lat, lng, eastMeters, northMeters, upMeters) {
-  const frame = Cesium.Transforms.eastNorthUpToFixedFrame(Cesium.Cartesian3.fromDegrees(lng, lat, 0));
+  const frame = Cesium.Transforms.eastNorthUpToFixedFrame(
+    Cesium.Cartesian3.fromDegrees(lng, lat, groundHeight),
+  );
   return Cesium.Matrix4.multiplyByPoint(
     frame,
     new Cesium.Cartesian3(eastMeters, northMeters, upMeters),
     new Cesium.Cartesian3(),
   );
+}
+
+function sampleGround(lat, lng) {
+  if (!meshActive) return;
+  const height = viewer.scene.sampleHeight(Cesium.Cartographic.fromDegrees(lng, lat));
+  if (Number.isFinite(height) && Math.abs(height - groundHeight) < 4) groundHeight = height;
 }
 
 function basis(headingRadians) {
@@ -169,7 +179,7 @@ function frameCamera(lat, lng, headingRadians) {
 }
 
 function cameraHeightMeters() {
-  return Cesium.Cartographic.fromCartesian(viewer.camera.positionWC).height;
+  return Cesium.Cartographic.fromCartesian(viewer.camera.positionWC).height - groundHeight;
 }
 
 function step(dt) {
@@ -212,7 +222,7 @@ function step(dt) {
 function updateCar(lat, lng) {
   if (!carModel) return;
   carModel.modelMatrix = Cesium.Transforms.headingPitchRollToFixedFrame(
-    Cesium.Cartesian3.fromDegrees(lng, lat, 0),
+    Cesium.Cartesian3.fromDegrees(lng, lat, groundHeight),
     new Cesium.HeadingPitchRoll(heading + MODEL_HEADING_OFFSET, 0, 0),
   );
 }
@@ -223,6 +233,7 @@ function tick(now) {
   last = now;
   step(dt);
   const { lat, lng } = metersToLatLng(north, east);
+  sampleGround(lat, lng);
   updateCar(lat, lng);
   frameCamera(lat, lng, heading);
   const height = cameraHeightMeters();
@@ -457,8 +468,42 @@ function startOn(data) {
 }
 
 const city = await fetch("/gustav.json").then((response) => response.json());
-addCity(city);
 startOn(city);
+try {
+  const tileset = await Cesium.createGooglePhotorealistic3DTileset(undefined, {
+    maximumScreenSpaceError: 16,
+  });
+  viewer.scene.primitives.add(tileset);
+  viewer.scene.globe.show = false;
+  viewer.resolutionScale = 1;
+  meshActive = true;
+  street.textContent = "Regeringsgatan · Google Photorealistic 3D Tiles via Cesium ion";
+  viewer.camera.setView({
+    destination: Cesium.Cartesian3.fromDegrees(origin.lng, origin.lat - 0.001, 80),
+    orientation: { heading: 0, pitch: Cesium.Math.toRadians(-35), roll: 0 },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 4000));
+  const samples = [];
+  for (let northMeters = -15; northMeters <= 45; northMeters += 15) {
+    for (let eastMeters = -10; eastMeters <= 10; eastMeters += 10) {
+      const point = metersToLatLng(northMeters, eastMeters);
+      samples.push(Cesium.Cartographic.fromDegrees(point.lng, point.lat));
+    }
+  }
+  await viewer.scene.sampleHeightMostDetailed(samples);
+  const heights = samples.map((sample) => sample.height).filter((height) => height > 0 && height < 80).sort((a, b) => a - b);
+  if (heights.length > 0) groundHeight = heights[Math.floor((heights.length - 1) * 0.2)];
+  street.textContent = `Regeringsgatan · översta träff ${Math.round(groundHeight)} m · Google Photorealistic 3D Tiles via Cesium ion`;
+  viewer.camera.setView({
+    destination: Cesium.Cartesian3.fromDegrees(origin.lng, origin.lat - 0.0007, groundHeight + 36),
+    orientation: { heading: 0, pitch: Cesium.Math.toRadians(-30), roll: 0 },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 5000));
+} catch (error) {
+  console.error(error);
+  addCity(city);
+  street.textContent = "Regeringsgatan · schematiska OSM-volymer, fotogrammetrin gick inte att läsa";
+}
 try {
   carModel = await Cesium.Model.fromGltfAsync({
     url: "/car.glb",
