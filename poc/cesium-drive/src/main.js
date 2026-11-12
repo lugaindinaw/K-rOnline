@@ -128,7 +128,8 @@ function place(lat, lng, eastMeters, northMeters, upMeters) {
 
 function sampleGround(lat, lng) {
   if (!meshActive) return;
-  const height = viewer.scene.sampleHeight(Cesium.Cartographic.fromDegrees(lng, lat));
+  const exclude = carModel ? [carModel] : undefined;
+  const height = viewer.scene.sampleHeight(Cesium.Cartographic.fromDegrees(lng, lat), exclude);
   if (Number.isFinite(height) && Math.abs(height - groundHeight) < 4) groundHeight = height;
 }
 
