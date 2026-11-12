@@ -158,14 +158,21 @@ async function meshHits(lat, lng) {
   }
 }
 
+const WHEELS = [
+  { name: "vänster fram", forward: 1.382, left: 0.77 },
+  { name: "höger fram", forward: 1.382, left: -0.77 },
+  { name: "vänster bak", forward: -1.398, left: 0.77 },
+  { name: "höger bak", forward: -1.398, left: -0.77 },
+];
+const contactLog = [];
+let carPitch = 0;
+let carRoll = 0;
+let carHeight = 0;
+let roadHeight = 0;
+let pathDistance = 0;
+let contactClosed = false;
+
 async function measureRoadPoint(point, terrainProvider) {
-  if (!meshActive) {
-    point.height = 0;
-    point.source = "schematisk mark";
-    point.terrain = Number.NaN;
-    point.mesh = [];
-    return point;
-  }
   let terrain = Number.NaN;
   if (terrainProvider) {
     try {
@@ -198,13 +205,65 @@ async function measureRoadPoint(point, terrainProvider) {
 
 function chooseRoadHeight(meshValues, terrainHeight, bridge) {
   const finite = meshValues.filter((height) => Number.isFinite(height));
-  if (!Number.isFinite(terrainHeight)) {
-    return { height: finite.length ? Math.min(...finite) : 0, source: finite.length ? "lägsta mesh" : "saknas" };
-  }
+  if (!Number.isFinite(terrainHeight) || !finite.length) return { height: Number.NaN, source: "saknas" };
   const nearGround = finite.filter((height) => height <= terrainHeight + (bridge ? 18 : 3) && height >= terrainHeight - 25);
-  if (!nearGround.length) return { height: terrainHeight, source: "terräng" };
+  if (!nearGround.length) return { height: Number.NaN, source: "saknas" };
   nearGround.sort((a, b) => a - b);
   return { height: nearGround[0], source: "vägyta" };
+}
+
+function offsetMeters(forward, left) {
+  const axes = basis(heading);
+  return {
+    north: axes.north * forward - axes.rightNorth * left,
+    east: axes.east * forward - axes.rightEast * left,
+  };
+}
+
+function mean(items, pick) {
+  return items.reduce((sum, item) => sum + pick(item), 0) / items.length;
+}
+
+function fitContact() {
+  const samples = WHEELS.map((wheel) => {
+    const offset = offsetMeters(wheel.forward, wheel.left);
+    const road = heightAlong(north + offset.north, east + offset.east);
+    return { ...wheel, road: road.height, lateral: road.distance };
+  });
+  const pitchSlope = (mean(samples.filter((wheel) => wheel.forward > 0), (wheel) => wheel.road)
+    - mean(samples.filter((wheel) => wheel.forward < 0), (wheel) => wheel.road)) / 2.78;
+  const rollSlope = (mean(samples.filter((wheel) => wheel.left > 0), (wheel) => wheel.road)
+    - mean(samples.filter((wheel) => wheel.left < 0), (wheel) => wheel.road)) / 1.54;
+  const height = mean(samples, (wheel) => wheel.road)
+    - pitchSlope * mean(samples, (wheel) => wheel.forward)
+    - rollSlope * mean(samples, (wheel) => wheel.left);
+  return {
+    height,
+    pitch: Math.atan(pitchSlope),
+    roll: Math.atan(rollSlope),
+    samples,
+  };
+}
+
+function tireHeight(fit, wheel) {
+  return fit.height + Math.sin(fit.pitch) * wheel.forward + Math.sin(fit.roll) * Math.cos(fit.pitch) * wheel.left;
+}
+
+function wheelContact() {
+  const fit = fitContact();
+  return {
+    fit,
+    wheels: fit.samples.map((wheel) => {
+      const tire = tireHeight(fit, wheel);
+      return {
+        name: wheel.name,
+        road: wheel.road,
+        tire,
+        gap: tire - wheel.road,
+        lateral: wheel.lateral,
+      };
+    }),
+  };
 }
 
 function heightAlong(northMeters, eastMeters) {
@@ -283,6 +342,7 @@ function cameraHeightMeters() {
 }
 
 function step(dt) {
+  let turnError = 0;
   if (followRoute && route.length > 1) {
     let target = route[routeIndex];
     let deltaNorth = target.north - north;
@@ -296,11 +356,11 @@ function step(dt) {
       distance = Math.hypot(deltaNorth, deltaEast);
     }
     const desired = Math.atan2(deltaEast, deltaNorth);
-    let error = desired - heading;
-    while (error > Math.PI) error -= Math.PI * 2;
-    while (error < -Math.PI) error += Math.PI * 2;
+    turnError = desired - heading;
+    while (turnError > Math.PI) turnError -= Math.PI * 2;
+    while (turnError < -Math.PI) turnError += Math.PI * 2;
     const maxTurn = Cesium.Math.toRadians(42) * dt;
-    heading += Math.max(-maxTurn, Math.min(maxTurn, error));
+    heading += Math.max(-maxTurn, Math.min(maxTurn, turnError));
     if (routeIndex >= route.length - 1 && distance < 6) {
       input.gas = false;
       input.brake = true;
@@ -311,21 +371,54 @@ function step(dt) {
     }
   }
   const steer = (input.left ? -1 : 0) + (input.right ? 1 : 0);
-  if (input.gas) speed = Math.min(8, speed + 3.2 * dt);
-  else if (input.brake) speed = Math.max(0, speed - 6 * dt);
+  const cornering = followRoute && Math.abs(turnError) > Cesium.Math.toRadians(8);
+  const targetSpeed = cornering ? 3.5 : 8;
+  if (input.gas) {
+    speed = speed < targetSpeed
+      ? Math.min(targetSpeed, speed + 3.2 * dt)
+      : Math.max(targetSpeed, speed - 4 * dt);
+  } else if (input.brake) speed = Math.max(0, speed - 6 * dt);
   else speed = Math.max(0, speed - 1.1 * dt);
   if (!followRoute && speed > 0.2) heading += steer * Cesium.Math.toRadians(42) * dt;
   const axes = basis(heading);
-  north += axes.north * speed * dt;
-  east += axes.east * speed * dt;
+  const moved = speed * dt;
+  pathDistance += moved;
+  north += axes.north * moved;
+  east += axes.east * moved;
 }
 
 function updateCar(lat, lng) {
   if (!carModel) return;
+  const fit = fitContact();
+  carPitch = fit.pitch;
+  carRoll = fit.roll;
+  carHeight = fit.height;
   carModel.modelMatrix = Cesium.Transforms.headingPitchRollToFixedFrame(
-    Cesium.Cartesian3.fromDegrees(lng, lat, groundHeight),
-    new Cesium.HeadingPitchRoll(heading + MODEL_HEADING_OFFSET, 0, 0),
+    Cesium.Cartesian3.fromDegrees(lng, lat, carHeight),
+    new Cesium.HeadingPitchRoll(heading + MODEL_HEADING_OFFSET, carPitch, carRoll),
   );
+}
+
+function recordContact(force) {
+  if (contactClosed) return;
+  if (!force && contactLog.length > 0 && pathDistance - contactLog[contactLog.length - 1].distance < 8) return;
+  const contact = wheelContact();
+  contactLog.push({
+    distance: Number(pathDistance.toFixed(1)),
+    speedKmh: Number((speed * 3.6).toFixed(1)),
+    course: Number(((Cesium.Math.toDegrees(heading) + 360) % 360).toFixed(1)),
+    carHeight: Number(carHeight.toFixed(3)),
+    roadHeight: Number(roadHeight.toFixed(3)),
+    wheels: contact.wheels.map((wheel) => ({
+      name: wheel.name,
+      road: Number(wheel.road.toFixed(3)),
+      tire: Number(wheel.tire.toFixed(3)),
+      gap: Number(wheel.gap.toFixed(3)),
+      lateral: Number(wheel.lateral.toFixed(2)),
+    })),
+  });
+  if (force) contactClosed = true;
+  globalThis.driveReport = contactLog;
 }
 
 let last = performance.now();
@@ -335,13 +428,16 @@ function tick(now) {
   step(dt);
   const { lat, lng } = metersToLatLng(north, east);
   const along = heightAlong(north, east);
-  groundHeight = along.height;
-  street.textContent = `${along.name} · vägbana ${groundHeight.toFixed(1)} m · ${along.source}`;
+  roadHeight = along.height;
   updateCar(lat, lng);
+  groundHeight = carHeight;
+  street.textContent = `${along.name} · vägbana ${roadHeight.toFixed(1)} m · ${along.source}`;
   frameCamera(lat, lng, heading);
+  recordContact(speed < 0.05 && pathDistance > 20);
   const height = cameraHeightMeters();
   const course = (Cesium.Math.toDegrees(heading) + 360) % 360;
-  readout.textContent = `${Math.round(speed * 3.6)} km/h · kurs ${Math.round(course)}° · ${Math.round(Math.hypot(north, east))} m · kameran ${height.toFixed(2)} m över marken`;
+  const worstGap = Math.max(...wheelContact().wheels.map((wheel) => Math.abs(wheel.gap)));
+  readout.textContent = `${Math.round(speed * 3.6)} km/h · kurs ${Math.round(course)}° · ${Math.round(pathDistance)} m · kameran ${height.toFixed(2)} m · däck ${Math.round(worstGap * 1000)} mm`;
   requestAnimationFrame(tick);
 }
 
@@ -375,6 +471,7 @@ function placeOnRoute(index) {
   heading = Math.atan2(next.east - point.east, next.north - point.north);
   routeIndex = Math.min(route.length - 1, index + 1);
   speed = 0;
+  pathDistance = 0;
 }
 
 async function runDemo() {
@@ -383,13 +480,15 @@ async function runDemo() {
   try {
     placeOnRoute(0);
     routeDone = false;
+    contactLog.length = 0;
+    contactClosed = false;
     setMode("chase");
     followRoute = true;
     input.left = false;
     input.right = false;
     input.gas = false;
     input.brake = false;
-    while (!routeDone && Math.hypot(north, east) < 35) await wait(200);
+    while (!routeDone && pathDistance < 40) await wait(200);
     setMode("driver");
     while (!routeDone && routeIndex < Math.max(1, route.length - 4)) await wait(200);
     setMode("chase");
@@ -547,22 +646,15 @@ function drivePoints(data) {
   const named = (name) => data.elements.filter((item) => item.tags?.name === name && item.geometry?.length > 1);
   const regeringsgatan = stitch(named("Regeringsgatan"));
   const jakobsgatan = stitch(named("Jakobsgatan"));
-  const norrbro = stitch(named("Norrbro"));
-  let junction = 0;
-  let junctionDistance = Infinity;
-  regeringsgatan.forEach((point, index) => {
-    const distance = endpointDistance(point, jakobsgatan[jakobsgatan.length - 1]);
-    if (distance < junctionDistance) {
-      junctionDistance = distance;
-      junction = index;
-    }
-  });
-  const way = regeringsgatan.slice(0, junction + 1).map((point) => ({ ...point, name: "Regeringsgatan", bridge: false }));
-  for (let index = jakobsgatan.length - 2; index >= Math.max(0, jakobsgatan.length - 7); index -= 1) {
+  const malmtorgsgatan = stitch(named("Malmtorgsgatan"));
+  const way = regeringsgatan.slice(0, 6).map((point) => ({ ...point, name: "Regeringsgatan", bridge: false }));
+  for (let index = jakobsgatan.length - 2; index >= 9; index -= 1) {
     way.push({ ...jakobsgatan[index], name: "Jakobsgatan", bridge: false });
   }
-  const bridge = norrbro[Math.floor(norrbro.length / 2)];
-  return { way, checks: [way[0], way[Math.min(3, way.length - 1)], way[way.length - 1], { ...bridge, name: "Norrbro", bridge: true }] };
+  for (const point of malmtorgsgatan.slice(3)) {
+    way.push({ ...point, name: "Malmtorgsgatan", bridge: false });
+  }
+  return { way, checks: [way[0], way[4], way[8], way[way.length - 1]] };
 }
 
 function addRoadSurface(points) {
@@ -594,6 +686,11 @@ function startOn(points) {
   }));
   routeIndex = 1;
   placeOnRoute(0);
+  let routeLength = 0;
+  for (let index = 1; index < route.length; index += 1) {
+    routeLength += Math.hypot(route[index].north - route[index - 1].north, route[index].east - route[index - 1].east);
+  }
+  console.info(`rutt ${route.length} punkter, ${routeLength.toFixed(1)} m`);
   street.textContent = "Regeringsgatan";
 }
 
@@ -631,36 +728,40 @@ try {
   await new Promise((resolve) => setTimeout(resolve, 6000));
 } catch (error) {
   console.error(error);
-  addCity(city);
-  street.textContent = "Fotogrammetrin gick inte att läsa";
+  street.textContent = "Fotogrammetrin laddades inte. Körningen är blockerad eftersom vägbanan inte kan mätas.";
 }
 
-const measured = [];
-for (const point of drive.way) measured.push(await measureRoadPoint(point, terrainProvider));
-for (const point of drive.checks) {
-  if (measured.some((item) => item.lat === point.lat && item.lon === point.lon)) continue;
-  measured.push(await measureRoadPoint(point, terrainProvider));
-}
-for (let index = 1; index < drive.way.length - 1; index += 1) {
-  const neighbors = (drive.way[index - 1].height + drive.way[index + 1].height) / 2;
-  if (drive.way[index].height > neighbors + 4) {
-    drive.way[index].height = neighbors;
-    drive.way[index].source = "utjämnad vägbana";
+if (meshActive) {
+  const measured = [];
+  for (const point of drive.way) measured.push(await measureRoadPoint(point, terrainProvider));
+  for (let index = 1; index < drive.way.length - 1; index += 1) {
+    if (!Number.isFinite(drive.way[index - 1].height) || !Number.isFinite(drive.way[index + 1].height)) continue;
+    const neighbors = (drive.way[index - 1].height + drive.way[index + 1].height) / 2;
+    if (drive.way[index].height > neighbors + 4) {
+      drive.way[index].height = neighbors;
+      drive.way[index].source = "utjämnad vägbana";
+    }
+  }
+  console.info(measured.map((point) => `${point.name} ${Number.isFinite(point.height) ? point.height.toFixed(1) : "saknas"} ${point.source}`).join(" || "));
+  const missing = drive.way.filter((point) => point.source !== "vägyta" && point.source !== "utjämnad vägbana");
+  if (missing.length > 0) {
+    street.textContent = `Vägbanan kunde inte mätas vid ${missing[0].name}. Körningen är blockerad.`;
+  } else {
+    startOn(drive.way);
+    demoButton.disabled = false;
+    addRoadSurface(route);
+    groundHeight = route[0].height;
+    try {
+      carModel = await Cesium.Model.fromGltfAsync({
+        url: "/car.glb",
+        scale: 1,
+      });
+      viewer.scene.primitives.add(carModel);
+    } catch (error) {
+      console.error(error);
+      street.textContent = "Bilmodellen gick inte att läsa. Körningen är blockerad.";
+      demoButton.disabled = true;
+    }
+    if (carModel) requestAnimationFrame(tick);
   }
 }
-console.info(measured.map((point) => `${point.name} ${point.height.toFixed(1)} ${point.source} terräng ${Number.isFinite(point.terrain) ? point.terrain.toFixed(1) : "-"} mesh ${point.mesh.join("/")}`).join(" || "));
-startOn(drive.way);
-demoButton.disabled = false;
-addRoadSurface(route);
-groundHeight = route[0].height ?? 0;
-try {
-  carModel = await Cesium.Model.fromGltfAsync({
-    url: "/car.glb",
-    scale: 1,
-  });
-  viewer.scene.primitives.add(carModel);
-} catch (error) {
-  console.error(error);
-  street.textContent = "Bilmodellen gick inte att läsa. Kameran följer fortfarande bilens punkt.";
-}
-requestAnimationFrame(tick);
