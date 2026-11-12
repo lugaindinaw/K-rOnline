@@ -21,6 +21,7 @@ let route = [];
 let routeIndex = 0;
 let followRoute = false;
 let demoRunning = false;
+let routeDone = false;
 let groundHeight = 0;
 let meshActive = false;
 // Cesium treats the corrected glTF +X axis as forward. Grab3D's nose is glTF +Z.
@@ -126,11 +127,100 @@ function place(lat, lng, eastMeters, northMeters, upMeters) {
   );
 }
 
-function sampleGround(lat, lng) {
-  if (!meshActive) return;
-  const exclude = carModel ? [carModel] : undefined;
-  const height = viewer.scene.sampleHeight(Cesium.Cartographic.fromDegrees(lng, lat), exclude);
-  if (Number.isFinite(height) && Math.abs(height - groundHeight) < 4) groundHeight = height;
+function verticalRay(lat, lng) {
+  const top = Cesium.Cartesian3.fromDegrees(lng, lat, 420);
+  const bottom = Cesium.Cartesian3.fromDegrees(lng, lat, -40);
+  const direction = Cesium.Cartesian3.subtract(bottom, top, new Cesium.Cartesian3());
+  Cesium.Cartesian3.normalize(direction, direction);
+  return new Cesium.Ray(top, direction);
+}
+
+function hitHeights(results) {
+  const heights = [];
+  for (const hit of results ?? []) {
+    if (!hit?.position) continue;
+    const height = Cesium.Cartographic.fromCartesian(hit.position).height;
+    if (height > -20 && height < 160) heights.push(height);
+  }
+  return heights;
+}
+
+async function meshHits(lat, lng) {
+  if (!meshActive) return [];
+  try {
+    const hits = await viewer.scene.drillPickFromRayMostDetailed(verticalRay(lat, lng), 6);
+    return hitHeights(hits);
+  } catch (error) {
+    console.error(error);
+    return [];
+  }
+}
+
+async function measureRoadPoint(point, terrainProvider) {
+  let terrain = Number.NaN;
+  if (terrainProvider) {
+    try {
+      const [sampled] = await Cesium.sampleTerrainMostDetailed(terrainProvider, [
+        Cesium.Cartographic.fromDegrees(point.lon, point.lat),
+      ]);
+      terrain = sampled.height;
+    } catch (error) {
+      console.error(error);
+    }
+  }
+  const center = await meshHits(point.lat, point.lon);
+  let choice = chooseRoadHeight(center, terrain, point.bridge);
+  let mesh = center;
+  if (choice.source !== "vägyta") {
+    const meters = 3.5 / (111320 * Math.cos((point.lat * Math.PI) / 180));
+    const sides = [
+      ...(await meshHits(point.lat, point.lon + meters)),
+      ...(await meshHits(point.lat, point.lon - meters)),
+    ];
+    mesh = [...center, ...sides];
+    choice = chooseRoadHeight(mesh, terrain, point.bridge);
+  }
+  point.height = choice.height;
+  point.source = choice.source;
+  point.terrain = terrain;
+  point.mesh = mesh.map((height) => Number(height.toFixed(1)));
+  return point;
+}
+
+function chooseRoadHeight(meshValues, terrainHeight, bridge) {
+  const finite = meshValues.filter((height) => Number.isFinite(height));
+  if (!Number.isFinite(terrainHeight)) {
+    return { height: finite.length ? Math.min(...finite) : 0, source: finite.length ? "lägsta mesh" : "saknas" };
+  }
+  const nearGround = finite.filter((height) => height <= terrainHeight + (bridge ? 18 : 3) && height >= terrainHeight - 25);
+  if (!nearGround.length) return { height: terrainHeight, source: "terräng" };
+  nearGround.sort((a, b) => a - b);
+  return { height: nearGround[0], source: "vägyta" };
+}
+
+function heightAlong(northMeters, eastMeters) {
+  if (route.length < 2) return { height: groundHeight, name: "Regeringsgatan", source: "saknas" };
+  let bestDistance = Infinity;
+  let chosen = route[0];
+  let chosenHeight = route[0].height ?? 0;
+  for (let index = 0; index < route.length - 1; index += 1) {
+    const start = route[index];
+    const end = route[index + 1];
+    const spanNorth = end.north - start.north;
+    const spanEast = end.east - start.east;
+    const lengthSquared = spanNorth * spanNorth + spanEast * spanEast || 1;
+    let t = ((northMeters - start.north) * spanNorth + (eastMeters - start.east) * spanEast) / lengthSquared;
+    t = Math.max(0, Math.min(1, t));
+    const nearNorth = start.north + spanNorth * t;
+    const nearEast = start.east + spanEast * t;
+    const distance = Math.hypot(northMeters - nearNorth, eastMeters - nearEast);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      chosen = t < 0.5 ? start : end;
+      chosenHeight = (start.height ?? 0) + ((end.height ?? 0) - (start.height ?? 0)) * t;
+    }
+  }
+  return { height: chosenHeight, name: chosen.name, source: chosen.source, distance: bestDistance };
 }
 
 function basis(headingRadians) {
@@ -205,6 +295,7 @@ function step(dt) {
     if (routeIndex >= route.length - 1 && distance < 6) {
       input.gas = false;
       input.brake = true;
+      if (speed < 0.3) routeDone = true;
     } else {
       input.gas = true;
       input.brake = false;
@@ -230,16 +321,18 @@ function updateCar(lat, lng) {
 
 let last = performance.now();
 function tick(now) {
-  const dt = Math.min(0.25, Math.max(0, (now - last) / 1000));
+  const dt = Math.min(0.5, Math.max(0, (now - last) / 1000));
   last = now;
   step(dt);
   const { lat, lng } = metersToLatLng(north, east);
-  sampleGround(lat, lng);
+  const along = heightAlong(north, east);
+  groundHeight = along.height;
+  street.textContent = `${along.name} · vägbana ${groundHeight.toFixed(1)} m · ${along.source}`;
   updateCar(lat, lng);
   frameCamera(lat, lng, heading);
   const height = cameraHeightMeters();
   const course = (Cesium.Math.toDegrees(heading) + 360) % 360;
-  readout.textContent = `${Math.round(speed * 3.6)} km/h · kurs ${Math.round(course)}° · kameran ${height.toFixed(2)} m över marken`;
+  readout.textContent = `${Math.round(speed * 3.6)} km/h · kurs ${Math.round(course)}° · ${Math.round(Math.hypot(north, east))} m · kameran ${height.toFixed(2)} m över marken`;
   requestAnimationFrame(tick);
 }
 
@@ -278,25 +371,21 @@ function placeOnRoute(index) {
 async function runDemo() {
   if (demoRunning) return;
   demoRunning = true;
-  placeOnRoute(approachIndex());
+  placeOnRoute(0);
+  routeDone = false;
   setMode("chase");
   followRoute = true;
   input.left = false;
   input.right = false;
-  await wait(2400);
-  setMode("driver");
-  await wait(1800);
-  followRoute = false;
-  input.gas = true;
-  input.brake = false;
-  input.left = true;
-  await wait(1100);
-  input.left = false;
-  setMode("chase");
-  await wait(1600);
   input.gas = false;
-  input.brake = true;
-  await wait(700);
+  input.brake = false;
+  while (!routeDone && Math.hypot(north, east) < 35) await wait(200);
+  setMode("driver");
+  while (!routeDone && routeIndex < Math.max(1, route.length - 4)) await wait(200);
+  setMode("chase");
+  while (!routeDone) await wait(200);
+  followRoute = false;
+  input.gas = false;
   input.brake = false;
   demoRunning = false;
 }
@@ -442,34 +531,69 @@ function toLocal(point) {
   };
 }
 
-function startOn(data) {
+function drivePoints(data) {
   const named = (name) => data.elements.filter((item) => item.tags?.name === name && item.geometry?.length > 1);
   const regeringsgatan = stitch(named("Regeringsgatan"));
   const jakobsgatan = stitch(named("Jakobsgatan"));
-  const turnFrom = regeringsgatan[Math.floor(regeringsgatan.length * 0.45)] ?? regeringsgatan[0];
-  let turnIndex = 0;
-  let turnDistance = Infinity;
-  jakobsgatan.forEach((point, index) => {
-    const distance = endpointDistance(turnFrom, point);
-    if (distance < turnDistance) {
-      turnDistance = distance;
-      turnIndex = index;
+  const norrbro = stitch(named("Norrbro"));
+  let junction = 0;
+  let junctionDistance = Infinity;
+  regeringsgatan.forEach((point, index) => {
+    const distance = endpointDistance(point, jakobsgatan[jakobsgatan.length - 1]);
+    if (distance < junctionDistance) {
+      junctionDistance = distance;
+      junction = index;
     }
   });
-  const way = [...regeringsgatan];
-  if (jakobsgatan.length > turnIndex + 1) way.push(...jakobsgatan.slice(turnIndex));
-  origin = { lat: way[0].lat, lng: way[0].lon };
-  route = way.map(toLocal);
+  const way = regeringsgatan.slice(0, junction + 1).map((point) => ({ ...point, name: "Regeringsgatan", bridge: false }));
+  for (let index = jakobsgatan.length - 2; index >= Math.max(0, jakobsgatan.length - 7); index -= 1) {
+    way.push({ ...jakobsgatan[index], name: "Jakobsgatan", bridge: false });
+  }
+  const bridge = norrbro[Math.floor(norrbro.length / 2)];
+  return { way, checks: [way[0], way[Math.min(3, way.length - 1)], way[way.length - 1], { ...bridge, name: "Norrbro", bridge: true }] };
+}
+
+function addRoadSurface(points) {
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const start = points[index];
+    const end = points[index + 1];
+    if (!Number.isFinite(start.height) || !Number.isFinite(end.height)) continue;
+    viewer.entities.add({
+      corridor: {
+        positions: Cesium.Cartesian3.fromDegreesArray([start.lng, start.lat, end.lng, end.lat]),
+        width: start.name === "Jakobsgatan" ? 8 : 9,
+        height: (start.height + end.height) / 2 + 0.04,
+        material: Cesium.Color.fromCssColorString("#2f343c").withAlpha(0.28),
+      },
+    });
+  }
+}
+
+function startOn(points) {
+  origin = { lat: points[0].lat, lng: points[0].lon };
+  route = points.map((point) => ({
+    ...toLocal(point),
+    lat: point.lat,
+    lng: point.lon,
+    name: point.name,
+    bridge: Boolean(point.bridge),
+    height: point.height,
+    source: point.source,
+  }));
   routeIndex = 1;
-  north = 0;
-  east = 0;
-  heading = Math.atan2(route[1].east - route[0].east, route[1].north - route[0].north);
-  placeOnRoute(approachIndex());
+  placeOnRoute(0);
   street.textContent = "Regeringsgatan";
 }
 
 const city = await fetch("/gustav.json").then((response) => response.json());
-startOn(city);
+const drive = drivePoints(city);
+street.textContent = "Mäter vägbanan under Regeringsgatan";
+let terrainProvider = null;
+try {
+  terrainProvider = await Cesium.CesiumTerrainProvider.fromIonAssetId(1);
+} catch (error) {
+  console.error(error);
+}
 try {
   const tileset = await Cesium.createGooglePhotorealistic3DTileset(undefined, {
     maximumScreenSpaceError: 16,
@@ -478,33 +602,44 @@ try {
   viewer.scene.globe.show = false;
   viewer.resolutionScale = 1;
   meshActive = true;
-  street.textContent = "Regeringsgatan · Google Photorealistic 3D Tiles via Cesium ion";
-  viewer.camera.setView({
-    destination: Cesium.Cartesian3.fromDegrees(origin.lng, origin.lat - 0.001, 80),
-    orientation: { heading: 0, pitch: Cesium.Math.toRadians(-35), roll: 0 },
-  });
-  await new Promise((resolve) => setTimeout(resolve, 4000));
-  const samples = [];
-  for (let northMeters = -15; northMeters <= 45; northMeters += 15) {
-    for (let eastMeters = -10; eastMeters <= 10; eastMeters += 10) {
-      const point = metersToLatLng(northMeters, eastMeters);
-      samples.push(Cesium.Cartographic.fromDegrees(point.lng, point.lat));
+  const terrainCartographic = Cesium.Cartographic.fromDegrees(drive.way[0].lon, drive.way[0].lat);
+  if (terrainProvider) {
+    try {
+      const [sampled] = await Cesium.sampleTerrainMostDetailed(terrainProvider, [terrainCartographic]);
+      terrainCartographic.height = sampled.height;
+    } catch (error) {
+      console.error(error);
     }
   }
-  await viewer.scene.sampleHeightMostDetailed(samples);
-  const heights = samples.map((sample) => sample.height).filter((height) => height > 0 && height < 80).sort((a, b) => a - b);
-  if (heights.length > 0) groundHeight = heights[Math.floor((heights.length - 1) * 0.2)];
-  street.textContent = `Regeringsgatan · översta träff ${Math.round(groundHeight)} m · Google Photorealistic 3D Tiles via Cesium ion`;
+  const lookHeight = (Number.isFinite(terrainCartographic.height) ? terrainCartographic.height : 30) + 18;
   viewer.camera.setView({
-    destination: Cesium.Cartesian3.fromDegrees(origin.lng, origin.lat - 0.0007, groundHeight + 36),
-    orientation: { heading: 0, pitch: Cesium.Math.toRadians(-30), roll: 0 },
+    destination: Cesium.Cartesian3.fromDegrees(drive.way[0].lon, drive.way[0].lat - 0.00035, lookHeight),
+    orientation: { heading: 0, pitch: Cesium.Math.toRadians(-18), roll: 0 },
   });
-  await new Promise((resolve) => setTimeout(resolve, 5000));
+  await new Promise((resolve) => setTimeout(resolve, 6000));
 } catch (error) {
   console.error(error);
   addCity(city);
-  street.textContent = "Regeringsgatan · schematiska OSM-volymer, fotogrammetrin gick inte att läsa";
+  street.textContent = "Fotogrammetrin gick inte att läsa";
 }
+
+const measured = [];
+for (const point of drive.way) measured.push(await measureRoadPoint(point, terrainProvider));
+for (const point of drive.checks) {
+  if (measured.some((item) => item.lat === point.lat && item.lon === point.lon)) continue;
+  measured.push(await measureRoadPoint(point, terrainProvider));
+}
+for (let index = 1; index < drive.way.length - 1; index += 1) {
+  const neighbors = (drive.way[index - 1].height + drive.way[index + 1].height) / 2;
+  if (drive.way[index].height > neighbors + 4) {
+    drive.way[index].height = neighbors;
+    drive.way[index].source = "utjämnad vägbana";
+  }
+}
+console.info(measured.map((point) => `${point.name} ${point.height.toFixed(1)} ${point.source} terräng ${Number.isFinite(point.terrain) ? point.terrain.toFixed(1) : "-"} mesh ${point.mesh.join("/")}`).join(" || "));
+startOn(drive.way);
+addRoadSurface(route);
+groundHeight = route[0].height ?? 0;
 try {
   carModel = await Cesium.Model.fromGltfAsync({
     url: "/car.glb",
