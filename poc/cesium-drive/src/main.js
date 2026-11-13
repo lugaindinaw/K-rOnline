@@ -130,8 +130,8 @@ function place(lat, lng, eastMeters, northMeters, upMeters) {
 }
 
 function verticalRay(lat, lng) {
-  const top = Cesium.Cartesian3.fromDegrees(lng, lat, 420);
-  const bottom = Cesium.Cartesian3.fromDegrees(lng, lat, -40);
+  const top = Cesium.Cartesian3.fromDegrees(lng, lat, 2500);
+  const bottom = Cesium.Cartesian3.fromDegrees(lng, lat, -50);
   const direction = Cesium.Cartesian3.subtract(bottom, top, new Cesium.Cartesian3());
   Cesium.Cartesian3.normalize(direction, direction);
   return new Cesium.Ray(top, direction);
@@ -142,7 +142,7 @@ function hitHeights(results) {
   for (const hit of results ?? []) {
     if (!hit?.position) continue;
     const height = Cesium.Cartographic.fromCartesian(hit.position).height;
-    if (height > -20 && height < 160) heights.push(height);
+    if (height > -50 && height < 2500) heights.push(height);
   }
   return heights;
 }
@@ -348,7 +348,7 @@ function step(dt) {
     let deltaNorth = target.north - north;
     let deltaEast = target.east - east;
     let distance = Math.hypot(deltaNorth, deltaEast);
-    while (distance < 5 && routeIndex < route.length - 1) {
+    while (distance < 3 && routeIndex < route.length - 1) {
       routeIndex += 1;
       target = route[routeIndex];
       deltaNorth = target.north - north;
@@ -393,10 +393,11 @@ function updateCar(lat, lng) {
   carPitch = fit.pitch;
   carRoll = fit.roll;
   carHeight = fit.height;
-  carModel.modelMatrix = Cesium.Transforms.headingPitchRollToFixedFrame(
+  const matrix = Cesium.Transforms.headingPitchRollToFixedFrame(
     Cesium.Cartesian3.fromDegrees(lng, lat, carHeight),
     new Cesium.HeadingPitchRoll(heading + MODEL_HEADING_OFFSET, carPitch, carRoll),
   );
+  carModel.modelMatrix = matrix;
 }
 
 function recordContact(force) {
@@ -644,6 +645,11 @@ function toLocal(point) {
 
 function drivePoints(data) {
   const named = (name) => data.elements.filter((item) => item.tags?.name === name && item.geometry?.length > 1);
+  const boras = named("Nils Jakobsonsgatan");
+  if (boras.length > 0) {
+    const way = stitch(boras).map((point) => ({ ...point, name: "Nils Jakobsonsgatan", bridge: false }));
+    return { way, checks: [way[0], way[Math.floor(way.length / 2)], way[way.length - 1]] };
+  }
   const regeringsgatan = stitch(named("Regeringsgatan"));
   const jakobsgatan = stitch(named("Jakobsgatan"));
   const malmtorgsgatan = stitch(named("Malmtorgsgatan"));
@@ -691,12 +697,13 @@ function startOn(points) {
     routeLength += Math.hypot(route[index].north - route[index - 1].north, route[index].east - route[index - 1].east);
   }
   console.info(`rutt ${route.length} punkter, ${routeLength.toFixed(1)} m`);
-  street.textContent = "Regeringsgatan";
+  street.textContent = route[0]?.name || "Körbana";
 }
 
-const city = await fetch("/gustav.json").then((response) => response.json());
+const placeName = new URLSearchParams(location.search).get("place");
+const city = await fetch(placeName === "stockholm" ? "/gustav.json" : "/boras.json").then((response) => response.json());
 const drive = drivePoints(city);
-street.textContent = "Mäter vägbanan under Regeringsgatan";
+street.textContent = `Mäter vägbanan under ${drive.way[0]?.name || "körbanan"}`;
 let terrainProvider = null;
 try {
   terrainProvider = await Cesium.CesiumTerrainProvider.fromIonAssetId(1);
@@ -705,8 +712,10 @@ try {
 }
 try {
   const tileset = await Cesium.createGooglePhotorealistic3DTileset(undefined, {
-    maximumScreenSpaceError: 16,
+    maximumScreenSpaceError: 8,
   });
+  tileset.dynamicScreenSpaceError = true;
+  tileset.dynamicScreenSpaceErrorFactor = 4;
   viewer.scene.primitives.add(tileset);
   viewer.scene.globe.show = false;
   viewer.resolutionScale = 1;
@@ -742,14 +751,13 @@ if (meshActive) {
       drive.way[index].source = "utjämnad vägbana";
     }
   }
-  console.info(measured.map((point) => `${point.name} ${Number.isFinite(point.height) ? point.height.toFixed(1) : "saknas"} ${point.source}`).join(" || "));
+  console.info(measured.map((point) => `${point.name} ${Number.isFinite(point.height) ? point.height.toFixed(1) : "saknas"} ${point.source} träffar ${point.mesh.join("/")}`).join(" || "));
   const missing = drive.way.filter((point) => point.source !== "vägyta" && point.source !== "utjämnad vägbana");
   if (missing.length > 0) {
     street.textContent = `Vägbanan kunde inte mätas vid ${missing[0].name}. Körningen är blockerad.`;
   } else {
     startOn(drive.way);
     demoButton.disabled = false;
-    addRoadSurface(route);
     groundHeight = route[0].height;
     try {
       carModel = await Cesium.Model.fromGltfAsync({
@@ -759,8 +767,10 @@ if (meshActive) {
       viewer.scene.primitives.add(carModel);
     } catch (error) {
       console.error(error);
-      street.textContent = "Bilmodellen gick inte att läsa. Körningen är blockerad.";
-      demoButton.disabled = true;
+      if (!carModel) {
+        street.textContent = "Bilmodellen gick inte att läsa. Körningen är blockerad.";
+        demoButton.disabled = true;
+      }
     }
     if (carModel) requestAnimationFrame(tick);
   }
