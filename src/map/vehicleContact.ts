@@ -15,8 +15,12 @@ export const TIRE_CONTACT_LOCAL_Y = 0;
 export const VEHICLE_ALTITUDE_MODE = "RELATIVE_TO_MESH" as const;
 
 /**
- * The photographed street sits above the mesh anchor Maps uses for this
- * block. The lift keeps the tires on the asphalt the camera shows.
+ * Measured at Gustav Adolfs torg. The model origin is already the tire
+ * contact, so this is not a correction inside the glTF. RELATIVE_TO_MESH
+ * offsets from Maps' surface anchor, and altitude 0 put that origin inside
+ * the photographed street. 8.2 m is the lift that put the tires on the
+ * asphalt the camera draws at that block. It is not a height that travels
+ * with the terrain, and there is no mesh-sample API to replace it.
  */
 export const ROAD_CLEARANCE_METERS = 8.2;
 

@@ -1,7 +1,15 @@
 import type { Maps3dLibrary, Marker3DView, Model3DOptions, Model3DView } from "./maps3dTypes";
 import { VEHICLE_ALTITUDE_MODE, vehicleAltitudeMeters } from "./vehicleContact";
+import {
+  CAR_WHEELS,
+  WHEEL_HUB_HEIGHT_METERS,
+  wheelHubPosition,
+  wheelSteerDegrees,
+  type WheelSpec,
+} from "./wheelContact";
 
-export const CAR_MODEL_URL = "/car.glb?v=graphite";
+export const CAR_MODEL_URL = "/car-body.glb?v=hubs";
+export const WHEEL_MODEL_URL = "/wheel.glb?v=hubs";
 export const CABIN_MODEL_URL = "/cabin.glb";
 export const TRAFFIC_MODEL_URL = "/traffic.glb";
 /** Same CC0 compact car, repainted so the street is not one repeated colour. */
@@ -32,6 +40,8 @@ export type VehiclePose = {
   headingDegrees: number;
   pitchDegrees?: number;
   rollDegrees?: number;
+  /** -1 is left, +1 is right. Omitted wheels stay straight. */
+  steer?: number;
 };
 
 export type RoadVehicle = {
@@ -167,11 +177,78 @@ function mountVehicle(
   };
 }
 
+function mountWheel(
+  parent: { append: (child: HTMLElement) => void },
+  Model: new (options?: Model3DOptions) => Model3DView,
+  spec: WheelSpec,
+): RoadVehicle {
+  const model = new Model({
+    src: WHEEL_MODEL_URL,
+    scale: CAR_SCALE,
+    altitudeMode: VEHICLE_ALTITUDE_MODE,
+    position: { lat: 59.3293, lng: 18.0686, altitude: 0 },
+    orientation: { heading: 0, tilt: CAR_TILT_DEGREES, roll: 0 },
+  });
+  parent.append(model);
+  const hubAltitude = vehicleAltitudeMeters() + WHEEL_HUB_HEIGHT_METERS;
+  return {
+    kind: "model",
+    update(pose) {
+      const hub = wheelHubPosition(pose, pose.headingDegrees, spec);
+      model.position = { lat: hub.lat, lng: hub.lng, altitude: hubAltitude };
+      // Roll is the body's lean. Maps applies it before tilt, so using it to
+      // spin the tire turns the wheel onto its side. Heading is the yaw.
+      model.orientation = {
+        heading: (pose.headingDegrees + CAR_HEADING_OFFSET + wheelSteerDegrees(pose.steer ?? 0, spec.steers) + 360) % 360,
+        tilt: CAR_TILT_DEGREES + (pose.pitchDegrees ?? 0),
+        roll: pose.rollDegrees ?? 0,
+      };
+    },
+    setVisible(visible) {
+      const size = visible ? CAR_SCALE : 0.00001;
+      model.scale = { x: size, y: size, z: size };
+      if (visible) {
+        if (!model.isConnected) {
+          parent.append(model);
+        }
+      } else if (model.isConnected) {
+        model.remove();
+      }
+    },
+    remove() {
+      model.remove();
+    },
+  };
+}
+
 export function mountRoadVehicle(
   parent: { append: (child: HTMLElement) => void },
   library: Maps3dLibrary,
 ): RoadVehicle | null {
-  return mountVehicle(parent, library, CAR_SCALE, "Bil");
+  const body = mountVehicle(parent, library, CAR_SCALE, "Bil", CAR_MODEL_URL);
+  if (!body || body.kind !== "model" || typeof library.Model3DElement !== "function") {
+    return body;
+  }
+  const wheels = CAR_WHEELS.map((spec) => mountWheel(parent, library.Model3DElement as new (options?: Model3DOptions) => Model3DView, spec));
+  const parts = [body, ...wheels];
+  return {
+    kind: "model",
+    update(pose) {
+      for (const part of parts) {
+        part.update(pose);
+      }
+    },
+    setVisible(visible) {
+      for (const part of parts) {
+        part.setVisible(visible);
+      }
+    },
+    remove() {
+      for (const part of parts) {
+        part.remove();
+      }
+    },
+  };
 }
 
 export function mountTrafficVehicle(
