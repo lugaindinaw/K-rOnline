@@ -75,6 +75,18 @@ describe("SwedenPanel", () => {
     expect(html).not.toContain("Närma dig en korsning");
   });
 
+  it("keeps the driving panel to speed, camera and training", () => {
+    const html = markup({
+      vehicle: { ...IDLE_VEHICLE, placed: true, speedKmh: 50, roadName: "Regeringsgatan" },
+    });
+    expect(html).toContain("panel-driving");
+    expect(html).toContain("50 km/h");
+    expect(html).toContain("Regeringsgatan");
+    expect(html).toContain("Träningsläge");
+    expect(html).not.toContain("Så börjar du");
+    expect(html).not.toContain("Vägar i området");
+  });
+
   it("explains the exercise when training is open", () => {
     const html = markup({ trainingOpen: true, attempt: beginAttempt() });
     expect(html).toContain("Närma dig en korsning");

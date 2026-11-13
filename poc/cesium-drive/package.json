@@ -1,0 +1,16 @@
+{
+  "name": "koronline-cesium-drive",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5174 --strictPort"
+  },
+  "dependencies": {
+    "cesium": "^1.147.0"
+  },
+  "devDependencies": {
+    "vite": "^7.1.10",
+    "vite-plugin-cesium": "^1.2.23"
+  }
+}

@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { CAR_HEIGHT_METERS, CAR_LENGTH_METERS, CAR_SCALE, CAR_WIDTH_METERS, mountRoadVehicle, TRAFFIC_SCALE } from "./roadVehicle";
 import { ROAD_CLEARANCE_METERS, TIRE_CONTACT_LOCAL_Y, VEHICLE_ALTITUDE_MODE, vehicleAltitudeMeters } from "./vehicleContact";
+import { WHEEL_HUB_HEIGHT_METERS } from "./wheelContact";
 import type { Model3DOptions, Model3DView } from "./maps3dTypes";
 
 function lowestTireY(glb: Uint8Array): number {
@@ -52,7 +53,7 @@ describe("car scale", () => {
     expect(vehicleAltitudeMeters(contact)).toBeCloseTo(ROAD_CLEARANCE_METERS, 3);
     expect(VEHICLE_ALTITUDE_MODE).toBe("RELATIVE_TO_MESH");
     const created: Model3DOptions[] = [];
-    let placedAltitude = Number.NaN;
+    const placedAltitudes: number[] = [];
     const parent = { append() {} };
     const Model = class {
       orientation = { heading: 0, tilt: 0, roll: 0 };
@@ -61,7 +62,7 @@ describe("car scale", () => {
         created.push(options ?? {});
       }
       set position(next: { lat: number; lng: number; altitude: number }) {
-        placedAltitude = next.altitude;
+        placedAltitudes.push(next.altitude);
       }
       remove() {}
     };
@@ -75,9 +76,11 @@ describe("car scale", () => {
       } as never,
     });
     view?.update({ lat: 59.33, lng: 18.07, headingDegrees: 10 });
-    expect(created).toHaveLength(1);
+    expect(created).toHaveLength(5);
     expect(created[0]?.altitudeMode).toBe("RELATIVE_TO_MESH");
+    expect(created.slice(1).every((item) => item.altitudeMode === "RELATIVE_TO_MESH")).toBe(true);
     expect(view?.kind).toBe("model");
-    expect(placedAltitude).toBeCloseTo(ROAD_CLEARANCE_METERS, 3);
+    expect(placedAltitudes[0]).toBeCloseTo(ROAD_CLEARANCE_METERS, 3);
+    expect(placedAltitudes.slice(1).every((altitude) => Math.abs(altitude - (ROAD_CLEARANCE_METERS + WHEEL_HUB_HEIGHT_METERS)) < 0.001)).toBe(true);
   });
 });

@@ -86,42 +86,45 @@ export function DrivePad({
         <button type="button" onClick={onTransmission} disabled={!onTransmission}>
           {transmission === "manual" ? "Manuell" : "Automat"}
         </button>
-        {weatherLabel ? (
-          <button type="button" onClick={onWeather} disabled={!onWeather}>
-            Väder: {weatherLabel}
-          </button>
-        ) : null}
         <button type="button" onClick={onCamera}>
           {cameraView === "driver" ? "Utanför bilen" : "I bilen"}
         </button>
-        {cameraView === "chase" && onCameraDistance && onCameraHeight ? (
-          <div className="drive-pad-camera">
-            <button type="button" onClick={() => onCameraDistance(-1)}>
-              Närmare
+        <details className="drive-pad-more">
+          <summary>Mer</summary>
+          {weatherLabel ? (
+            <button type="button" onClick={onWeather} disabled={!onWeather}>
+              Väder: {weatherLabel}
             </button>
-            <button type="button" onClick={() => onCameraDistance(1)}>
-              Längre
+          ) : null}
+          {cameraView === "chase" && onCameraDistance && onCameraHeight ? (
+            <div className="drive-pad-camera">
+              <button type="button" onClick={() => onCameraDistance(-1)}>
+                Närmare
+              </button>
+              <button type="button" onClick={() => onCameraDistance(1)}>
+                Längre
+              </button>
+              <button type="button" onClick={() => onCameraHeight(-1)}>
+                Lägre
+              </button>
+              <button type="button" onClick={() => onCameraHeight(1)}>
+                Högre
+              </button>
+            </div>
+          ) : null}
+          <button type="button" aria-pressed={tiltOn} onClick={onTilt}>
+            {tiltOn ? "Lutning på" : "Styr med lutning"}
+          </button>
+          <div className="drive-pad-blinkers">
+            <button type="button" onClick={() => onIndicator("left")}>
+              Blinkers vänster
             </button>
-            <button type="button" onClick={() => onCameraHeight(-1)}>
-              Lägre
-            </button>
-            <button type="button" onClick={() => onCameraHeight(1)}>
-              Högre
+            <button type="button" onClick={() => onIndicator("right")}>
+              Blinkers höger
             </button>
           </div>
-        ) : null}
-        <button type="button" aria-pressed={tiltOn} onClick={onTilt}>
-          {tiltOn ? "Lutning på" : "Styr med lutning"}
-        </button>
-        <div className="drive-pad-blinkers">
-          <button type="button" onClick={() => onIndicator("left")}>
-            Blinkers vänster
-          </button>
-          <button type="button" onClick={() => onIndicator("right")}>
-            Blinkers höger
-          </button>
-        </div>
-        {tiltNote ? <p>{tiltNote}</p> : null}
+          {tiltNote ? <p>{tiltNote}</p> : null}
+        </details>
       </div>
       <div className="drive-pad-pedals">
         <button type="button" {...hold(onBrake)}>

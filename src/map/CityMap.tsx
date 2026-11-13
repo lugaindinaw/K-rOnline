@@ -49,8 +49,11 @@ import { publicMapError, resolveMapScreen, type MapPhase } from "./mapScreen";
 import type { Map3DViewElement, Maps3dLibrary } from "./maps3dTypes";
 import {
   CHASE_VERTICAL_FOV_DEGREES,
+  DRIVER_STREET_LOOKAHEAD_METERS,
+  DRIVER_STREET_RANGE_METERS,
+  DRIVER_STREET_TILT_DEGREES,
+  lookAhead,
   DRIVER_LOOK_ABOVE_GROUND_METERS,
-  DRIVER_VERTICAL_FOV_DEGREES,
   approachDriverPose,
   cameraLookAltitude,
   chaseAim,
@@ -74,7 +77,6 @@ import { clearanceOf } from "../drive/roadGuide";
 import { steerFromTilt } from "../drive/tiltSteer";
 import { DrivePad } from "../ui/DrivePad";
 import { CabinOverlay } from "./CabinOverlay";
-import { CarInterior } from "./CarInterior";
 
 export type MapFocus = {
   token: number;
@@ -152,6 +154,7 @@ function poseOf(state: VehicleState) {
     headingDegrees: state.headingDegrees,
     pitchDegrees: body.pitchDegrees,
     rollDegrees: body.rollDegrees,
+    steer: state.steerApplied ?? 0,
   };
 }
 
@@ -204,7 +207,6 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
   const transmissionRef = useRef<Transmission>("auto");
   const [transmission, setTransmission] = useState<Transmission>("auto");
   const cabinViewRef = useRef<RoadVehicle | null>(null);
-  const [cabinReady, setCabinReady] = useState(false);
   const sceneRef = useRef<PracticeSceneState>(EMPTY_SCENE);
   const surfaceRef = useRef<Surface>(surface);
   const gradeRef = useRef(gradeMps2);
@@ -249,7 +251,6 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
   const [lineNote, setLineNote] = useState<string | null>(null);
   const [snapNote, setSnapNote] = useState<string | null>(null);
   const [hud, setHud] = useState<VehicleStatus>(IDLE_VEHICLE);
-  const [mapsLibrary, setMapsLibrary] = useState<Maps3dLibrary | null>(null);
   const surfacesRef = useRef<Array<{ remove: () => void }>>([]);
   const observationRef = useRef<ReturnType<typeof observeDrive> | null>(null);
   const indicatorRef = useRef<IndicatorMotion>(INDICATOR_OFF);
@@ -354,7 +355,8 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     for (const car of trafficRef.current) {
       let view = views.get(car.id);
       if (!view) {
-        const mounted = mountTrafficVehicle(map, library);
+        const variant = Number(car.id.replace(/\D/g, "")) || views.size + 1;
+        const mounted = mountTrafficVehicle(map, library, variant);
         if (!mounted) {
           continue;
         }
@@ -619,9 +621,6 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       if (!cabinViewRef.current) {
         const cabin = mountCabin(map, library);
         cabinViewRef.current = cabin;
-        if (cabin?.kind === "model") {
-          setCabinReady(true);
-        }
       }
       vehicleViewRef.current?.update(poseOf(placed));
       cabinViewRef.current?.update(poseOf(placed));
@@ -838,9 +837,6 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       if (!cabinViewRef.current && map && library) {
         const cabin = mountCabin(map, library);
         cabinViewRef.current = cabin;
-        if (cabin?.kind === "model") {
-          setCabinReady(true);
-        }
       }
       vehicleViewRef.current?.update(poseOf(placed));
       cabinViewRef.current?.update(poseOf(placed));
@@ -874,7 +870,6 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
         host.replaceChildren(mapElement);
         mapRef.current = mapElement;
         libraryRef.current = library;
-        setMapsLibrary(library);
         if (!cancelled && !failed) {
           setPhase("ready");
           setMapVersion((version) => version + 1);
@@ -911,7 +906,6 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       mapElement?.remove();
       mapRef.current = null;
       libraryRef.current = null;
-      setMapsLibrary(null);
       onReadyChangeRef.current(false);
     };
   }, [apiKey]);
@@ -973,9 +967,6 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       if (!cabinViewRef.current) {
         const cabin = mountCabin(map, library);
         cabinViewRef.current = cabin;
-        if (cabin?.kind === "model") {
-          setCabinReady(true);
-        }
       }
       view?.update(poseOf(kept));
       cabinViewRef.current?.update(poseOf(kept));
@@ -1017,9 +1008,6 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     vehicleViewRef.current = view;
     const cabin = mountCabin(map, library);
     cabinViewRef.current = cabin;
-    if (cabin?.kind === "model") {
-      setCabinReady(true);
-    }
     cabin?.setVisible(false);
     if (!view) {
       placed.message = "Bilen kan inte ritas i den här 3D-vyn. Vägnätet är ändå redo.";
@@ -1130,6 +1118,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
           steer: next.steerApplied ?? 0,
           indicator: indicatorRef.current.state,
           gear: gearRef.current,
+          roadName: next.roadName ?? undefined,
           accelerating: input.accelerate,
           braking: input.brake,
           altitude: lookAltitudeRef.current,
@@ -1141,7 +1130,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
         try {
           const driver = cameraViewRef.current === "driver";
           vehicleViewRef.current?.setVisible(!driver);
-          cabinViewRef.current?.setVisible(driver);
+          cabinViewRef.current?.setVisible(false);
         } catch {
           // Hiding the body must not stop the driving loop.
         }
@@ -1212,10 +1201,16 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
             cameraJobRef.current = claim.ownedJob;
             lastCameraFlyRef.current = nowMs;
             lastFlownPoseRef.current = camera;
-            const flyRange = driverView ? Math.max(endCamera.range, 22) : endCamera.range;
-            const flyTilt = driverView ? Math.min(endCamera.tilt, 74) : endCamera.tilt;
+            const street = driverView ? lookAhead(car, car.headingDegrees, DRIVER_STREET_LOOKAHEAD_METERS) : null;
             map.flyCameraTo({
-              endCamera: { ...endCamera, range: flyRange, tilt: flyTilt },
+              endCamera: street
+                ? {
+                    center: { lat: street.lat, lng: street.lng, altitude },
+                    range: DRIVER_STREET_RANGE_METERS,
+                    tilt: DRIVER_STREET_TILT_DEGREES,
+                    heading: car.headingDegrees,
+                  }
+                : endCamera,
               durationMillis: 0,
             });
           }
@@ -1280,7 +1275,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
       }
       const liveMap = mapRef.current;
       if (liveMap) {
-        liveMap.fov = cameraViewRef.current === "driver" ? DRIVER_VERTICAL_FOV_DEGREES : CHASE_VERTICAL_FOV_DEGREES;
+        liveMap.fov = cameraViewRef.current === "driver" ? 34 : CHASE_VERTICAL_FOV_DEGREES;
         if (cameraViewRef.current === "driver" && typeof liveMap.tilt === "number") {
           cockpitRef.current = { ...cockpitRef.current, viewTiltDegrees: liveMap.tilt };
         }
@@ -1355,12 +1350,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
     <section className="map-stage" aria-label="3D-karta över Sverige">
       <div className="map-view">
         <div ref={hostRef} className="map-host" />
-        {cameraView === "driver" ? (
-          <>
-            <CabinOverlay active />
-            <CarInterior poseRef={cockpitRef} library={mapsLibrary} liveMesh={cabinReady} />
-          </>
-        ) : null}
+        {cameraView === "driver" ? <CabinOverlay active poseRef={cockpitRef} /> : null}
         <DrivePad
           cameraView={cameraView}
           tiltOn={tiltSteer}
@@ -1453,7 +1443,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
           </button>
         </div>
       ) : null}
-      {screen.kind === "ready" && !steady ? (
+      {screen.kind === "ready" && !steady && !hud.placed ? (
         <p className="map-pending" role="status">
           Kartbiblioteket är laddat. Väntar på att vyn ska bli stadig.
         </p>
@@ -1463,7 +1453,7 @@ export const CityMap = forwardRef<SwedenMapHandle, CityMapProps>(function CityMa
           {rideHint}
         </p>
       ) : null}
-      {screen.kind === "ready" ? (
+      {screen.kind === "ready" && !hud.placed ? (
         <p className="click-readout">
           {lineNote ? `${lineNote} ` : ""}
           {hudText}

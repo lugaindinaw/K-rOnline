@@ -28,6 +28,7 @@ export type CockpitPose = {
   gear?: string;
   accelerating?: boolean;
   braking?: boolean;
+  roadName?: string;
 };
 
 export type CockpitMotion = {

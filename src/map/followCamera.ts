@@ -31,6 +31,13 @@ export const DRIVER_LOOKAHEAD_METERS = 8;
 export const DRIVER_VERTICAL_FOV_DEGREES = 50;
 export const CHASE_VERTICAL_FOV_DEGREES = 46;
 export const DRIVER_FORWARD_METERS = 0.12;
+/**
+ * The map will not sit the lens in the seat. This aim looks down the street
+ * from just above the roof, so the windshield shows the road ahead.
+ */
+export const DRIVER_STREET_RANGE_METERS = 36;
+export const DRIVER_STREET_TILT_DEGREES = 68;
+export const DRIVER_STREET_LOOKAHEAD_METERS = 22;
 export const DRIVER_LEFT_METERS = 0.36;
 export const CAMERA_YAW_DEGREES_PER_SECOND = 110;
 /** Driver aim turns slower than the chase camera so the view does not twitch with the car. */
@@ -104,7 +111,7 @@ export type FollowView = {
   tilt?: number;
 };
 
-function lookAhead(position: RoadPoint, headingDegrees: number, meters: number): RoadPoint {
+export function lookAhead(position: RoadPoint, headingDegrees: number, meters: number): RoadPoint {
   const heading = (headingDegrees * Math.PI) / 180;
   const cosine = Math.cos((position.lat * Math.PI) / 180);
   return {

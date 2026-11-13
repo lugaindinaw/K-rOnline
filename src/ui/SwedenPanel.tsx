@@ -118,14 +118,21 @@ export function SwedenPanel({
 }: SwedenPanelProps) {
   const summary = roadSummary(roads);
   const feedback = attempt.status === "finished" ? approachFeedback(attempt) : null;
+  const compact = vehicle.placed && !trainingOpen;
   const visibleNames = summary.names.slice(0, 8);
   const hiddenNames = summary.names.length - visibleNames.length;
 
   return (
-    <section className="panel" aria-labelledby="sweden-title">
+    <section
+      className={compact ? "panel panel-driving" : "panel"}
+      aria-labelledby="sweden-title"
+    >
+      {compact ? <h1 id="sweden-title" className="drive-title">Körning</h1> : null}
+      {compact ? null : (
+      <>
       <p className="eyebrow">Prototyp</p>
       <h1 id="sweden-title">Hela Sverige</h1>
-      <p>
+      <p className="start-copy">
         3D-kartan är igång. Stockholm är startposition. Vägar från OpenStreetMap
         hämtas för området runt den valda punkten. När vägarna har laddats står
         bilen på en väg och du kan köra direkt.
@@ -186,7 +193,10 @@ export function SwedenPanel({
           ))}
         </ul>
       ) : null}
+      </>
+      )}
       <div className="drive-block">
+        {compact ? null : (
         <details>
         <summary>Köra</summary>
         <p>
@@ -207,6 +217,9 @@ export function SwedenPanel({
           där vägen delar sig och håller avstånd.
         </p>
         </details>
+        )}
+        {compact ? null : (
+        <>
         <div className="drive-pedals">
           <button
             type="button"
@@ -271,6 +284,8 @@ export function SwedenPanel({
             Blinkers höger
           </button>
         </div>
+        </>
+        )}
         <button type="button" className="camera-toggle" onClick={onToggleCamera} aria-pressed={cameraView === "driver"}>
           {cameraView === "driver" ? "Vy bakifrån" : "Förarvy"}
         </button>
@@ -412,6 +427,8 @@ export function SwedenPanel({
           </>
         ) : null}
       </div>
+      {compact ? null : (
+      <>
       <div className="road-block">
         <h2>Vägar i området</h2>
         <p>
@@ -488,6 +505,8 @@ export function SwedenPanel({
           framför motorhuven.
         </p>
       </details>
+      </>
+      )}
     </section>
   );
 }
