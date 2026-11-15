@@ -60,7 +60,7 @@ PRODUCTS = [
     ("Smyckeset titanstål – halsband/örhängen/ring", "Rotating Sunflower Set (862), Gold", "EVFV4QQ92KZ", 29.57, "set", 0.017, "Smyckeset", "set,guld,solros"),
     ("Smyckeset titanstål – halsband/örhängen/ring", "Rotating Sunflower Set (862), Silver", "EVFVGXE83Z3", 29.57, "set", 0.017, "Smyckeset", "set,silver,solros"),
     # Copper Zirconia Artificial Pearl Open Ring
-    ("Justerbar open ring – blomma/hjärta/fjäril/rosett", "Gold Bell Woven Style (G4127617), Adjustable", "EVFVE9E7KNJ", 19.68, "st", 0.014, "Ringar", "ring,justerbar,zirconia"),
+    ("Justerbar open ring i koppar – blomma/hjärta/fjäril/rosett", "Gold Bell Woven Style (G4127617), Adjustable", "EVFVE9E7KNJ", 19.68, "st", 0.014, "Ringar", "ring,justerbar,zirconia,koppar"),
     # Exquisite Stainless Steel Rhinestone Pendant Necklace And Earrings Set
     ("Smyckeset vintage palace – halsband & örhängen", "Amber Gemstone Set (23#), Gold-Champagne", "EVFVVMPRKWP", 25.62, "set", 0.04, "Smyckeset", "set,vintage,amber"),
     # Stainless Steel Ring With Zircon Heart And Screw Design
@@ -162,12 +162,12 @@ PRODUCTS = [
     # Zirconia Flower Star Cross Pendant Bracelet
     ("Armband med blomma/stjärna/kors-häng", "Gold Zirconia Flower (G4211257-t)", "EVFVEY8YMZJ", 15.53, "st", 0.008, "Armband", "armband,zirconia,guld"),
     # Punk Snake Pendant Necklace
-    ("Ormhänge halsband – punk/gothic", "Gold", "EVFVRZPVR3Y", 9.89, "st", 0.006, "Halsband", "halsband,orm,guld"),
-    ("Ormhänge halsband – punk/gothic", "Silver", "EVFV26Y3EQR", 9.89, "st", 0.006, "Halsband", "halsband,orm,silver"),
+    ("Ormhänge halsband i koppar – punk/gothic", "Gold", "EVFVRZPVR3Y", 9.89, "st", 0.006, "Halsband", "halsband,orm,guld,koppar"),
+    ("Ormhänge halsband i koppar – punk/gothic", "Silver", "EVFV26Y3EQR", 9.89, "st", 0.006, "Halsband", "halsband,orm,silver,koppar"),
     # Elegant Zirconia Flower Star Heart Open Ring
     ("Open ring blomma/stjärna/hjärta med lila sten", "Gold Flower Drip Style (JZ3119A)", "EVFV9PZ8862", 12.47, "st", 0.005, "Ringar", "ring,zirconia,guld"),
     # Crown Zirconia Open Ring Purple Stone
-    ("Kronring / twisted cross open ring med lila sten", "Purple Square Zircon Twisted Cross Style (JZ0202A), Adjustable", "EVFVM3K55WX", 11.97, "st", 0.005, "Ringar", "ring,krona,justerbar"),
+    ("Kronring i koppar / twisted cross open ring med lila sten", "Purple Square Zircon Twisted Cross Style (JZ0202A), Adjustable", "EVFVM3K55WX", 11.97, "st", 0.005, "Ringar", "ring,krona,justerbar,koppar"),
     # Gold Plated Alloy Hand Chain Bracelet
     ("Handkedja med pärllänk och fingerring", "Gold", "EVFVZ8VNMV2", 11.28, "st", 0.008, "Armband", "handkedja,guld"),
     # Letter D Titanium Steel Bracelet
@@ -184,7 +184,7 @@ PRODUCTS = [
     ("Smyckeset halsband/örhängen/ring – zircon 18K", "Leopard Panther Style Full Drill Gold Tone Set (8873)", "EVFVVNXZ85P", 29.57, "set", 0.012, "Smyckeset", "set,leopard,guld"),
     ("Smyckeset halsband/örhängen/ring – zircon 18K", "Clover Star Full Drill Gold Tone Set (509)", "EVFVWJQVE37", 29.57, "set", 0.012, "Smyckeset", "set,klöver,guld"),
     # French Light Luxury Rhinestone Bracelet
-    ("Franskt light luxury armband – crystal dangle", "Gold", "EVFVW65KXN7", 9.70, "st", 0.012, "Armband", "armband,kristall,guld"),
+    ("Franskt light luxury armband i koppar – crystal dangle", "Gold", "EVFVW65KXN7", 9.70, "st", 0.012, "Armband", "armband,kristall,guld,koppar"),
     # Stainless Steel Jewelry Heart Butterfly Cross Evil Eye pieces
     ("Pärlarmband / halsband – evil eye & gypsophila", "Dual Gold Bead Bracelet (E2259), Gold", "EVFVXQQKYV3", 6.04, "st", 0.034, "Armband", "armband,pärla,guld"),
     ("Pärlarmband / halsband – evil eye & gypsophila", "Gypsophila Clamped Bead Bracelet (E2180), Gold", "EVFVP33NQP8", 7.82, "st", 0.034, "Armband", "armband,gypsophila,guld"),
@@ -199,6 +199,41 @@ def unit_label(unit: str) -> str:
     return {"par": "par", "st": "styck", "set": "set", "pc": "styck"}.get(unit, unit)
 
 
+def infer_material(parent: str, style: str, category: str) -> str:
+    """Infer a short Swedish material line from product text (not a generic metal claim)."""
+    low = f"{parent} {style} {category}".lower()
+    if any(k in low for k in ("scrunchie", "hair ties", "hårband", "elastic")):
+        return "textil/elastik med imitationpärla eller kristall"
+    if any(k in low for k in ("hair stick", "hårnål", "tiara", "crown", "krona", "headband")):
+        return "legering med rhinestone/imitationpärla"
+    if "copper" in low or "koppar" in low:
+        return "koppar med plätering"
+    if "alloy" in low or "legering" in low:
+        return "legering med plätering"
+    if "titanium" in low or "titan" in low:
+        return "titanstål med plätering"
+    if "stainless" in low or "rostfritt" in low:
+        return "rostfritt stål med plätering"
+    if category == "Håraccessoarer":
+        return "legering / textil (modeaccessoar)"
+    return "pläterad modelegering (enligt leverantör)"
+
+
+def attr_category(parent: str, style: str, category: str, unit: str) -> str:
+    """Secondary shop category. Prefer metal/set/hair — never map imitation pearl to Naturliga pärlor."""
+    if category == "Håraccessoarer":
+        return "Håraccessoarer"
+    if "set" in category.lower() or unit == "set":
+        return "Full set"
+
+    low = f"{parent} {style}".lower()
+    has_silver = "silver" in low
+    has_gold = "gold" in low or "guld" in low
+    if has_silver and not has_gold:
+        return "Silver"
+    return "Pläterad guld18k"
+
+
 def build_rows():
     rows = []
     for parent, style, sku, cost, unit, weight, category, tags in PRODUCTS:
@@ -208,12 +243,14 @@ def build_rows():
         if len(name) > 140:
             name = f"{style} | {parent}"[:140]
 
-        short = f"{style}. Material enligt leverantör: rostfritt stål / titanstål / legering med plätering. Säljs per {unit_label(unit)}."
+        material = infer_material(parent, style, category)
+        short = f"{style}. Material: {material}. Säljs per {unit_label(unit)}."
         description = (
             f"<p><strong>{parent}</strong></p>"
             f"<p>Variant: {style}</p>"
             f"<ul>"
             f"<li>SKU: {sku}</li>"
+            f"<li>Material: {material}</li>"
             f"<li>Vikt: {weight} kg</li>"
             f"<li>Enhet: {unit_label(unit)}</li>"
             f"<li>Fri frakt inom butikens ordinarie villkor</li>"
@@ -221,19 +258,7 @@ def build_rows():
             f"<p>Modeaccessoar – undvik vatten, parfym och kemikalier för längre hållbarhet.</p>"
         )
 
-        # Map to ecojewelry-style attribute categories
-        attr_cat = "Pläterad guld18k"
-        low = (style + parent).lower()
-        if "silver" in low and "gold" not in low and "guld" not in low:
-            attr_cat = "Silver"
-        if "set" in category.lower() or unit == "set":
-            attr_cat = "Full set"
-        if "pärla" in low or "pearl" in low:
-            attr_cat = "Naturliga pärlor"
-        if category == "Håraccessoarer":
-            attr_cat = "Håraccessoarer"
-
-        cats = f"{category}, {attr_cat}"
+        cats = f"{category}, {attr_category(parent, style, category, unit)}"
 
         rows.append({
             "Type": "simple",
