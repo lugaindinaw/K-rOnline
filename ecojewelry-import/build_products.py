@@ -2,6 +2,7 @@
 """Build WooCommerce CSV for ecojewelry.se from supplier product list."""
 
 import csv
+import re
 from pathlib import Path
 
 # Retail pricing: ~10x wholesale to match existing ecojewelry.se price band (≈45–500 kr)
@@ -201,34 +202,62 @@ def unit_label(unit: str) -> str:
 
 def infer_material(parent: str, style: str, category: str) -> str:
     """Infer a short Swedish material line from product text (not a generic metal claim)."""
-    low = f"{parent} {style} {category}".lower()
-    if any(k in low for k in ("scrunchie", "hair ties", "hårband", "elastic")):
-        return "textil/elastik med imitationpärla eller kristall"
-    if any(k in low for k in ("hair stick", "hårnål", "tiara", "crown", "krona", "headband")):
+    # Prefer base-material keywords from the supplier title; avoid hair words like
+    # "crown" when the product is a ring/bracelet.
+    base = parent.lower()
+    sty = style.lower()
+    if category == "Håraccessoarer" or any(k in base for k in ("scrunchie", "hair ties", "hair stick", "tiara", "headband", "hairstick")):
+        if any(k in f"{base} {sty}" for k in ("scrunchie", "hair ties", "elastic", "hårband")):
+            return "textil/elastik med imitationpärla eller kristall"
         return "legering med rhinestone/imitationpärla"
-    if "copper" in low or "koppar" in low:
+    if "copper" in base or "koppar" in base:
         return "koppar med plätering"
-    if "alloy" in low or "legering" in low:
+    if "alloy" in base or "legering" in base:
         return "legering med plätering"
-    if "titanium" in low or "titan" in low:
+    if "titanium" in base or "titan" in base:
         return "titanstål med plätering"
-    if "stainless" in low or "rostfri" in low:  # matches rostfri / rostfritt
+    if "stainless" in base or "rostfri" in base:  # matches rostfri / rostfritt
         return "rostfritt stål med plätering"
-    if category == "Håraccessoarer":
-        return "legering / textil (modeaccessoar)"
     return "pläterad modelegering (enligt leverantör)"
 
 
+def finish_metal_from_variant(style: str) -> str | None:
+    """Return Silver / Pläterad guld18k from variant text only, or None if unclear."""
+    low = style.lower()
+    # Ignore "925 sterling silver earring post" noise by requiring color-like silver/gold tokens
+    # Prefer explicit Color:/tone words in the variant label.
+    has_silver = bool(re.search(r"\bsilver\b", low))
+    has_gold = bool(re.search(r"\b(?:gold|guld)\b", low))
+    if has_silver and not has_gold:
+        return "Silver"
+    if has_gold and not has_silver:
+        return "Pläterad guld18k"
+    if has_silver and has_gold:
+        # e.g. "Gold and Silver Two-tone" or "Silver Style ... Gold"
+        if "two-tone" in low or "two tone" in low:
+            return "Pläterad guld18k"
+        # "Crush Silver Style ... Gold" → finish color is Gold
+        if re.search(r"\bgold\b", low) and "silver style" in low:
+            return "Pläterad guld18k"
+        return "Pläterad guld18k"
+    return None
+
+
 def attr_category(parent: str, style: str, category: str, unit: str) -> str:
-    """Secondary shop category. Prefer metal/set/hair — never map imitation pearl to Naturliga pärlor."""
+    """Secondary shop category. Prefer variant metal; never map imitation pearl to Naturliga pärlor."""
     if category == "Håraccessoarer":
         return "Håraccessoarer"
     if "set" in category.lower() or unit == "set":
         return "Full set"
 
-    low = f"{parent} {style}".lower()
-    has_silver = "silver" in low
-    has_gold = "gold" in low or "guld" in low
+    from_variant = finish_metal_from_variant(style)
+    if from_variant:
+        return from_variant
+
+    # Fallback: only use parent when variant has no metal cue
+    low = parent.lower()
+    has_silver = bool(re.search(r"\bsilver\b", low))
+    has_gold = bool(re.search(r"\b(?:gold|guld)\b", low))
     if has_silver and not has_gold:
         return "Silver"
     return "Pläterad guld18k"

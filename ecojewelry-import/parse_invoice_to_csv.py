@@ -9,6 +9,7 @@ from pathlib import Path
 
 from build_products import (
     attr_category,
+    finish_metal_from_variant,
     infer_material,
     retail_from_cost,
     unit_label,
@@ -22,33 +23,55 @@ SUMMARY = ROOT / "prislista-oversikt.csv"
 PRICE_LADDER_NOTE = "≈10× inköp, samma stege som ecojewelry.se"
 
 
-def classify_category(title: str) -> tuple[str, str]:
-    """Return (shop category, unit) from English supplier title."""
+def classify_category(title: str, style: str = "") -> tuple[str, str]:
+    """Return (shop category, unit) from title + variant (variant wins for piece type)."""
     t = title.lower()
-    if (
+    s = style.lower()
+
+    # Variant may name a single piece sold from a multi-piece product line
+    variant_piece = None
+    if re.search(r"\bbracelet\b", s) or re.search(r"\bbangle\b", s) or "hand chain" in s:
+        variant_piece = ("Armband", "st")
+    elif re.search(r"\bnecklace\b", s) or re.search(r"\bchoker\b", s):
+        variant_piece = ("Halsband", "st")
+    elif re.search(r"\bearrings?\b", s) or re.search(r"\bstuds?\b", s):
+        variant_piece = ("Örhängen", "par")
+    elif re.search(r"\bring\b", s) and "earring" not in s:
+        variant_piece = ("Ringar", "st")
+    elif re.search(r"\banklet\b", s):
+        variant_piece = ("Fotlänkar", "st")
+
+    # Variant naming a single piece wins over a multi-piece parent title
+    if variant_piece:
+        return variant_piece
+
+    parent_is_set = (
         "jewelry set" in t
         or "jewellery set" in t
         or "combination" in t
         or ("necklace" in t and "earring" in t)
-    ):
+        or ("set" in s and "full drill" in s)
+        or ("set" in s and re.search(r"\bset\b", s))
+    )
+    if parent_is_set:
         return "Smyckeset", "set"
-    if "hair" in t or "scrunchie" in t or "tiara" in t or "crown" in t or "hairpin" in t or "hairstick" in t:
+
+    # Hair accessories — require hair context (not "crown" alone on a ring title)
+    if any(k in t for k in ("scrunchie", "hair ties", "hair stick", "hairstick", "tiara", "headband", "hairpin")) or (
+        "hair" in t and "chain" not in t
+    ):
         return "Håraccessoarer", "st"
     if "anklet" in t or "ankle" in t or "foot chain" in t:
         return "Fotlänkar", "st"
-    if "earring" in t or "stud" in t and "ring" not in t.split()[0:3]:
-        return "Örhängen", "par"
-    # stud earrings often say Stud Earrings
+    # Hand chain / bracelet BEFORE ring (titles often include "finger ring")
+    if "hand chain" in t or "bracelet" in t or "bangle" in t:
+        return "Armband", "st"
     if "earring" in t:
         return "Örhängen", "par"
-    if "ring" in t and "earring" not in t and "necklace" not in t and "bracelet" not in t:
+    if re.search(r"\bring\b", t) and "earring" not in t and "necklace" not in t:
         return "Ringar", "st"
-    if "bracelet" in t or "bangle" in t or "hand chain" in t or "anklet" not in t and "bracelet" in t:
-        return "Armband", "st"
-    if "necklace" in t or "choker" in t or "pendant" in t and "bracelet" not in t:
+    if "necklace" in t or "choker" in t or ("pendant" in t and "bracelet" not in t):
         return "Halsband", "st"
-    if "bracelet" in t or "bangle" in t or "hand chain" in t:
-        return "Armband", "st"
     return "Accessoarer", "st"
 
 
@@ -165,31 +188,8 @@ def parse_items(text: str) -> list[dict]:
             else:
                 cost = 0.0
 
-        category, unit = classify_category(title)
-        low_title = title.lower()
-        is_set = (
-            "jewelry set" in low_title
-            or "jewellery set" in low_title
-            or "combination" in low_title
-            or ("necklace" in low_title and "earring" in low_title and "ring" in low_title)
-            or ("necklace" in low_title and "earring" in low_title)
-        )
-        # Only force earring category when the item is primarily earrings (not a set)
-        if "earring" in low_title and not is_set and "necklace" not in low_title and "bracelet" not in low_title:
-            category, unit = "Örhängen", "par"
-        if "anklet" in low_title or "ankle bracelet" in low_title:
-            category, unit = "Fotlänkar", "st"
-        if (
-            re.search(r"\bring\b", low_title)
-            and "earring" not in low_title
-            and "necklace" not in low_title
-            and "bracelet" not in low_title
-            and "hand chain" not in low_title
-            and not is_set
-        ):
-            category, unit = "Ringar", "st"
-        if is_set:
-            category, unit = "Smyckeset", "set"
+        style_preview = variant_label(meta)
+        category, unit = classify_category(title, style_preview)
 
         items.append({
             "num": num,
@@ -215,7 +215,7 @@ def build_rows(items: list[dict]) -> list[dict]:
         if len(name) > 140:
             name = f"{style} | {parent}"[:140]
 
-        material = infer_material(it["title"] + " " + parent, style, it["category"])
+        material = infer_material(it["title"], style, it["category"])
         price = retail_from_cost(it["cost"])
         short = f"{style}. Material: {material}. Säljs per {unit_label(it['unit'])}."
         # Description is public storefront HTML — never put wholesale cost or invoice ids here.
@@ -231,14 +231,17 @@ def build_rows(items: list[dict]) -> list[dict]:
             f"</ul>"
             f"<p>Modeaccessoar – undvik vatten, parfym och kemikalier för längre hållbarhet.</p>"
         )
-        cats = f"{it['category']}, {attr_category(it['title'] + ' ' + parent, style, it['category'], it['unit'])}"
+        metal = attr_category(it["title"], style, it["category"], it["unit"])
+        cats = f"{it['category']}, {metal}"
+        # Tags: metal finish from variant only (avoid "925 sterling silver post" on gold studs)
+        finish = finish_metal_from_variant(style) or metal
         tags = ",".join(
             t for t in [
                 it["category"].lower(),
                 "everful",
                 "nyheter",
-                "guld" if "gold" in (style + it["title"]).lower() or "guld" in (style + it["title"]).lower() else "",
-                "silver" if "silver" in (style + it["title"]).lower() else "",
+                "guld" if finish == "Pläterad guld18k" else "",
+                "silver" if finish == "Silver" else "",
             ] if t
         )
 
