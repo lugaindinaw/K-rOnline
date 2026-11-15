@@ -1,9 +1,13 @@
 # Importera produkter till ecojewelry.se
 
+## Källa
+Faktura **EVFTACBC9WHT2** (Everful) → `parse_invoice_to_csv.py`
+
 ## Filer
-- `woocommerce-produkter.csv` — 114 produkter redo för WooCommerce
+- `woocommerce-produkter.csv` — 133 produkter redo för WooCommerce
 - `prislista-oversikt.csv` — inköp vs butikspris (kontrollista)
-- `build_products.py` — regenerera CSV om du ändrar priser
+- `parse_invoice_to_csv.py` — bygg CSV från fakturatext
+- `build_products.py` — hjälprutiner (prisstege, material, kategorier)
 
 ## Prissättning
 Inköpspriserna du skickade är leverantörspriser (ca 2–42 kr).
