@@ -28,14 +28,14 @@ def classify_category(title: str, style: str = "") -> tuple[str, str]:
     t = title.lower()
     s = style.lower()
 
-    # Multi-piece variants must win before single-piece word matches
-    # e.g. "Necklace & Bracelet 2-Piece Set", "Snake Bracelet and Ring Set"
+    # Multi-piece variants must win before single-piece word matches.
+    # Require explicit set / N-piece / "X and Y" — NOT compound names like "Ring Bracelet".
     variant_is_set = bool(
         re.search(r"\bset\b", s)
         or re.search(r"\d+\s*-?\s*piece", s)
-        or re.search(r"\bbracelet\b.+\bring\b|\bring\b.+\bbracelet\b", s)
-        or re.search(r"\bnecklace\b.+\bbracelet\b|\bbracelet\b.+\bnecklace\b", s)
-        or re.search(r"\bnecklace\b.+\bearrings?\b|\bearrings?\b.+\bnecklace\b", s)
+        or re.search(r"\bbracelet\s+(?:and|&)\s+ring\b|\bring\s+(?:and|&)\s+bracelet\b", s)
+        or re.search(r"\bnecklace\s+(?:and|&)\s+bracelet\b|\bbracelet\s+(?:and|&)\s+necklace\b", s)
+        or re.search(r"\bnecklace\s+(?:and|&)\s+earrings?\b|\bearrings?\s+(?:and|&)\s+necklace\b", s)
     )
     parent_is_set = (
         "jewelry set" in t
