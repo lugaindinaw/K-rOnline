@@ -212,7 +212,7 @@ def infer_material(parent: str, style: str, category: str) -> str:
         return "legering med plätering"
     if "titanium" in low or "titan" in low:
         return "titanstål med plätering"
-    if "stainless" in low or "rostfritt" in low:
+    if "stainless" in low or "rostfri" in low:  # matches rostfri / rostfritt
         return "rostfritt stål med plätering"
     if category == "Håraccessoarer":
         return "legering / textil (modeaccessoar)"
