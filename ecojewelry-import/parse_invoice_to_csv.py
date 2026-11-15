@@ -218,6 +218,8 @@ def build_rows(items: list[dict]) -> list[dict]:
         material = infer_material(it["title"] + " " + parent, style, it["category"])
         price = retail_from_cost(it["cost"])
         short = f"{style}. Material: {material}. Säljs per {unit_label(it['unit'])}."
+        # Description is public storefront HTML — never put wholesale cost or invoice ids here.
+        # Cost/invoice stay in Meta columns + prislista-oversikt.csv (admin-only after import).
         description = (
             f"<p><strong>{it['title']}</strong></p>"
             f"<p>Variant: {style}</p>"
@@ -226,8 +228,6 @@ def build_rows(items: list[dict]) -> list[dict]:
             f"<li>Material: {material}</li>"
             f"<li>Vikt: {it['weight']} kg</li>"
             f"<li>Enhet: {unit_label(it['unit'])}</li>"
-            f"<li>Inköpspris: {it['cost']:.2f} kr</li>"
-            f"<li>Faktura: EVFTACBC9WHT2</li>"
             f"</ul>"
             f"<p>Modeaccessoar – undvik vatten, parfym och kemikalier för längre hållbarhet.</p>"
         )
