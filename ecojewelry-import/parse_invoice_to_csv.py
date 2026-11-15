@@ -28,7 +28,26 @@ def classify_category(title: str, style: str = "") -> tuple[str, str]:
     t = title.lower()
     s = style.lower()
 
+    # Multi-piece variants must win before single-piece word matches
+    # e.g. "Necklace & Bracelet 2-Piece Set", "Snake Bracelet and Ring Set"
+    variant_is_set = bool(
+        re.search(r"\bset\b", s)
+        or re.search(r"\d+\s*-?\s*piece", s)
+        or re.search(r"\bbracelet\b.+\bring\b|\bring\b.+\bbracelet\b", s)
+        or re.search(r"\bnecklace\b.+\bbracelet\b|\bbracelet\b.+\bnecklace\b", s)
+        or re.search(r"\bnecklace\b.+\bearrings?\b|\bearrings?\b.+\bnecklace\b", s)
+    )
+    parent_is_set = (
+        "jewelry set" in t
+        or "jewellery set" in t
+        or "combination" in t
+        or ("necklace" in t and "earring" in t)
+    )
+    if variant_is_set or (parent_is_set and re.search(r"\bset\b", s)):
+        return "Smyckeset", "set"
+
     # Variant may name a single piece sold from a multi-piece product line
+    # e.g. parent "... Earrings Set" + Color "Gold Bracelet" → Armband
     variant_piece = None
     if re.search(r"\bbracelet\b", s) or re.search(r"\bbangle\b", s) or "hand chain" in s:
         variant_piece = ("Armband", "st")
@@ -41,18 +60,9 @@ def classify_category(title: str, style: str = "") -> tuple[str, str]:
     elif re.search(r"\banklet\b", s):
         variant_piece = ("Fotlänkar", "st")
 
-    # Variant naming a single piece wins over a multi-piece parent title
     if variant_piece:
         return variant_piece
 
-    parent_is_set = (
-        "jewelry set" in t
-        or "jewellery set" in t
-        or "combination" in t
-        or ("necklace" in t and "earring" in t)
-        or ("set" in s and "full drill" in s)
-        or ("set" in s and re.search(r"\bset\b", s))
-    )
     if parent_is_set:
         return "Smyckeset", "set"
 
