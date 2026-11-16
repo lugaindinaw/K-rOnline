@@ -1,0 +1,177 @@
+ECO JEWELRY – Kvalitetsrapport
+============================================================
+Källa: faktura EVFTACBC9WHT2 + woocommerce-produkter.csv
+Antal produkter i slutfil: 133
+Unika SKU: 133
+SKU matchar faktura och käll-CSV: JA
+
+Lagerinställningar (alla rader):
+  Manage stock: yes (Meta: _manage_stock)
+  Stock quantity: 1
+  In stock: 1
+  Backorders: 0 / no
+  Sold individually: 0
+
+Publicering (alla rader):
+  Published: 0 (opublicerad/utkast)
+  Visibility in catalog: visible
+
+Priser bevarade oförändrade från käll-CSV: JA
+Bilder: kolumn Images tom för alla 133 (inga bilder tillagda)
+
+Kategorifördelning:
+  Armband: 36
+  Halsband: 32
+  Ringar: 19
+  Örhängen: 17
+  Smyckesset: 16
+  Handkedjor: 6
+  Håraccessoarer: 4
+  Fotlänkar: 3
+
+Osäkra / utelämnade produktegenskaper:
+  (inga – material kunde härledas för alla från titel/variant)
+
+Övriga anmärkningar:
+  - Inga mått, allergivänlighet eller vattenbeständighet har lagts till.
+  - 'Guld'/'Silver' i finish avser färg/plätering enligt leverantörstext, inte massiv ädelmetall.
+  - Zirkon/zirkonia/strass beskrivs endast när ordet finns i källtext.
+  - Meta:_cost_price bevarad för intern adminanvändning (syns inte i Description).
+
+Kvalitetskontrollfel:
+  Inga fel funna.
+
+Bearbetade SKU (alla 133):
+  EVFVP4M3YX4 | Halsband med regnbåge – färgglad | Halsband | pris=156
+  EVFVGYMXJ9G | Halsband med solros och blomma | Halsband | pris=189
+  EVFV4K9W894 | Armband med tre fjärilar och hjärta – guldfärg | Armband | pris=78
+  EVFV4N7Y52G | Armband med måne och stjärna – guldfärg | Armband | pris=78
+  EVFV43XVRNG | Smyckesset med bokstav D och klöver – guldfärg | Smyckesset | pris=234
+  EVFV42EM3JR | Beige pärlscrunchie | Håraccessoarer | pris=45
+  EVFVGXPRQ33 | Rosa kristallscrunchie | Håraccessoarer | pris=56
+  EVFV48MMKMQ | Armband med fiskbenskedja och hjärta | Armband | pris=100
+  EVFV4KJJ8J9 | Armband med tvinnad | Armband | pris=112
+  EVFVGYXKX99 | Halsband med satellitkedja och gypsophila – guldfärg | Halsband | pris=78
+  EVFV4P6Z388 | Halsband med zirkon och nyckelbenslinje – guldfärg | Halsband | pris=212
+  EVFV4MY5P2X | Halsband med zirkon och nyckelbenslinje – platinaton | Halsband | pris=212
+  EVFV42YWK8R | Fotlänk med klöver och dubbellager – färgglad | Fotlänkar | pris=245
+  EVFVG6VVKX5 | Armband med klöver – guldfärg | Armband | pris=89
+  EVFV4ZWWMR2 | Armband med klöver – silverfärg | Armband | pris=89
+  EVFVG7K726Q | Halsband med dubbelkula och fjäril – guldfärg | Halsband | pris=123
+  EVFVG9RYQ72 | Halsband med horn och fjäril – guldfärg | Halsband | pris=100
+  EVFVGVZ9QEP | Smyckesset med ormhuvud och klöver – guldfärg | Smyckesset | pris=267
+  EVFV4WV39W7 | Smyckesset med ormhuvud och klöver – silverfärg | Smyckesset | pris=267
+  EVFV4QQ92KZ | Smyckesset med solros och blomma – guldfärg | Smyckesset | pris=267
+  EVFVGXE83Z3 | Smyckesset med solros och blomma – silverfärg | Smyckesset | pris=267
+  EVFVWJQVE37 | Smyckesset med klöver och stjärna – guldfärg | Smyckesset | pris=267
+  EVFVVNXZ85P | Smyckesset med leopard och panter – guldfärg | Smyckesset | pris=267
+  EVFVE9E7KNJ | Ring med fjäril och hjärta – guldfärg | Ringar | pris=178
+  EVFV2ZX5EVR | Ring med fjäril och zirkonia – guldfärg | Ringar | pris=78
+  EVFVZQ72NM2 | Ring med zirkon – guldfärg | Ringar | pris=67
+  EVFV2ZMEE6R | Örhängen med renhorn och älghorn – guldfärg | Örhängen | pris=45
+  EVFV2ZM3E9R | Armband med klöver och stjärna – guldfärg | Armband | pris=145
+  EVFVRQK2JNY | Örhängen med klöverstift och zirkonia – guldfärg | Örhängen | pris=45
+  EVFV3KMZP6N | Örhängen med kattöga och fjäril – guldfärg | Örhängen | pris=45
+  EVFVKP29EV9 | Örhängen med tvinnad pärla och fjäril – guldfärg | Örhängen | pris=45
+  EVFVRQK2JZY | Örhängen med fjäril och hjärta – guldfärg | Örhängen | pris=45
+  EVFVJ32MV8Q | Örhängen med zirkon – silverfärg | Örhängen | pris=45
+  EVFVNMV7K82 | Örhängen med ear jacket och pärla – guldfärg | Örhängen | pris=45
+  EVFVM68M5PX | Örhängen med fjäril och zirkon – silverfärg | Örhängen | pris=45
+  EVFV5RMZ7ME | Örhängen med pärlrosett och fjäril – guldfärg | Örhängen | pris=45
+  EVFVJ32MV2Q | Örhängen med cirkelpärla och fjäril – guldfärg | Örhängen | pris=45
+  EVFVQR5725Z | Örhängen med spetskant och fjäril – silverfärg | Örhängen | pris=56
+  EVFVRQKY38Y | Armband med gypsophila och dubbellager – guldfärg | Armband | pris=45
+  EVFV3KMEN2N | Armband med orm och strass – silverfärg | Armband | pris=278
+  EVFV3KMENJN | Armband med orm och strass – guldfärg | Armband | pris=300
+  EVFV5RM5K9E | Armband med dubbelkula och fjäril – silverfärg | Armband | pris=234
+  EVFVY29PN59 | Armband med dubbelkula och fjäril – guldfärg | Armband | pris=245
+  EVFVM6ZXJKX | Handkedja med strass – guldfärg | Handkedjor | pris=200
+  EVFV7RJ59XQ | Armband med myntberlocker | Armband | pris=223
+  EVFV96KYWY2 | Ring med röd våg | Ringar | pris=100
+  EVFVQR3M7YZ | Smyckesset med fyrklöver och blomma | Smyckesset | pris=500
+  EVFVX72JPY3 | Halsband med dubbellager – guldfärg | Halsband | pris=178
+  EVFVPM8V6Q8 | Armband med kors – guldfärg | Armband | pris=56
+  EVFVPM8ZZV8 | Armband med fiskbenskedja och hjärta (modell 2) | Armband | pris=100
+  EVFV56E3X8E | Halsband med stjärna – guldfärg | Halsband | pris=112
+  EVFVPY3E9P8 | Halsband med klöver och hjärta – guldfärg | Halsband | pris=123
+  EVFVMWP37RX | Halsband med klöver och hjärta – silverfärg | Halsband | pris=123
+  EVFVPY3E9R8 | Halsband med klöver – guldfärg | Halsband | pris=112
+  EVFVEZWYRPJ | Halsband med ros – guldfärg | Halsband | pris=100
+  EVFVMWP39EX | Halsband med blomster – silverfärg | Halsband | pris=112
+  EVFV9WYPK72 | Halsband med hjärta – guldfärg | Halsband | pris=112
+  EVFVZNZ3Y52 | Örhängen med kattöga och blomma – guldfärg | Örhängen | pris=45
+  EVFVWXKRWE7 | Örhängen med creoler och fjäril – guldfärg | Örhängen | pris=45
+  EVFVMW92ZVX | Örhängen med örclips och fjäril – guldfärg | Örhängen | pris=45
+  EVFVWXKR3N7 | Örhängen med rosettstift och zirkonia – silverfärg | Örhängen | pris=45
+  EVFVK5QK769 | Armband med sodalit och blomster | Armband | pris=189
+  EVFVY7REVQ9 | Halsband med sodalit och blomster | Halsband | pris=278
+  EVFVY7W3X29 | Ring med ros – guldfärg | Ringar | pris=56
+  EVFVRR9ZNQY | Ring med ros – guldfärg (modell 2) | Ringar | pris=56
+  EVFVZ88J2P2 | Armband med zirkonia – guldfärg | Armband | pris=178
+  EVFV533RRQE | Armband med bokstav D och cuban link – guldfärg | Armband | pris=178
+  EVFVZ88QQ52 | Armband med repkedja och tvinnad | Armband | pris=100
+  EVFV533R6KE | Halsband med kulhänge – guldfärg | Halsband | pris=156
+  EVFVKVVP589 | Smyckesset med kulhänge – guldfärg | Smyckesset | pris=89
+  EVFV9PP6WW2 | Ring med hjärta och öppen form – guldfärg | Ringar | pris=45
+  EVFVX997PP3 | Ring med hjärta och öppen form – silverfärg | Ringar | pris=45
+  EVFV262W5VR | Örhängen med tofs och zirkonia – guldfärg | Örhängen | pris=311
+  EVFVKVQK8X9 | Armband med zirkon – färgglad | Armband | pris=200
+  EVFVQ6V635Z | Ring med regnbåge – färgglad | Ringar | pris=56
+  EVFVEY8YMZJ | Handkedja med blomma och zirkonia – guldfärg | Handkedjor | pris=134
+  EVFV7V27R8Q | Smyckesset med orm – silverfärg | Smyckesset | pris=89
+  EVFVQ6V8R7Z | Smyckesset med pärla – guldfärg | Smyckesset | pris=123
+  EVFV9PQY6E2 | Smyckesset med orm – guldfärg | Smyckesset | pris=100
+  EVFVQ6V9YXZ | Tiara – stjärngeometri | Håraccessoarer | pris=123
+  EVFVJ8K7ZNQ | Tiara – oändlighetshjärta | Håraccessoarer | pris=123
+  EVFVRZPVR3Y | Halsband med orm och tvinnad – guldfärg | Halsband | pris=89
+  EVFV26Y3EQR | Halsband med orm och tvinnad – silverfärg | Halsband | pris=89
+  EVFVQ6ZNJ2Z | Halsband med mynt | Halsband | pris=223
+  EVFV9PZ8862 | Ring med blomma – guldfärg | Ringar | pris=112
+  EVFVM3K55WX | Ring med kors och tvinnad | Ringar | pris=100
+  EVFV36RV7QN | Ring med dubbellager och zirkon | Ringar | pris=123
+  EVFVEY7PE9J | Smyckesset med strass och kristall | Smyckesset | pris=89
+  EVFVKVE89P9 | Smyckesset med strass och kristall (modell 2) | Smyckesset | pris=89
+  EVFVZ8VNMV2 | Handkedja – guldfärg | Handkedjor | pris=100
+  EVFV6W8J3R5 | Halsband med sju tusenskönor och blomma | Halsband | pris=189
+  EVFV388PKMN | Smyckesset med zirkonia – guldfärg | Smyckesset | pris=556
+  EVFV6W7WXJ5 | Halsband med bokstav D och zirkonia | Halsband | pris=112
+  EVFV5EPEQYE | Halsband med delfin – guldfärg | Halsband | pris=112
+  EVFVVX8XWRP | Halsband med hjärta – guldfärg (XL1200-057) | Halsband | pris=112
+  EVFVRVMV3WY | Halsband med hjärta – guldfärg med lila detalj | Halsband | pris=112
+  EVFVYQYQZW9 | Halsband med fjäril – guldfärg | Halsband | pris=100
+  EVFVWQEZ7X7 | Handkedja med hjärta och zirkon – guldfärg med rosa detalj | Handkedjor | pris=200
+  EVFV3ZNNMMN | Örhängen med pärlad creol och fjäril – guldfärg | Örhängen | pris=56
+  EVFV9E67RX2 | Halsband med orm | Halsband | pris=100
+  EVFVZ7QJ5R2 | Halsband med pärla | Halsband | pris=112
+  EVFVZ7QJ5W2 | Halsband med zirkon – guldfärg | Halsband | pris=112
+  EVFVYM2PPE9 | Armband med bokstav D och strass – guldfärg | Armband | pris=145
+  EVFVVMPRKWP | Smyckesset med blomster – guldfärg med champagne | Smyckesset | pris=223
+  EVFVN7Z3XR2 | Armband med klöver och blomma – guldfärg med blå detalj | Armband | pris=145
+  EVFV2XEVNRR | Armband med hjärta – silverfärg | Armband | pris=178
+  EVFVXMPJW83 | Armband med klöver och blomma – silverfärg | Armband | pris=134
+  EVFVVMPRV5P | Armband med zirkonia – guldfärg (47#) | Armband | pris=200
+  EVFVR2RWX8Y | Armband med klöver och blomma – guldfärg | Armband | pris=200
+  EVFVPJYVX88 | Armband med klöver och blomma – silverfärg (59#) | Armband | pris=200
+  EVFV3Z7E99N | Armband med klöver och blomma – silverfärg (63#) | Armband | pris=212
+  EVFVJMJPXEQ | Armband med klöver och blomma – guldfärg (80#) | Armband | pris=123
+  EVFVVMPRVRP | Armband med blomma – silverfärg | Armband | pris=167
+  EVFV8V6P63Q | Armband med kulhänge – guldfärg | Armband | pris=100
+  EVFVWMQ3957 | Ring med blomma och pärla | Ringar | pris=56
+  EVFV5ZXJM6E | Handkedja med blomma | Handkedjor | pris=334
+  EVFV3ZXKQQN | Handkedja med strass | Handkedjor | pris=356
+  EVFVN7PPYX2 | Ring med blomma och ros | Ringar | pris=45
+  EVFVZKQKX52 | Fotlänk med orm och strass – guldfärg | Fotlänkar | pris=156
+  EVFV39K9WYN | Fotlänk med orm och strass – silverfärg | Fotlänkar | pris=156
+  EVFV6P83NJ5 | Ring med blomma | Ringar | pris=67
+  EVFVRP66VXY | Halsband med ärtformad pärla och klöver – guldfärg | Halsband | pris=67
+  EVFV9ZJJYX2 | Halsband med kronbladskedja och strass – guldfärg | Halsband | pris=78
+  EVFVY6Z3VJ9 | Halsband med måne och hjärta | Halsband | pris=156
+  EVFVW65KXN7 | Armband med strass och kristall – guldfärg | Armband | pris=89
+  EVFVNYNJ2E2 | Armband med fyrkantigt berlock och klöver – guldfärg | Armband | pris=67
+  EVFV3RQ5X3N | Armband med strass – guldfärg | Armband | pris=67
+  EVFVY6ZJEJ9 | Armband med klöver och strass – guldfärg | Armband | pris=89
+  EVFV9ZXQ5Q2 | Armband med ormkulor och klöver – guldfärg | Armband | pris=112
+  EVFV7MYW5NQ | Ring med hjärta och öppen form – guldfärg (modell 2) | Ringar | pris=89
+  EVFVQZE3PWZ | Ring med öppen form – guldfärg | Ringar | pris=78
+  EVFVRPW8NNY | Ring med kors och öppen form | Ringar | pris=134
+  EVFVRP766PY | Ring med zirkonia – guldfärg | Ringar | pris=67
