@@ -535,10 +535,24 @@ def build_description(
     finish = finish_label(style, title)
     # Motifs must match the product name (style-first), not the full parent title range
     name = build_name(category, title, style)
-    lead = name.split(" – ")[0]
-    # Extract "med X och Y" from the name when present
+    # Strip finish suffixes only (guldfärg/silverfärg/...), keep design cues after " – "
+    finish_suffixes = (
+        "guldfärg",
+        "silverfärg",
+        "platinaton",
+        "färgglad",
+        "guldfärg med rosa detalj",
+        "guldfärg med lila detalj",
+        "guldfärg med blå detalj",
+        "guldfärg med champagne",
+    )
+    parts = [p.strip() for p in name.split(" – ")]
+    design_parts = [p for p in parts if p.lower() not in finish_suffixes and not p.lower().startswith("guldfärg med")]
+    lead = design_parts[0] if design_parts else name
+    design_cue = " – ".join(design_parts[1:]) if len(design_parts) > 1 else None
+
     motif_m = re.search(r"\bmed\s+(.+)$", lead)
-    motif_phrase = motif_m.group(1).strip() if motif_m else None
+    motif_phrase = motif_m.group(1).strip() if motif_m else design_cue
 
     demo = demonstrative(category)
     noun = tw.lower()
@@ -546,7 +560,9 @@ def build_description(
         noun = "scrunchie"
         demo = "Denna"
 
-    if "scrunchie" in lead.lower() or lead.lower().startswith("tiara"):
+    if lead.lower().startswith("tiara") and motif_phrase:
+        p1 = f"{demo} tiara har ett uttryck med {motif_phrase}."
+    elif "scrunchie" in lead.lower():
         p1 = f"{demo} {lead[0].lower() + lead[1:]} har en tydlig och elegant form."
     elif motif_phrase:
         p1 = f"{demo} {noun} har ett uttryck med {motif_phrase}."
