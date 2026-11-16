@@ -170,6 +170,8 @@ def style_swedish_hint(style: str) -> str | None:
 
 def verified_material(title: str, style: str) -> str | None:
     """Only materials explicitly supported by supplier title/style wording."""
+    title_l = title.lower()
+    style_l = style.lower()
     low = f"{title} {style}".lower()
     parts = []
     if "stainless" in low or "rostfri" in low:
@@ -181,25 +183,32 @@ def verified_material(title: str, style: str) -> str | None:
     if "alloy" in low:
         parts.append("legering")
     if "925" in low and "silver" in low and "earring post" in low:
-        # Only the post is claimed as 925 — mention carefully
         parts.append("örhängesstift i 925-silver (enligt leverantör)")
-    # Plating / tone — never claim solid gold or real silver from color alone
-    if (
-        "18k gold plated" in low
-        or ("18k gold" in low and "plated" in low)
-        or "gold plated" in low
-        or ("electroplated" in low and "gold" in low)
-    ):
-        parts.append("guldpläterad yta")
-    elif "14k gold plated" in low:
-        parts.append("14K guldpläterad yta")
-    elif re.search(r"\bgold\b", style.lower()) or "guld" in style.lower():
-        parts.append("guldfärgad finish")
-    # Silver finish only from variant color — not from "Gold Silver Plated" parent slogans
-    if re.search(r"\bsilver\b", style.lower()) and not re.search(r"\bgold\b", style.lower()):
+
+    # Variant color wins over parent "Gold Plated … Silver" slogans
+    style_is_silver = bool(re.search(r"\bsilver\b", style_l)) and not bool(re.search(r"\bgold\b", style_l))
+    style_is_gold = bool(re.search(r"\bgold\b", style_l)) or "guld" in style_l
+
+    if style_is_silver:
         parts.append("silverfärgad finish")
-    elif "silver plated" in low and "gold" not in low:
-        parts.append("silverpläterad yta")
+    elif style_is_gold:
+        if (
+            "18k gold plated" in title_l
+            or "gold plated" in title_l
+            or ("18k gold" in title_l and "plated" in title_l)
+            or ("electroplated" in title_l and "gold" in title_l)
+            or "14k gold plated" in title_l
+        ):
+            parts.append("guldpläterad yta")
+        else:
+            parts.append("guldfärgad finish")
+    elif not re.search(r"\bsilver\b", style_l):
+        # No clear variant metal — only claim plating if title is unambiguous
+        if "gold plated" in title_l or ("18k gold" in title_l and "plated" in title_l):
+            if "silver" not in title_l or "gold silver plated" not in title_l:
+                parts.append("guldpläterad yta")
+        elif "silver plated" in title_l and "gold" not in title_l:
+            parts.append("silverpläterad yta")
 
     accents = []
     if "zirconia" in low or "cubic zirconia" in low:
@@ -359,7 +368,11 @@ def elegant_prefix(category: str) -> str:
 
 
 def demonstrative(category: str) -> str:
-    return "Detta" if category in {"Halsband", "Armband", "Smyckesset"} else "Denna"
+    if category == "Örhängen":
+        return "Dessa"
+    if category in {"Halsband", "Armband", "Smyckesset"}:
+        return "Detta"
+    return "Denna"
 
 
 def build_name(category: str, title: str, style: str) -> str:
@@ -519,9 +532,13 @@ def build_description(
     unit: str,
 ) -> str:
     tw = type_word(category)
-    motifs = extract_motifs(f"{title} {style}", limit=3)
     finish = finish_label(style, title)
-    style_clean = clean_style_hint(style)
+    # Motifs must match the product name (style-first), not the full parent title range
+    name = build_name(category, title, style)
+    lead = name.split(" – ")[0]
+    # Extract "med X och Y" from the name when present
+    motif_m = re.search(r"\bmed\s+(.+)$", lead)
+    motif_phrase = motif_m.group(1).strip() if motif_m else None
 
     demo = demonstrative(category)
     noun = tw.lower()
@@ -529,11 +546,9 @@ def build_description(
         noun = "scrunchie"
         demo = "Denna"
 
-    if motifs:
-        if len(motifs) == 1:
-            motif_phrase = motifs[0]
-        else:
-            motif_phrase = f"{motifs[0]} och {motifs[1]}"
+    if "scrunchie" in lead.lower() or lead.lower().startswith("tiara"):
+        p1 = f"{demo} {lead[0].lower() + lead[1:]} har en tydlig och elegant form."
+    elif motif_phrase:
         p1 = f"{demo} {noun} har ett uttryck med {motif_phrase}."
     else:
         p1 = f"{demo} {noun} har en tydlig och elegant form."
@@ -549,31 +564,20 @@ def build_description(
         else:
             paras.append(f"Enligt leverantörsinformationen är materialet {material}.")
 
-    # Mention distinctive variant only when it adds Swedish-useful design info
-    if style_clean and len(style_clean) > 12:
-        low_s = style_clean.lower()
-        if low_s not in ("gold", "silver") and not re.fullmatch(r"gold|silver|platinum", low_s):
-            # Translate a few frequent fragments; otherwise skip English dump
-            sv_variant = None
-            if "2-piece set" in low_s or "2-piece" in low_s:
-                sv_variant = "set i två delar"
-            elif "bracelet and ring set" in low_s:
-                sv_variant = "set med armband och ring"
-            elif "scrunchie" in low_s:
-                sv_variant = style_clean
-            if sv_variant:
-                paras.append(f"Varianten: {sv_variant}.")
+    style_l = style.lower()
+    if "2-piece set" in style_l or "2-piece" in style_l:
+        paras.append("Varianten: set i två delar.")
+    elif "bracelet and ring set" in style_l:
+        paras.append("Varianten: set med armband och ring.")
 
     paras.append(usage_line(category))
     paras.append(
         "Modeaccessoar: undvik kontakt med vatten, parfym och starka kemikalier för att bevara finishen."
     )
 
+    # SKU intentionally omitted from public Description (admin-only via WooCommerce SKU field)
     unit_sv = {"st": "styck", "par": "par", "set": "set"}.get(unit, unit)
-    details = [
-        f"<li>SKU: {sku}</li>",
-        f"<li>Enhet: {unit_sv}</li>",
-    ]
+    details = [f"<li>Enhet: {unit_sv}</li>"]
     if weight:
         details.append(f"<li>Vikt: {weight} kg</li>")
     if material:
