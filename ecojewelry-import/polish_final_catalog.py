@@ -191,9 +191,10 @@ def recalculate_price(cost_sek: float, category: str, old_price: float) -> float
 
 
 def finish_phrase(finish: str) -> str:
-    """Append 'yta' only for simple color finishes, not compound phrases."""
+    """Phrase finish for short copy without doubling 'med' or forcing 'yta'."""
+    # Compound: "guldfärgad med lila detaljer" → keep as-is (joined with comma upstream)
     if " med " in finish:
-        return f"med {finish}"
+        return finish
     return f"med {finish} yta"
 
 
