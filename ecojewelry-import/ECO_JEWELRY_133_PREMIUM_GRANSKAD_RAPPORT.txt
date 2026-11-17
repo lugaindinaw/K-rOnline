@@ -1,0 +1,53 @@
+ECO JEWELRY – Premiumgranskning
+============================================================
+Källa: ECO_JEWELRY_133_PRODUKTER_SLUTGILTIG.csv
+Ny fil: ECO_JEWELRY_133_PRODUKTER_PREMIUM_GRANSKAD.csv
+Antal produkter: 133 (unik SKU: 133)
+
+Beskrivningar:
+  - Samtliga short + long omskrivna till mer naturlig svenska
+  - Ordet 'lagerat' borttaget; lager-på-lager-look där relevant
+  - SKU/faktura/inköpspris syns inte i publik Description
+  - Tiara EVFVQ6V9YXZ / EVFVJ8K7ZNQ behåller stjärngeometri / oändlighetshjärta i namn
+
+Kategorier:
+  - Endast en primär kategori per produkt (dubbla kategorier borttagna)
+    Armband: 36
+    Halsband: 32
+    Ringar: 19
+    Örhängen: 17
+    Smyckesset: 16
+    Handkedjor: 6
+    Håraccessoarer: 4
+    Fotlänkar: 3
+
+Priser (EUR, ej konverterade till SEK):
+  Intervall: €9.90 – €89.90
+  Snitt: €34.36
+  Ändrade priser: 133 av 133
+  Uppskattad bruttomarginal vs EUR-kostnad (SEK/11): snitt 97%
+  Princip: sänkta omotiverat höga priser (set/handkedja/örhängen),
+  behållen premiumkänsla, golv som skyddar marginal efter avgifter.
+
+Största prissänkningar:
+  EVFV388PKMN: €556 → €89.90 (inköp 55.45 kr) | Smyckesset med zirkonia – guldfärg | Smyckesset
+  EVFVQR3M7YZ: €500 → €89.90 (inköp 48.04 kr) | Smyckesset med fyrklöver och blomma | Smyckesset
+  EVFV3ZXKQQN: €356 → €69.90 (inköp 36.59 kr) | Handkedja med strass | Handkedjor
+  EVFV5ZXJM6E: €334 → €59.90 (inköp 32.49 kr) | Handkedja med blomma | Handkedjor
+  EVFV262W5VR: €311 → €49.90 (inköp 31.53 kr) | Örhängen med tofs och zirkonia – guldfär | Örhängen
+  EVFV3KMENJN: €300 → €49.90 (inköp 29.78 kr) | Armband med orm och strass – guldfärg | Armband
+  EVFV3KMEN2N: €278 → €44.90 (inköp 27.43 kr) | Armband med orm och strass – silverfärg | Armband
+  EVFVY7REVQ9: €278 → €49.90 (inköp 28.30 kr) | Halsband med sodalit och blomster | Halsband
+  EVFVGVZ9QEP: €267 → €64.90 (inköp 26.11 kr) | Smyckesset med ormhuvud och klöver – gul | Smyckesset
+  EVFV4WV39W7: €267 → €64.90 (inköp 26.11 kr) | Smyckesset med ormhuvud och klöver – sil | Smyckesset
+  EVFV4QQ92KZ: €267 → €64.90 (inköp 26.11 kr) | Smyckesset med solros och blomma – guldf | Smyckesset
+  EVFVGXE83Z3: €267 → €64.90 (inköp 26.11 kr) | Smyckesset med solros och blomma – silve | Smyckesset
+  EVFVWJQVE37: €267 → €64.90 (inköp 26.11 kr) | Smyckesset med klöver och stjärna – guld | Smyckesset
+  EVFVVNXZ85P: €267 → €64.90 (inköp 26.11 kr) | Smyckesset med leopard och panter – guld | Smyckesset
+  EVFV42YWK8R: €245 → €44.90 (inköp 24.02 kr) | Fotlänk med klöver och dubbellager – fär | Fotlänkar
+
+Lager/publicering: Stock=1, manage stock=yes, backorders=no, Published=0, Images tom
+Valuta: numeriska priser avsedda för WooCommerce i EUR (ingen SEK-konvertering av siffror).
+
+OBS om inköpspris: Meta:_cost_price kommer från fakturan i SEK (kr).
+Prissättningen antar butik i EUR och räknar ungefärlig EUR-kostnad som SEK/11.
