@@ -92,13 +92,20 @@ def material_from_description(desc: str) -> str | None:
 
 
 def material_from_row(row: dict) -> str | None:
-    blob = row.get("Description", "") + " " + row.get("Short description", "")
-    mat = material_from_description(blob)
+    # Prefer long description supplier line — never mix finish into material base
+    mat = material_from_description(row.get("Description", ""))
     if mat:
         return mat
-    # Fallback from short "i rostfritt stål"
-    m = re.search(r" i ([^.]+?)(?:\.|$)", row.get("Short description", ""))
-    if m and any(k in m.group(1).lower() for k in ("stål", "koppar", "legering", "titan")):
+    mat = material_from_description(row.get("Short description", ""))
+    if mat:
+        return mat
+    # Fallback from short "i rostfritt stål" (stop before comma/finish)
+    m = re.search(
+        r" i ((?:rostfritt stål|legering|titan|koppar)[^,.]*)",
+        row.get("Short description", ""),
+        re.I,
+    )
+    if m:
         return m.group(1).strip()
     return None
 
@@ -246,7 +253,12 @@ def noun_phrase(category: str, name: str) -> str:
     if category == "Håraccessoarer" and "scrunchie" in core.lower():
         return core[0].lower() + core[1:] if core else "scrunchie"
     if core.lower().startswith("tiara"):
-        return core[0].lower() + core[1:]
+        c = core[0].lower() + core[1:]
+        # "tiara – stjärngeometri" → "tiaran med stjärngeometri" (definite for flowing copy)
+        if " – " in c:
+            left, right = c.split(" – ", 1)
+            return f"tiaran med {right.strip()}"
+        return "tiaran"
     return core[0].lower() + core[1:] if core else category.lower()
 
 
@@ -294,6 +306,8 @@ def build_short(row: dict) -> str:
         "Håraccessoarer": [
             "En håraccessoar som lyfter frisyren med en elegant detalj",
             "En fin finish för uppsatt hår, vardagslook eller fest",
+            "En accessoar som ger frisyren en mer påkostad känsla",
+            "En diskret lyxig detalj för uppsatt hår",
         ],
     }
 
@@ -312,26 +326,38 @@ def build_short(row: dict) -> str:
     if design_bits:
         # Soften if opening already long
         d = design_bits[0]
-        if d[0].isupper() and not d.lower().startswith(("tiara", "beige", "rosa", "champagne")):
-            d_form = d[0].lower() + d[1:]
-        else:
-            d_form = d
+        # Always lowercase product-type start for "Modellen är …"
+        d_form = d[0].lower() + d[1:] if d and d[0].isupper() else d
         extras = []
         if material and any(k in material.lower() for k in ("stål", "titan", "koppar", "legering")):
             base = material.split(" med ")[0].split(",")[0].strip()
             extras.append(f"i {base}")
         if finish:
             extras.append(finish_phrase(finish))
-        extra = " ".join(extras)
-        # Warm phrasing instead of robotic "Designen:"
-        if d_form.startswith("örhängen"):
-            sentence2 = f"Modellen är {d_form}"
-        elif d_form.startswith(("ring", "fotlänk", "handkedja", "tiara")):
-            sentence2 = f"Modellen är en {d_form}"
-        elif d_form.startswith(("smyckesset", "halsband", "armband")):
-            sentence2 = f"Modellen är ett {d_form}"
+        # Compound finishes already contain "med" — join with comma, not space
+        if len(extras) == 2 and finish and " med " in finish:
+            extra = ", ".join(extras)
         else:
-            sentence2 = f"Modellen: {d_form}"
+            extra = " ".join(extras)
+        # Warm phrasing instead of robotic "Designen:" / "Modellen:"
+        dl = d_form.lower()
+        if dl.startswith("örhängen"):
+            sentence2 = f"Modellen är {d_form}"
+        elif dl.startswith("tiara"):
+            # "tiara – stjärngeometri" → "en tiara med stjärngeometri"
+            if " – " in d_form:
+                left, right = d_form.split(" – ", 1)
+                sentence2 = f"Modellen är en {left.strip()} med {right.strip()}"
+            else:
+                sentence2 = f"Modellen är en {d_form}"
+        elif dl.startswith(("ring", "fotlänk", "handkedja")):
+            sentence2 = f"Modellen är en {d_form}"
+        elif dl.startswith(("smyckesset", "halsband", "armband")):
+            sentence2 = f"Modellen är ett {d_form}"
+        elif "scrunchie" in dl:
+            sentence2 = f"Modellen är en {d_form}"
+        else:
+            sentence2 = f"Modellen är {d_form}"
         sentence2 = sentence2 + (f", {extra}." if extra else ".")
     else:
         bits = []
@@ -340,7 +366,11 @@ def build_short(row: dict) -> str:
             bits.append(f"i {base}")
         if finish:
             bits.append(finish_phrase(finish))
-        sentence2 = ("Utförande " + " ".join(bits) + ".") if bits else ""
+        if len(bits) == 2 and finish and " med " in finish:
+            joined = ", ".join(bits)
+        else:
+            joined = " ".join(bits)
+        sentence2 = ("Utförande " + joined + ".") if bits else ""
 
     short = f"{sentence1} {sentence2}".strip()
     short = re.sub(r"\s+", " ", short)
@@ -379,11 +409,17 @@ def build_description(row: dict) -> str:
 
     # Design paragraph – keep motifs / dash design, vary wording
     core_l = core[0].lower() + core[1:] if core else "modellen"
-    if " – " in name and any(k in name.lower() for k in ("stjärngeometri", "oändlighetshjärta")):
+    if " – " in name and "stjärngeometri" in name.lower():
         p_design = hpick(sku, [
-            f"Motiv och uttryck: {name}.",
-            f"Den här varianten bär motivet tydligt – {name}.",
-            f"Uttrycket är distinkt: {name}.",
+            "Motivet är stjärngeometri – skarpa linjer som fångar ljuset i håret.",
+            "Här är det stjärngeometrin som ger tiaran dess karaktär.",
+            "En tiara med stjärngeometri för ett tydligt, elegant uttryck.",
+        ])
+    elif " – " in name and "oändlighetshjärta" in name.lower():
+        p_design = hpick(sku, [
+            "Motivet är oändlighetshjärtat – mjukt, romantiskt och lätt att känna igen.",
+            "Här är det oändlighetshjärtat som ger tiaran dess karaktär.",
+            "En tiara med oändlighetshjärta för ett mer romantiskt och personligt uttryck.",
         ])
     elif "med " in core.lower():
         motif = core_l
