@@ -190,6 +190,42 @@ def recalculate_price(cost_sek: float, category: str, old_price: float) -> float
     return round(price, 2)
 
 
+def finish_phrase(finish: str) -> str:
+    """Append 'yta' only for simple color finishes, not compound phrases."""
+    if " med " in finish:
+        return f"med {finish}"
+    return f"med {finish} yta"
+
+
+def material_sentence(material: str, category: str, sku: str) -> str:
+    """Phrase material safely — never 'Tillverkad i detaljer/plätering only'."""
+    m = material.strip()
+    low = m.lower()
+    has_base = any(k in low for k in ("stål", "titan", "koppar", "legering", "textil", "elastik"))
+    ett = category in {"Halsband", "Armband", "Smyckesset"}
+    plural = category == "Örhängen"
+    tillverkad = "Tillverkade" if plural else ("Tillverkat" if ett else "Tillverkad")
+
+    if low.startswith("detaljer"):
+        return hpick(sku, [
+            f"Enligt leverantören har smycket {m}.",
+            f"Produktinformationen anger {m}.",
+            f"Detaljerna beskrivs som {m}.",
+        ])
+    if has_base:
+        return hpick(sku, [
+            f"Material enligt leverantören: {m}.",
+            f"Utförande i {m}, enligt tillgänglig produktinformation.",
+            f"{tillverkad} i {m} (enligt leverantörsuppgifter).",
+        ])
+    # Plating / accents only — no "Tillverkad i guldpläterad yta"
+    return hpick(sku, [
+        f"Yta och detaljer enligt leverantören: {m}.",
+        f"Produktinformationen anger {m}.",
+        f"Enligt leverantörsuppgifter: {m}.",
+    ])
+
+
 def type_word_lower(category: str) -> str:
     return {
         "Halsband": "halsband",
@@ -284,7 +320,7 @@ def build_short(row: dict) -> str:
             base = material.split(" med ")[0].split(",")[0].strip()
             extras.append(f"i {base}")
         if finish:
-            extras.append(f"med {finish} yta")
+            extras.append(finish_phrase(finish))
         extra = " ".join(extras)
         # Warm phrasing instead of robotic "Designen:"
         if d_form.startswith("örhängen"):
@@ -298,11 +334,11 @@ def build_short(row: dict) -> str:
         sentence2 = sentence2 + (f", {extra}." if extra else ".")
     else:
         bits = []
-        if material:
+        if material and any(k in material.lower() for k in ("stål", "titan", "koppar", "legering")):
             base = material.split(" med ")[0].split(",")[0].strip()
             bits.append(f"i {base}")
         if finish:
-            bits.append(f"med {finish} yta")
+            bits.append(finish_phrase(finish))
         sentence2 = ("Utförande " + " ".join(bits) + ".") if bits else ""
 
     short = f"{sentence1} {sentence2}".strip()
@@ -327,12 +363,14 @@ def build_description(row: dict) -> str:
     np = noun_phrase(cat, name)
 
     ett = cat in {"Halsband", "Armband", "Smyckesset"}
-    skapad = "skapat" if ett else ("skapade" if cat == "Örhängen" else "skapad")
+    plural = cat == "Örhängen"
+    skapad = "skapat" if ett else ("skapade" if plural else "skapad")
+    tankt = "är tänkta" if plural else "är tänkt"
 
     if style_id == 0:
         p1 = f"Möt {np} – ett smycke där detaljerna får tala."
     elif style_id == 1:
-        p1 = f"{np[0].upper() + np[1:] if np else 'Smycket'} är tänkt för dig som vill ha något vackert utan att det känns överarbetat."
+        p1 = f"{np[0].upper() + np[1:] if np else 'Smycket'} {tankt} för dig som vill ha något vackert utan att det känns överarbetat."
     elif style_id == 2:
         p1 = f"En genomtänkt silhuett med fokus på form och yta: {np}."
     else:
@@ -376,13 +414,7 @@ def build_description(row: dict) -> str:
     paras = [p1, p_design]
 
     if material:
-        # Soft, non-robotic material line
-        mat_lines = [
-            f"Material enligt leverantören: {material}.",
-            f"Utförande i {material}, enligt tillgänglig produktinformation.",
-            f"Tillverkad i {material} (enligt leverantörsuppgifter).",
-        ]
-        paras.append(hpick(sku, mat_lines))
+        paras.append(material_sentence(material, cat, sku))
 
     # Usage – natural Swedish, no "lagerat"
     usage = {
